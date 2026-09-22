@@ -1204,7 +1204,7 @@ async function startVideoCreationDynamic(fId) {
   const formData = new FormData();
   formData.append("prompt", prompt);
   formData.append("profile_id", profileId);
-  formData.append("video_model", document.getElementById(`videoModel_${fId}`).value);
+  
   formData.append("video_duration", document.getElementById(`videoDuration_${fId}`).value);
   formData.append("video_ratio", document.getElementById(`videoRatio_${fId}`).value);
   

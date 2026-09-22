@@ -1299,7 +1299,7 @@ def _send_video_to_telegram(video_path, token, chat_id):
     except Exception as e:
         print(f"Lỗi gửi Telegram: {e}")
 
-def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save_path, is_headless=False, enable_ext=False, enable_ext_btn2=False, tg_enabled=False, tg_token="", tg_chat_id="", video_model="Dreamina Seedance 2.0 Fast", video_duration="10s", video_ratio="9:16"):
+def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save_path, is_headless=False, enable_ext=False, enable_ext_btn2=False, tg_enabled=False, tg_token="", tg_chat_id=""):
     """Background thread: mở higgsfield.ai, đăng nhập Microsoft, upload ảnh, nhập prompt và tạo video."""
     from playwright.sync_api import sync_playwright
     import urllib.parse
@@ -1723,21 +1723,6 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
             if "from_logout=1" in page.url or page.evaluate("() => Array.from(document.querySelectorAll('button')).some(b => b.innerText && b.innerText.includes('Continue with Microsoft'))"):
                 raise Exception("Tài khoản higgsfield bị văng (Logout) giữa chừng. Vui lòng tắt và CHẠY LẠI profile này!")
 
-            # ── BƯỚC 7: Ấn nút "Tạo video" trong thanh công cụ ──────────────
-            video_tasks[task_id] = {"status": "running", "message": "Đang ấn nút 'Tạo video'..."}
-            try:
-                page.locator("button[data-skill-id='skill_bar_button_17']").click(timeout=500)
-                page.wait_for_timeout(1000)
-            except:
-                try:
-                    page.evaluate("""() => {
-                        const all = Array.from(document.querySelectorAll('button'));
-                        const btn = all.find(el => el.innerText && el.innerText.trim().includes('Tạo video'));
-                        if (btn) btn.click();
-                    }""")
-                    page.wait_for_timeout(1000)
-                except:
-                    pass
 
             # ── BƯỚC 7.5: Chọn Model, Duration, Ratio ──────────────
             video_tasks[task_id] = {"status": "running", "message": "Đang chọn cài đặt video..."}
@@ -2364,10 +2349,7 @@ async def create_video(
     enable_ext_btn2: str = Form("false"),
     telegram_enabled: str = Form("false"),
     telegram_token: str = Form(""),
-    telegram_chat_id: str = Form(""),
-    video_model: str = Form("Dreamina Seedance 2.0 Fast"),
-    video_duration: str = Form("10s"),
-    video_ratio: str = Form("9:16")
+    telegram_chat_id: str = Form("")
 ):
     # Lấy danh sách các profile đang bận
     used_profiles = set()
@@ -2422,14 +2404,11 @@ async def create_video(
             "enable_ext_btn2": (enable_ext_btn2.lower() == "true"),
             "tg_enabled": (telegram_enabled.lower() == "true"),
             "tg_token": telegram_token,
-            "tg_chat_id": telegram_chat_id,
-            "video_model": video_model,
-            "video_duration": video_duration,
-            "video_ratio": video_ratio
+            "tg_chat_id": telegram_chat_id
         }
     }
     
-    t = threading.Thread(target=run_video_automation, args=(task_id, prompt, img1_path, img2_path, profile_id, save_path, headless_bool, (enable_ext.lower() == "true"), (enable_ext_btn2.lower() == "true"), (telegram_enabled.lower() == "true"), telegram_token, telegram_chat_id, video_model, video_duration, video_ratio), daemon=True)
+    t = threading.Thread(target=run_video_automation, args=(task_id, prompt, img1_path, img2_path, profile_id, save_path, headless_bool, (enable_ext.lower() == "true"), (enable_ext_btn2.lower() == "true"), (telegram_enabled.lower() == "true"), telegram_token, telegram_chat_id), daemon=True)
     t.start()
     
     return {"ok": True, "task_id": task_id, "profile_id": profile_id}
@@ -2445,7 +2424,7 @@ def retry_video(task_id: str):
     video_tasks[task_id]["status"] = "pending"
     video_tasks[task_id]["message"] = "Đang thử lại..."
     video_tasks[task_id].pop("force_stop", None) # Xóa cờ force_stop nếu có
-    t = threading.Thread(target=run_video_automation, args=(task_id, p["prompt"], p["img1_path"], p["img2_path"], p["profile_id"], p.get("save_path"), p.get("is_headless", False), p.get("enable_ext", False), p.get("enable_ext_btn2", False), p.get("tg_enabled", False), p.get("tg_token", ""), p.get("tg_chat_id", ""), p.get("video_model", "Dreamina Seedance 2.0 Fast"), p.get("video_duration", "10s"), p.get("video_ratio", "9:16")), daemon=True)
+    t = threading.Thread(target=run_video_automation, args=(task_id, p["prompt"], p["img1_path"], p["img2_path"], p["profile_id"], p.get("save_path"), p.get("is_headless", False), p.get("enable_ext", False), p.get("enable_ext_btn2", False), p.get("tg_enabled", False), p.get("tg_token", ""), p.get("tg_chat_id", "")), daemon=True)
     t.start()
     return {"ok": True}
 
