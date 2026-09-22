@@ -617,106 +617,109 @@ def auto_signup_endpoint(profile_id: str):
                                     page.wait_for_timeout(3000)
                                     
                                     # Xử lý chuỗi trang sau khi nhập mã OTP
-                                    print("Handling post-OTP popups...")
-                                    for _ in range(25):
-                                        page.wait_for_timeout(2000)
-                                        cur_url = page.url
-                                        
-                                        if "higgsfield.ai/ai/video" in cur_url and "quiz" not in cur_url:
-                                            print("Đã đăng nhập thành công vào Higgsfield!")
-                                            break
-                                            
-                                        # Xử lý trang Quiz (Khảo sát người dùng mới)
-                                        if "higgsfield.ai/quiz" in cur_url:
-                                            # Thử click các câu trả lời
-                                            for q_text in ["For personal use", "Viral content & UGC videos", "Beginner", "Canvas"]:
-                                                ans_btn = page.locator(f'text="{q_text}"')
-                                                if ans_btn.count() > 0 and ans_btn.first.is_visible():
-                                                    ans_btn.first.click(force=True)
-                                                    print(f"Quiz: Clicked '{q_text}'")
-                                                    page.wait_for_timeout(800)
-                                                    
-                                            # Bấm Continue (nếu có ở màn hình cuối)
-                                            cont_btn = page.locator('button:has-text("Continue")')
-                                            if cont_btn.count() > 0 and cont_btn.first.is_visible():
-                                                cont_btn.first.click(force=True)
-                                                print("Quiz: Clicked 'Continue'")
-                                                page.wait_for_timeout(1500)
-                                            continue
-                                            
-                                        # 1. Nút "Trông rất được!" / "Looks good!"
-                                        looks_good_btn = page.locator('#iLooksGood, input[value*="Trông rất được"], input[value*="Looks good"]')
-                                        if looks_good_btn.count() > 0 and looks_good_btn.first.is_visible():
-                                            looks_good_btn.first.click()
-                                            print("Clicked 'Trông rất được!' (Looks good)")
-                                            continue
-                                            
-                                        # 2. Trang chủ Higgsfield bắt đăng nhập lại
-                                        if "higgsfield.ai/auth/sign-in" in cur_url or ("higgsfield.ai" in cur_url and "login.microsoftonline" not in cur_url):
-                                            ms_btn = page.locator('button:has-text("Continue with Microsoft"), div:has-text("Continue with Microsoft")')
-                                            if ms_btn.count() > 0 and ms_btn.first.is_visible():
-                                                ms_btn.first.click()
-                                                print("Clicked 'Continue with Microsoft' again after redirect")
-                                                continue
-                                                
-                                        # 3. Form nhập email lại (nếu có)
-                                        email_input = page.locator('input[type="email"], input[name="loginfmt"]')
-                                        if email_input.count() > 0 and email_input.first.is_visible():
-                                            email_input.first.fill(ms_email)
-                                            page.keyboard.press("Enter")
-                                            print("Filled email again")
-                                            continue
-                                            
-                                        # 4. Form nhập password lại (nếu có)
-                                        pwd_input = page.locator('input[type="password"], input[name="passwd"]')
-                                        if pwd_input.count() > 0 and pwd_input.first.is_visible():
-                                            pwd_input.first.fill(ms_password)
-                                            page.keyboard.press("Enter")
-                                            print("Filled password again")
-                                            continue
-                                            
-                                        # 5. Trang thiết lập Security Key (bảng đen FIDO2) -> Bấm Hủy (Cancel)
-                                        if "fido" in cur_url or "fido/create" in cur_url:
-                                            # Cố gắng tắt dialog native của Windows (Security key)
-                                            page.keyboard.press("Escape")
-                                            page.wait_for_timeout(500)
-                                            cancel_btn = page.locator('#iCancel, a#iCancel, button#iCancel, input[value="Hủy"], input[value="Cancel"], a:has-text("Hủy"), button:has-text("Hủy")')
-                                            if cancel_btn.count() > 0 and cancel_btn.first.is_visible():
-                                                cancel_btn.first.click()
-                                                print("Clicked Cancel for Security Key setup")
-                                                continue
-                                                
-                                        # 6. Nút Có (Yes) / Chấp nhận (Accept) - Duy trì đăng nhập / Cho phép ứng dụng
-                                        yes_btn = page.locator('input#idSIButton9, button#idSIButton9, button#acceptButton, input#acceptButton, input[value="Có"], input[value="Yes"], input[value="Chấp nhận"], input[value="Accept"], button:text-is("Có"), button:text-is("Yes"), button:has-text("Chấp nhận")')
-                                        if yes_btn.count() > 0 and yes_btn.first.is_visible():
-                                            yes_btn.first.click(force=True)
-                                            print("Clicked Yes / Accept")
-                                            continue
-                                            
-                                        # 7. Tích chọn Cloudflare Turnstile "Xác minh bạn là con người"
-                                        try:
-                                            # Nếu nằm ngoài cùng
-                                            cf_checkbox = page.locator('input[type="checkbox"][aria-label*="con người"], input[type="checkbox"][aria-label*="human"]')
-                                            if cf_checkbox.count() > 0 and cf_checkbox.first.is_visible():
-                                                cf_checkbox.first.click(force=True, position={"x": 5, "y": 5})
-                                                print("Clicked Turnstile checkbox (main frame)")
-                                                continue
-                                                
-                                            # Nếu nằm trong iframe
-                                            cf_iframe = page.frame_locator('iframe[src*="cloudflare.com"], iframe[src*="turnstile"]')
-                                            cf_checkbox_iframe = cf_iframe.locator('input[type="checkbox"]')
-                                            if cf_checkbox_iframe.count() > 0:
-                                                cf_checkbox_iframe.first.click(force=True)
-                                                print("Clicked Turnstile checkbox (in iframe)")
-                                                continue
-                                        except Exception:
-                                            pass
+                                    # (Đã chuyển vòng lặp pop-up ra ngoài)
                                 except Exception as e:
                                     print(f"Error filling OTP: {e}")
                             else:
                                 print("OTP not received within timeout. Manual intervention needed.")
                     except Exception as e:
                         print(f"Error on protection page: {e}")
+                    
+                    # === Vòng lặp toàn cầu xử lý các trang sau khi đăng nhập (Quiz, Yes/Accept, FIDO, Turnstile) ===
+                    print("Handling post-login popups...")
+                    for _ in range(30):
+                        page.wait_for_timeout(2000)
+                        cur_url = page.url
+                        
+                        if "higgsfield.ai/ai/video" in cur_url and "quiz" not in cur_url:
+                            print("Đã đăng nhập thành công vào Higgsfield!")
+                            break
+                            
+                        # Xử lý trang Quiz (Khảo sát người dùng mới)
+                        if "higgsfield.ai/quiz" in cur_url:
+                            # Thử click các câu trả lời
+                            for q_text in ["For personal use", "Viral content & UGC videos", "Beginner", "Canvas"]:
+                                ans_btn = page.locator(f'text="{q_text}"')
+                                if ans_btn.count() > 0 and ans_btn.first.is_visible():
+                                    ans_btn.first.click(force=True)
+                                    print(f"Quiz: Clicked '{q_text}'")
+                                    page.wait_for_timeout(800)
+                                    
+                            # Bấm Continue (nếu có ở màn hình cuối)
+                            cont_btn = page.locator('button:has-text("Continue")')
+                            if cont_btn.count() > 0 and cont_btn.first.is_visible():
+                                cont_btn.first.click(force=True)
+                                print("Quiz: Clicked 'Continue'")
+                                page.wait_for_timeout(1500)
+                            continue
+                            
+                        # 1. Nút "Trông rất được!" / "Looks good!"
+                        looks_good_btn = page.locator('#iLooksGood, input[value*="Trông rất được"], input[value*="Looks good"]')
+                        if looks_good_btn.count() > 0 and looks_good_btn.first.is_visible():
+                            looks_good_btn.first.click()
+                            print("Clicked 'Trông rất được!' (Looks good)")
+                            continue
+                            
+                        # 2. Trang chủ Higgsfield bắt đăng nhập lại
+                        if "higgsfield.ai/auth/sign-in" in cur_url or ("higgsfield.ai" in cur_url and "login.microsoftonline" not in cur_url):
+                            ms_btn = page.locator('button:has-text("Continue with Microsoft"), div:has-text("Continue with Microsoft")')
+                            if ms_btn.count() > 0 and ms_btn.first.is_visible():
+                                ms_btn.first.click()
+                                print("Clicked 'Continue with Microsoft' again after redirect")
+                                continue
+                                
+                        # 3. Form nhập email lại (nếu có)
+                        email_input = page.locator('input[type="email"], input[name="loginfmt"]')
+                        if email_input.count() > 0 and email_input.first.is_visible():
+                            email_input.first.fill(ms_email)
+                            page.keyboard.press("Enter")
+                            print("Filled email again")
+                            continue
+                            
+                        # 4. Form nhập password lại (nếu có)
+                        pwd_input = page.locator('input[type="password"], input[name="passwd"]')
+                        if pwd_input.count() > 0 and pwd_input.first.is_visible():
+                            pwd_input.first.fill(ms_password)
+                            page.keyboard.press("Enter")
+                            print("Filled password again")
+                            continue
+                            
+                        # 5. Trang thiết lập Security Key (bảng đen FIDO2) -> Bấm Hủy (Cancel)
+                        if "fido" in cur_url or "fido/create" in cur_url:
+                            # Cố gắng tắt dialog native của Windows (Security key)
+                            page.keyboard.press("Escape")
+                            page.wait_for_timeout(500)
+                            cancel_btn = page.locator('#iCancel, a#iCancel, button#iCancel, input[value="Hủy"], input[value="Cancel"], a:has-text("Hủy"), button:has-text("Hủy")')
+                            if cancel_btn.count() > 0 and cancel_btn.first.is_visible():
+                                cancel_btn.first.click()
+                                print("Clicked Cancel for Security Key setup")
+                                continue
+                                
+                        # 6. Nút Có (Yes) / Chấp nhận (Accept) - Duy trì đăng nhập / Cho phép ứng dụng
+                        yes_btn = page.locator('input#idSIButton9, button#idSIButton9, button#acceptButton, input#acceptButton, input[value="Có"], input[value="Yes"], input[value="Chấp nhận"], input[value="Accept"], button:text-is("Có"), button:text-is("Yes"), button:has-text("Chấp nhận")')
+                        if yes_btn.count() > 0 and yes_btn.first.is_visible():
+                            yes_btn.first.click(force=True)
+                            print("Clicked Yes / Accept")
+                            continue
+                            
+                        # 7. Tích chọn Cloudflare Turnstile "Xác minh bạn là con người"
+                        try:
+                            # Nếu nằm ngoài cùng
+                            cf_checkbox = page.locator('input[type="checkbox"][aria-label*="con người"], input[type="checkbox"][aria-label*="human"]')
+                            if cf_checkbox.count() > 0 and cf_checkbox.first.is_visible():
+                                cf_checkbox.first.click(force=True, position={"x": 5, "y": 5})
+                                print("Clicked Turnstile checkbox (main frame)")
+                                continue
+                                
+                            # Nếu nằm trong iframe
+                            cf_iframe = page.frame_locator('iframe[src*="cloudflare.com"], iframe[src*="turnstile"]')
+                            cf_checkbox_iframe = cf_iframe.locator('input[type="checkbox"]')
+                            if cf_checkbox_iframe.count() > 0:
+                                cf_checkbox_iframe.first.click(force=True)
+                                print("Clicked Turnstile checkbox (in iframe)")
+                                continue
+                        except Exception:
+                            pass
                 else:
                     print("Không có thông tin tài khoản MS. Vui lòng bấm nút 'Dán mail' để thêm tài khoản trước!")
                 
