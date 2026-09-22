@@ -388,7 +388,7 @@ function renderProfiles(profiles){
         <span>🎲 ID: ${p.fingerprint?.random_id||''}</span>
         ${p.notes?`<span>📝 ${esc(p.notes)}</span>`:''}
       </div>
-      ${p.ms_email ? `<div style="padding:4px 8px; font-size:12px; color:#38bdf8; background:#0f172a; border-radius:4px; margin-bottom:8px; cursor:pointer; display:inline-block; border:1px solid #1e293b;" onclick="navigator.clipboard.writeText('${p.ms_account}'); const old=this.innerHTML; this.innerHTML='✅ Đã copy!'; setTimeout(()=>this.innerHTML=old, 1500);" title="Click để copy thông tin tài khoản">📧 ${esc(p.ms_email)}</div>` : ''}
+      ${p.ms_email ? `<div style="padding:4px 8px; font-size:12px; color:#38bdf8; background:#0f172a; border-radius:4px; margin-bottom:8px; cursor:pointer; display:inline-block; border:1px solid #1e293b;" onclick="navigator.clipboard.writeText('${p.ms_email}'); const old=this.innerHTML; this.innerHTML='✅ Đã copy!'; setTimeout(()=>this.innerHTML=old, 1500);" title="Click để copy email">📧 ${esc(p.ms_email)}</div>` : ''}
       <div class="card-actions">
         ${running? 
           `<button class="btn btn-sm btn-warning" onclick="closeProfile('${p.id}')">⏹ Dong</button>` :
