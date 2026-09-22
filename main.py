@@ -978,7 +978,6 @@ def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False
         context = launch_persistent_context(
             user_data_dir=profile.user_data_dir,
             headless=False,
-            **browser_launch_options(),
             ignore_default_args=ignore_args,
             args=args,
             accept_downloads=True,
