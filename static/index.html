@@ -1103,6 +1103,13 @@ function previewImgMulti(event, fId) {
   
   files.forEach(file => {
     if (currentCount >= maxImgs) return;
+    
+    // Ngăn chọn nhầm file video vào ô ảnh
+    if (!file.type.startsWith('image/')) {
+        alert(`File ${file.name} không phải là ảnh hợp lệ! Vui lòng chỉ chọn ảnh cho mục này.`);
+        return;
+    }
+    
     const reader = new FileReader();
     reader.onload = e => {
       const wrapper = document.createElement('div');
@@ -1148,6 +1155,13 @@ function updateImgMultiCount(fId) {
 function previewVideoUpload(event, fId) {
   const file = event.target.files[0];
   if (!file) return;
+  
+  if (!file.type.startsWith('video/')) {
+      alert(`File ${file.name} không phải là video hợp lệ! Vui lòng chọn video.`);
+      event.target.value = ''; // Reset
+      return;
+  }
+  
   const url = URL.createObjectURL(file);
   const previewDiv = document.getElementById(`videoUploadPreview_${fId}`);
   const emptyDiv = document.getElementById(`videoUploadEmpty_${fId}`);
