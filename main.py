@@ -340,41 +340,42 @@ def auto_signup_endpoint(profile_id: str):
                     except: pass
                     return
                 
-                # B1: Click nút Login hoặc Sign up (ấn 1 nút nào được)
-                clicked_auth_btn = False
-                try:
-                    login_btn = page.locator("a:has-text('Login'), button:has-text('Login')")
-                    if login_btn.count() > 0:
-                        login_btn.first.click(timeout=2000)
-                        clicked_auth_btn = True
-                        print("Clicked Login button")
-                except: pass
-                
-                if not clicked_auth_btn:
+                # B1: Click nút Login hoặc Sign up (nếu đang ở trang chủ https://higgsfield.ai)
+                if "auth/sign-in" not in page.url:
+                    clicked_auth_btn = False
                     try:
-                        signup_btn = page.locator("a:has-text('Sign up'), button:has-text('Sign up')")
-                        if signup_btn.count() > 0:
-                            signup_btn.first.click(timeout=2000)
+                        login_btn = page.locator("a:has-text('Login'), button:has-text('Login')")
+                        if login_btn.count() > 0:
+                            login_btn.first.click(timeout=2000)
                             clicked_auth_btn = True
-                            print("Clicked Sign up button")
+                            print("Clicked Login button")
                     except: pass
-                
-                if not clicked_auth_btn:
-                    # Fallback: tìm bằng JS
-                    try:
-                        page.evaluate("""() => {
-                            const els = document.querySelectorAll('a, button');
-                            for (let el of els) {
-                                const t = (el.innerText || '').trim().toLowerCase();
-                                if (t === 'login' || t === 'sign up' || t === 'signup') {
-                                    el.click();
-                                    return;
+                    
+                    if not clicked_auth_btn:
+                        try:
+                            signup_btn = page.locator("a:has-text('Sign up'), button:has-text('Sign up')")
+                            if signup_btn.count() > 0:
+                                signup_btn.first.click(timeout=2000)
+                                clicked_auth_btn = True
+                                print("Clicked Sign up button")
+                        except: pass
+                    
+                    if not clicked_auth_btn:
+                        # Fallback: tìm bằng JS
+                        try:
+                            page.evaluate("""() => {
+                                const els = document.querySelectorAll('a, button');
+                                for (let el of els) {
+                                    const t = (el.innerText || '').trim().toLowerCase();
+                                    if (t === 'login' || t === 'sign up' || t === 'signup') {
+                                        el.click();
+                                        return;
+                                    }
                                 }
-                            }
-                        }""")
-                        print("Clicked auth button via JS fallback")
-                    except Exception as e:
-                        print(f"Fallback click err (tab might be closed/navigating): {e}")
+                            }""")
+                            print("Clicked auth button via JS fallback")
+                        except Exception as e:
+                            print(f"Fallback click err (tab might be closed/navigating): {e}")
                 
                 # B2: Đợi popup "Welcome to Higgsfield" xuất hiện hoặc phát hiện đã login
                 try:
