@@ -1398,9 +1398,13 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
         except: pass
 
     try:
-        with pw_lock:
-            p = sync_playwright().start()
-        if True:
+        engine = os.environ.get("HIGGSFIELD_BROWSER_ENGINE", "chrome").lower()
+        if engine == "cloakbrowser":
+            p = None
+            context = _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=enable_ext_btn2, is_headless=is_headless)
+        else:
+            with pw_lock:
+                p = sync_playwright().start()
             context = _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=enable_ext_btn2, is_headless=is_headless)
             
             # Tái sử dụng tab đầu tiên nếu có để tránh mở nhiều tab
@@ -2437,10 +2441,17 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
             for img_path in media_paths_cleanup:
                 if img_path:
                     try:
-                        p = Path(img_path)
-                        if p.exists():
-                            p.unlink()
+                        p_file = Path(img_path)
+                        if p_file.exists():
+                            p_file.unlink()
                     except: pass
+
+        if 'context' in locals() and context is not None:
+            try: context.close()
+            except: pass
+        if 'p' in locals() and p is not None:
+            try: p.stop()
+            except: pass
 
 
 
