@@ -412,6 +412,7 @@ def auto_signup_endpoint(profile_id: str):
                     # Điền email vào ô input
                     try:
                         import time
+                        if "higgsfield.ai" in page.url: raise ValueError("Already logged in, skipping email")
                         email_input = page.locator('input[type="email"], input[name="loginfmt"], input[id="i0116"]')
                         email_input.wait_for(state="visible", timeout=10000)
                         email_input.click()
@@ -436,6 +437,7 @@ def auto_signup_endpoint(profile_id: str):
                     # Nếu có, bấm "Sử dụng mật khẩu của bạn" để quay lại form mật khẩu
                     try:
                         page.wait_for_timeout(1000)
+                        if "higgsfield.ai" in page.url: raise ValueError("Already logged in, skipping use password")
                         use_pwd_btn = page.locator('a#iUsePasswordLink, a#idA_PWD_SwitchToPassword, span:has-text("Sử dụng mật khẩu"), text="Sử dụng mật khẩu", text="Use your password"')
                         if use_pwd_btn.count() > 0 and use_pwd_btn.first.is_visible():
                             use_pwd_btn.first.click(force=True)
@@ -448,6 +450,7 @@ def auto_signup_endpoint(profile_id: str):
                     
                     # Điền mật khẩu
                     try:
+                        if "higgsfield.ai" in page.url: raise ValueError("Already logged in, skipping password")
                         pwd_input = page.locator('input[type="password"], input[name="passwd"], input[id="i0118"]')
                         pwd_input.wait_for(state="visible", timeout=10000)
                         pwd_input.click()
@@ -469,6 +472,7 @@ def auto_signup_endpoint(profile_id: str):
                     
                     # Xử lý trang "Giúp bảo vệ tài khoản của bạn" → Click "Thêm email"
                     try:
+                        if "higgsfield.ai" in page.url: raise ValueError("Already logged in, skipping protection")
                         # Đợi trang bảo vệ hoặc redirect
                         for _ in range(15):
                             cur_url = page.url
