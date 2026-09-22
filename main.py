@@ -1,6 +1,9 @@
 """
 Antidetect Unlimited V4 - Hỗ trợ Cookie BitBrowser + Random Fingerprint + Tabs persistence
 """
+import asyncio
+import threading
+pw_lock = threading.Lock()
 from fastapi import FastAPI, HTTPException, Body
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -9,6 +12,7 @@ from pathlib import Path
 import os
 
 from app.models import ProfileCreate, LaunchRequest
+from app.browser_settings import browser_launch_options, VERSION as CLOAK_VERSION
 from app.manager import manager
 from app.browser import launch_profile_with_fallback, close_profile, is_running, list_running
 
@@ -34,6 +38,8 @@ def get_profiles():
     for p in profiles:
         d = p.model_dump()
         d["running"] = is_running(p.id)
+        d["browser_engine"] = os.environ.get("HIGGSFIELD_BROWSER_ENGINE", "chrome").lower()
+        d["browser_version"] = CLOAK_VERSION if d["browser_engine"] == "cloakbrowser" else None
         # Đếm cookie imported
         cookie_file = Path(p.user_data_dir) / "imported_cookies.json"
         d["cookies_count"] = 0
@@ -197,11 +203,14 @@ def export_cookies_endpoint(profile_id: str):
     
     try:
         from playwright.sync_api import sync_playwright
-        with sync_playwright() as p:
+        with pw_lock:
+            p = sync_playwright().start()
+        if True:
             # Mo headless browser de doc cookie
             context = p.chromium.launch_persistent_context(
                 profile.user_data_dir, 
                 headless=True,
+                **browser_launch_options(),
                 args=["--disable-blink-features=AutomationControlled"]
             )
             cookies = context.cookies()
@@ -272,220 +281,99 @@ def auto_signup_endpoint(profile_id: str):
     def run_auto_signup():
         try:
             from playwright.sync_api import sync_playwright
-            with sync_playwright() as p:
+            with pw_lock:
+                p = sync_playwright().start()
+            if True:
                 browser = p.chromium.connect_over_cdp(f"http://localhost:{port}")
                 context = browser.contexts[0]
                 
-                # 0. Cài extension Fingerprint Spoofer trước tiên
-                ext_url = "https://chromewebstore.google.com/detail/fingerprint-spoofer/facgnnelgcipeopfbjcajpaibhhdjgcp?hl=vi-"
-                ext_page = None
-                for page in context.pages:
-                    if "fingerprint-spoofer" in page.url:
-                        ext_page = page
+                # Tìm tab đang ở trang higgsfield, nếu không có thì mở mới
+                HIGGSFIELD_URL = "https://higgsfield.ai/ai/video?model=genjutsu"
+                page = None
+                for pg in context.pages:
+                    if "higgsfield.ai" in pg.url:
+                        page = pg
                         break
-                if not ext_page:
-                    ext_page = context.new_page()
-                    ext_page.goto(ext_url, timeout=30000)
+                if not page:
+                    page = context.new_page()
+                    page.goto(HIGGSFIELD_URL, timeout=30000)
+                    page.wait_for_load_state("domcontentloaded")
                 
-                ext_page.bring_to_front()
-                ext_page.wait_for_timeout(3000)
+                page.bring_to_front()
+                page.wait_for_timeout(2000)
                 
-                # Kiểm tra xem đã cài chưa (nút sẽ đổi thành "Đã cài đặt" / "Remove from Chrome")
-                already_installed = False
+                # B1: Click nút Login hoặc Sign up (ấn 1 nút nào được)
+                clicked_auth_btn = False
                 try:
-                    already_installed = ext_page.locator("text=Đã cài đặt").is_visible(timeout=1000) or \
-                                       ext_page.locator("text=Remove from Chrome").is_visible(timeout=1000)
+                    login_btn = page.locator("a:has-text('Login'), button:has-text('Login')")
+                    if login_btn.count() > 0:
+                        login_btn.first.click()
+                        clicked_auth_btn = True
+                        print("Clicked Login button")
                 except: pass
                 
-                if not already_installed:
-                    # Click "Thêm vào Chrome" / "Add to Chrome"
+                if not clicked_auth_btn:
                     try:
-                        ext_page.locator("text=Thêm vào Chrome").click(timeout=5000)
-                    except:
-                        try:
-                            ext_page.locator("text=Add to Chrome").click(timeout=5000)
-                        except:
-                            ext_page.evaluate("""() => {
-                                let all = document.querySelectorAll('button, span, a');
-                                for(let el of all){
-                                    let t = el.innerText.trim();
-                                    if(t === 'Thêm vào Chrome' || t === 'Add to Chrome') { el.click(); return; }
-                                }
-                            }""")
-                    
-                    # Đợi dialog "Add extension" xuất hiện (khoảng 2-4 giây Chrome mới bật lên)
-                    ext_page.wait_for_timeout(4000)
-                    
-                    # Dialog native Chrome -> ấn Enter để confirm "Add extension"
-                    ext_page.keyboard.press("Enter")
-                    
-                    # Đợi cài xong (nút đổi thành "Đã cài đặt" hoặc xuất hiện popup notification)
-                    ext_page.wait_for_timeout(4000)
+                        signup_btn = page.locator("a:has-text('Sign up'), button:has-text('Sign up')")
+                        if signup_btn.count() > 0:
+                            signup_btn.first.click()
+                            clicked_auth_btn = True
+                            print("Clicked Sign up button")
+                    except: pass
                 
-                # Đóng tab extension sau khi cài xong
-                try:
-                    ext_page.close()
-                except: pass
-                
-                # 1. Tinyhost
-                tinyhost_page = None
-                for page in context.pages:
-                    if "tinyhost.shop" in page.url:
-                        tinyhost_page = page
-                        break
-                if not tinyhost_page:
-                    tinyhost_page = context.new_page()
-                    tinyhost_page.goto("https://tinyhost.shop/", timeout=30000)
-                
-                tinyhost_page.bring_to_front()
-                tinyhost_page.wait_for_timeout(3000)
-                
-                email = tinyhost_page.evaluate(r"""() => {
-                    let m = document.body.innerText.match(/([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9_-]+)/i);
-                    return m ? m[1] : "";
-                }""")
-                if not email:
-                    print("Could not extract email from tinyhost!")
-                    browser.disconnect()
-                    return
-                
-                pwd = email.split('@')[0] + '@H1'
-                
-                # 2. BFL Sign up
-                bfl_page = None
-                for page in context.pages:
-                    if "auth.bfl.ai" in page.url or "dashboard.bfl.ai" in page.url:
-                        bfl_page = page
-                        break
-                if not bfl_page:
-                    bfl_page = context.new_page()
-                
-                bfl_page.bring_to_front()
-                bfl_page.goto("https://auth.bfl.ai/register?redirect_uri=https%3A%2F%2Fdashboard.bfl.ai%2F", timeout=30000)
-                
-                try:
-                    bfl_page.locator("text=Sign up").first.click(timeout=5000)
-                except: pass
-                
-                bfl_page.wait_for_selector('input[type="email"]')
-                bfl_page.locator('input[type="email"]').fill(email)
-                
-                pwds = bfl_page.locator('input[type="password"]')
-                pwds.nth(0).fill(pwd)
-                if pwds.count() > 1:
-                    pwds.nth(1).fill(pwd)
-                
-                try:
-                    bfl_page.locator("button:has-text('Sign up')").last.click(timeout=3000)
-                except:
-                    bfl_page.evaluate("""() => {
-                        let btns = document.querySelectorAll('button');
-                        for(let b of btns) {
-                            if(b.innerText.includes('Sign up')) { b.click(); }
+                if not clicked_auth_btn:
+                    # Fallback: tìm bằng JS
+                    page.evaluate("""() => {
+                        const els = document.querySelectorAll('a, button');
+                        for (let el of els) {
+                            const t = (el.innerText || '').trim().toLowerCase();
+                            if (t === 'login' || t === 'sign up' || t === 'signup') {
+                                el.click();
+                                return;
+                            }
                         }
                     }""")
+                    print("Clicked auth button via JS fallback")
                 
+                # B2: Đợi popup "Welcome to Higgsfield" xuất hiện
                 try:
-                    bfl_page.wait_for_selector("text=Check your email", timeout=30000)
-                except: pass
+                    page.wait_for_selector("text=Welcome to Higgsfield", timeout=15000)
+                    print("Welcome to Higgsfield popup appeared!")
+                except Exception as e:
+                    print(f"Popup chưa xuất hiện: {e}")
                 
-                # 3. Tinyhost confirm
-                tinyhost_page.bring_to_front()
-                view_clicked = False
-                for _ in range(30):
-                    try:
-                        view_btn = tinyhost_page.locator("text=View")
-                        if view_btn.count() > 0:
-                            view_btn.first.click()
-                            view_clicked = True
-                            break
-                    except: pass
-                    
-                    try:
-                        tinyhost_page.locator("text=Check Inbox").click(timeout=1000)
-                    except: pass
-                    tinyhost_page.wait_for_timeout(2000)
+                page.wait_for_timeout(1000)
                 
-                if not view_clicked:
-                    print("No email received.")
-                    browser.disconnect()
-                    return
-                
-                with context.expect_page() as new_page_info:
-                    tinyhost_page.locator("text=Confirm my email").click()
-                confirm_page = new_page_info.value
-                
-                confirm_page.wait_for_load_state()
-                
+                # B3: Click "Continue with Microsoft"
                 try:
-                    confirm_page.wait_for_selector('input[type="email"]', timeout=10000)
-                    confirm_page.locator('input[type="email"]').fill(email)
-                    confirm_page.locator('input[type="password"]').fill(pwd)
-                    try:
-                        confirm_page.locator("button:has-text('Sign in')").click(timeout=3000)
-                    except:
-                        confirm_page.evaluate("""() => {
-                            let btns = document.querySelectorAll('button');
-                            for(let b of btns) {
-                                if(b.innerText.includes('Sign in')) { b.click(); }
+                    ms_btn = page.locator("button:has-text('Continue with Microsoft')")
+                    if ms_btn.count() > 0:
+                        ms_btn.first.click()
+                        print("Clicked 'Continue with Microsoft'!")
+                    else:
+                        page.evaluate("""() => {
+                            const btns = document.querySelectorAll('button');
+                            for (let b of btns) {
+                                if ((b.innerText || '').includes('Continue with Microsoft')) {
+                                    b.click();
+                                    return;
+                                }
                             }
                         }""")
-                    
-                    confirm_page.wait_for_selector("text=Default", timeout=20000)
-                    print("Auto signup SUCCESS! Proceeding to setup dashboard...")
-                    
-                    # Click Playground
-                    try:
-                        confirm_page.locator("a[href$='/playground']").first.click(timeout=5000)
-                        confirm_page.wait_for_timeout(2000)
-                    except: pass
-                    
-                    # Click All parameters
-                    try:
-                        confirm_page.locator("button", has_text="All parameters").first.click(timeout=5000)
-                        confirm_page.wait_for_timeout(1000)
-                    except: pass
-                    
-                    # Set Aspect ratio to 9:16
-                    try:
-                        # Bấm nút Aspect ratio bên ngoài để mở panel
-                        confirm_page.locator("button:has-text('Aspect ratio')").click(timeout=3000)
-                        confirm_page.wait_for_timeout(500)
-                        # Bấm vào combobox chọn auto
-                        confirm_page.locator("button[role='combobox']").first.click(timeout=3000)
-                        confirm_page.wait_for_timeout(500)
-                        # Chọn 9:16
-                        confirm_page.locator("text=9:16").click(timeout=3000)
-                    except: pass
-                    
-                    # Set Duration to 20
-                    try:
-                        # Bấm nút Duration bên ngoài để mở panel
-                        confirm_page.locator("button:has-text('Duration')").click(timeout=3000)
-                        confirm_page.wait_for_timeout(500)
-                        confirm_page.locator('input[type="number"]').fill("20")
-                        confirm_page.locator('input[type="number"]').press("Enter")
-                    except: pass
-                    
-                    print("Dashboard setup complete!")
-                    
+                        print("Clicked Microsoft via JS fallback")
                 except Exception as e:
-                    print(f"Login confirm/setup err: {e}")
+                    print(f"Lỗi click Microsoft: {e}")
                 
-                # Close tinyhost
-                try:
-                    tinyhost_page.close()
-                except: pass
-                
-                # Focus dashboard
-                confirm_page.bring_to_front()
+                # Đợi chuyển sang trang login.microsoftonline.com
+                page.wait_for_timeout(3000)
+                print(f"Current URL after click: {page.url}")
                 
                 browser.disconnect()
         except Exception as e:
             print(f"Auto signup FATAL err: {e}")
 
     threading.Thread(target=run_auto_signup, daemon=True).start()
-    return {"ok": True, "message": "Bắt đầu Auto Đăng ký..."}
+    return {"ok": True, "message": "Bắt đầu Auto Login Higgsfield (Microsoft)..."}
 
 # ===== VIDEO CREATION API =====
 import threading
@@ -527,6 +415,8 @@ def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False
         "--lang=vi-VN",
         "--accept-lang=vi-VN,vi",
     ]
+    if os.environ.get("HIGGSFIELD_BROWSER_ENGINE") == "cloakbrowser":
+        args.append("--fingerprint=" + str(profile.fingerprint.get("random_id", 123456)))
     ignore_args = []
     if ext_path:
         args.append(f"--load-extension={ext_path}")
@@ -542,7 +432,7 @@ def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False
     context = p.chromium.launch_persistent_context(
         profile.user_data_dir,
         headless=False,
-        channel="chrome",
+        **browser_launch_options(),
         ignore_default_args=ignore_args,
         args=args,
         accept_downloads=True,
@@ -868,7 +758,7 @@ def _send_video_to_telegram(video_path, token, chat_id):
         print(f"Lỗi gửi Telegram: {e}")
 
 def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save_path, is_headless=False, enable_ext=False, enable_ext_btn2=False, tg_enabled=False, tg_token="", tg_chat_id="", video_model="Dreamina Seedance 2.0 Fast", video_duration="10s", video_ratio="9:16"):
-    """Background thread: mở dola.com, đăng nhập Google, upload ảnh, nhập prompt và tạo video."""
+    """Background thread: mở higgsfield.ai, đăng nhập Google, upload ảnh, nhập prompt và tạo video."""
     from playwright.sync_api import sync_playwright
     import urllib.parse
     import uuid
@@ -952,47 +842,46 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
         except: pass
 
     try:
-        with sync_playwright() as p:
+        with pw_lock:
+            p = sync_playwright().start()
+        if True:
             context = _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=enable_ext_btn2, is_headless=is_headless)
             
             # Tái sử dụng tab đầu tiên nếu có để tránh mở nhiều tab
-            if context.pages:
-                page = context.pages[0]
-            else:
-                page = context.new_page()
+            page = None
+            for _ in range(5):
+                if context.pages:
+                    page = context.pages[0]
+                    break
+                else:
+                    try:
+                        page = context.new_page()
+                        break
+                    except Exception as e:
+                        print(f"Lỗi lấy page, thử lại sau 1s: {e}")
+                        time.sleep(1)
+            
+            if not page:
+                raise Exception("Không thể khởi tạo tab Chrome. Vui lòng tắt thủ công Chrome của profile này và thử lại!")
                 
             # Đóng các tab dư thừa
             for i in range(1, len(context.pages)):
                 try: context.pages[i].close()
                 except: pass
 
-            # Xóa triệt để dấu vết của phiên làm việc cũ với Dola (Giữ nguyên Google)
-            video_tasks[task_id] = {"status": "running", "message": "Đang giả lập máy tính hoàn toàn mới (Clear Cookies)..."}
-            try:
-                # 1. Xóa sạch mọi cookie ngoại trừ google.com
-                cookies = context.cookies()
-                filtered_cookies = [c for c in cookies if "google.com" in c["domain"] or "youtube.com" in c["domain"]]
-                context.clear_cookies()
-                if filtered_cookies:
-                    context.add_cookies(filtered_cookies)
-                
-                # 2. Xóa sạch Local Storage & Session Storage của Dola
-                try:
-                    page.goto("https://www.dola.com", wait_until="commit", timeout=15000)
-                    page.evaluate("() => { try { localStorage.clear(); sessionStorage.clear(); } catch(e) {} }")
-                except: pass
-            except Exception as e:
-                print(f"Lỗi khi xóa dấu vết Dola: {e}")
+            # (ĐÃ BỎ CẮT COOKIE HIGGSFIELD ĐỂ GIỮ TRẠNG THÁI LOGIN TỪ PROFILE)
+            # video_tasks[task_id] = {"status": "running", "message": "Đang giả lập máy tính hoàn toàn mới (Clear Cookies)..."}
+            # ... đoạn code xóa cookie đã bị vô hiệu hóa ...
 
-            # ── BƯỚC 1: Mở dola.com/chat ──────────────────────────────────
-            video_tasks[task_id] = {"status": "running", "message": "Đang mở dola.com/chat..."}
-            page.goto("https://www.dola.com/chat", wait_until="domcontentloaded", timeout=30000)
+            # ── BƯỚC 1: Mở higgsfield.ai/chat ──────────────────────────────────
+            video_tasks[task_id] = {"status": "running", "message": "Đang mở higgsfield.ai/ai/video..."}
+            page.goto("https://higgsfield.ai/ai/video?model=genjutsu", wait_until="domcontentloaded", timeout=30000)
             page.wait_for_timeout(2000)
             
             # Xử lý trang lỗi "This page is temporarily unavailable"
             try:
                 if page.locator("text='This page is temporarily unavailable'").is_visible(timeout=3000):
-                    video_tasks[task_id] = {"status": "running", "message": "Dola bị lỗi tạm thời, đang ấn Refresh..."}
+                    video_tasks[task_id] = {"status": "running", "message": "higgsfield bị lỗi tạm thời, đang ấn Refresh..."}
                     page.locator("button:has-text('Refresh')").click(timeout=3000)
                     page.wait_for_timeout(5000)
             except:
@@ -1029,8 +918,10 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
                 # ── BƯỚC 2: Kiểm tra đã login chưa (Kiểm tra Avatar -> Settings) ──
                 is_logged_in = False
                 try:
-                    # Tìm nút Avatar (Mở rộng selector để bao quát cả giao diện Dola mới)
-                    avatar_loc = page.locator('button[aria-haspopup="menu"], button:has(.rounded-full), div[role="button"]:has(.rounded-full), button:has(img.rounded-full)').filter(has_not_text=re.compile(r"^(Đăng nhập|Log In|Sign In)$", re.IGNORECASE)).last
+                    import re
+                    # Tìm nút Avatar (Mở rộng selector để bao quát cả giao diện higgsfield mới)
+                    # Ưu tiên tìm theo aria-label="Account menu" là chuẩn nhất cho bản mới
+                    avatar_loc = page.locator('button[aria-label="Account menu"], button[aria-haspopup="menu"], button:has(.rounded-full), div[role="button"]:has(.rounded-full)').filter(has_not_text=re.compile(r"^(Đăng nhập|Log In|Sign In)$", re.IGNORECASE)).last
                     
                     if avatar_loc.is_visible(timeout=2000):
                         avatar_loc.click(timeout=3000)
@@ -1044,6 +935,7 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
                                 b.innerText.trim() === 'Cài đặt' || 
                                 b.innerText.trim() === 'Đăng xuất' || 
                                 b.innerText.trim() === 'Log out' ||
+                                b.innerText.trim() === 'Sign Out' ||
                                 b.innerText.trim() === 'Tài khoản' ||
                                 b.innerText.trim() === 'Account'
                             ));
@@ -1053,7 +945,8 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
                             is_logged_in = True
                             page.mouse.click(0, 0) # Click ra ngoài để đóng menu
                             page.wait_for_timeout(500)
-                except:
+                except Exception as inner_e:
+                    print(f"Lỗi soi avatar: {inner_e}")
                     pass
                 
                 already_logged_in = is_logged_in
@@ -1221,7 +1114,7 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
                     
                     login_success = False
                     for _ in range(15): # Lặp tối đa ~30s
-                        # 0. Quét xem có bị báo lỗi Limit từ server Dola không
+                        # 0. Quét xem có bị báo lỗi Limit từ server higgsfield không
                         try:
                             limit_msg = page.evaluate("""() => {
                                 const texts = ['Maximum number of attempts reached', "Couldn't load", 'experiencing high demand'];
@@ -1281,7 +1174,7 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
 
             # ĐỀ PHÒNG WEB TỰ VĂNG (LOGOUT)
             if "from_logout=1" in page.url or page.evaluate("() => Array.from(document.querySelectorAll('button')).some(b => b.innerText && b.innerText.includes('Continue with Google'))"):
-                raise Exception("Tài khoản Dola bị văng (Logout) giữa chừng. Vui lòng tắt và CHẠY LẠI profile này!")
+                raise Exception("Tài khoản higgsfield bị văng (Logout) giữa chừng. Vui lòng tắt và CHẠY LẠI profile này!")
 
             # ── BƯỚC 7: Ấn nút "Tạo video" trong thanh công cụ ──────────────
             video_tasks[task_id] = {"status": "running", "message": "Đang ấn nút 'Tạo video'..."}
@@ -1340,7 +1233,7 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
 
             # ĐỀ PHÒNG WEB TỰ VĂNG (LOGOUT)
             if "from_logout=1" in page.url or page.evaluate("() => Array.from(document.querySelectorAll('button')).some(b => b.innerText && b.innerText.includes('Continue with Google'))"):
-                raise Exception("dola_logout")
+                raise Exception("higgsfield_logout")
 
             # ── BƯỚC 8: Upload ảnh (ấn nút "+") ─────────────────────────────
             images_to_upload = []
@@ -1371,7 +1264,7 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
 
             # ĐỀ PHÒNG WEB TỰ VĂNG (LOGOUT)
             if "from_logout=1" in page.url or page.evaluate("() => Array.from(document.querySelectorAll('button')).some(b => b.innerText && b.innerText.includes('Continue with Google'))"):
-                raise Exception("Tài khoản Dola bị văng (Logout) giữa chừng. Vui lòng tắt và CHẠY LẠI profile này!")
+                raise Exception("Tài khoản higgsfield bị văng (Logout) giữa chừng. Vui lòng tắt và CHẠY LẠI profile này!")
                 
             check_age_popup(page)
 
@@ -1435,7 +1328,7 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
                         except:
                             pass
 
-            video_tasks[task_id] = {"status": "running", "message": "✅ Đã gửi yêu cầu! Đang chờ dola.com tạo video..."}
+            video_tasks[task_id] = {"status": "running", "message": "✅ Đã gửi yêu cầu! Đang chờ higgsfield.ai tạo video..."}
 
             # ── BƯỚC 11: Đợi video xuất hiện (tối đa 10 phút) ───────────────
             video_url = None
@@ -1448,7 +1341,7 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
                 
                 # CHÚ Ý: Đề phòng web tự văng acc giữa chừng (như lúc đang chờ video)
                 if "from_logout=1" in page.url:
-                    raise Exception("dola_logout")
+                    raise Exception("higgsfield_logout")
                     
                 check_age_popup(page)
                     
@@ -1477,13 +1370,13 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
                         return btns.some(b => b.innerText && b.innerText.includes('Continue with Google'));
                     }""")
                     if has_login_modal:
-                        raise Exception("dola_logout")
+                        raise Exception("higgsfield_logout")
                 except Exception as eval_e:
-                    if "dola_logout" in str(eval_e):
+                    if "higgsfield_logout" in str(eval_e):
                         raise
                 
                 try:
-                    # Cuộn xuống cuối và Hover để ép Dola tải thẻ video (Lazy load)
+                    # Cuộn xuống cuối và Hover để ép higgsfield tải thẻ video (Lazy load)
                     page.evaluate("""() => {
                         // 1. Cuộn màn hình xuống cuối cùng
                         const scrollers = document.querySelectorAll('.v_list_row, .container-enLQFx, .block-video-MzfWVN, [data-message-id]');
@@ -1527,7 +1420,7 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
 
                 mins = i // 60
                 secs = i % 60
-                video_tasks[task_id]["message"] = f"Đang chờ dola.com tạo video... {mins:02d}:{secs:02d}"
+                video_tasks[task_id]["message"] = f"Đang chờ higgsfield.ai tạo video... {mins:02d}:{secs:02d}"
 
             if video_urls:
                 out_dir = Path(save_path)
@@ -1562,7 +1455,7 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
                                 ua = page.evaluate("navigator.userAgent")
                                 resp = context.request.get(video_url, headers={
                                     "User-Agent": ua,
-                                    "Referer": "https://dola.com/",
+                                    "Referer": "https://higgsfield.ai/",
                                     "Accept": "*/*"
                                 }, timeout=60000)
                                 if resp.ok:
@@ -1624,7 +1517,7 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
                     video_tasks[task_id]["message"] = "Đã hủy tiến trình!"
                     # Không set status = done ở đây, để UI tiếp tục cập nhật tiến trình xóa acc
                 else:
-                    video_tasks[task_id] = {"status": "error", "message": "Timeout 10 phút: Video không xuất hiện trên dola.com."}
+                    video_tasks[task_id] = {"status": "error", "message": "Timeout 10 phút: Video không xuất hiện trên higgsfield.ai."}
 
             # ── BƯỚC 12: Xóa tài khoản (Delete Account) ─────────
             video_tasks[task_id]["message"] = video_tasks[task_id].get("message", "") + "\nĐang hủy hoạt động và Xóa tài khoản..."
@@ -1645,7 +1538,7 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
                     page.reload(wait_until="domcontentloaded")
                     page.wait_for_timeout(2000)
                     
-                # 1. Bấm Avatar (Sử dụng locator chính xác theo DOM của Dola)
+                # 1. Bấm Avatar (Sử dụng locator chính xác theo DOM của higgsfield)
                 page.locator("button[aria-haspopup='menu']").filter(has=page.locator("img.rounded-full")).click(timeout=8000)
                 
                 def click_by_coords(texts, selector='button, p, div, span, a', retries=10):
@@ -1895,10 +1788,10 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
         try: context.close()
         except: pass
         
-        if "dola_logout" in str(e):
+        if "higgsfield_logout" in str(e):
             print(f"--- Bị văng! Báo cho frontend tự động thử lại task {task_id}...")
             video_tasks[task_id] = {
-                "status": "dola_logout", 
+                "status": "higgsfield_logout", 
                 "message": "Bị văng khỏi tài khoản, đang tự động thử lại bằng vân tay (Fingerprint) Chrome hoàn toàn mới..."
             }
             return
@@ -1907,7 +1800,7 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
     finally:
         # Tự động xóa ảnh upload sau khi task xong để tiết kiệm dung lượng
         # Nếu đang báo frontend retry thì KHÔNG xóa ảnh
-        if video_tasks.get(task_id, {}).get("status") != "dola_logout":
+        if video_tasks.get(task_id, {}).get("status") != "higgsfield_logout":
             for img_path in [img1_path, img2_path]:
                 if img_path:
                     try:
@@ -2076,7 +1969,9 @@ def run_delete_account_automation(task_id: str, profile_id: str):
         
     video_tasks[task_id] = {"status": "running", "message": "Đang mở trình duyệt..."}
     try:
-        with sync_playwright() as p:
+        with pw_lock:
+            p = sync_playwright().start()
+        if True:
             browser = None
             context = None
             
@@ -2094,10 +1989,10 @@ def run_delete_account_automation(task_id: str, profile_id: str):
             if not context:
                 context = _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False, is_headless=False)
             
-            # Tìm tab dola.com đã mở sẵn, nếu không có thì lấy tab đầu tiên
+            # Tìm tab higgsfield.ai đã mở sẵn, nếu không có thì lấy tab đầu tiên
             page = None
             for pg in context.pages:
-                if "dola.com" in pg.url:
+                if "higgsfield.ai" in pg.url:
                     page = pg
                     break
                     
@@ -2116,13 +2011,13 @@ def run_delete_account_automation(task_id: str, profile_id: str):
             try: page.bring_to_front()
             except: pass
                 
-            page.goto("https://dola.com/chat", timeout=60000)
+            page.goto("https://higgsfield.ai/chat", timeout=60000)
             page.wait_for_timeout(3000)
             
             # Kiểm tra đăng nhập
             avatar_btn = page.locator("button[aria-haspopup='menu']").filter(has=page.locator("img.rounded-full"))
             if not avatar_btn.count():
-                video_tasks[task_id] = {"status": "error", "message": "Bạn chưa đăng nhập Dola trên Profile này! Vui lòng Mở Chrome và đăng nhập trước."}
+                video_tasks[task_id] = {"status": "error", "message": "Bạn chưa đăng nhập higgsfield trên Profile này! Vui lòng Mở Chrome và đăng nhập trước."}
                 try: context.close()
                 except: pass
                 return
@@ -2384,6 +2279,311 @@ def run_delete_account_automation(task_id: str, profile_id: str):
         video_tasks[task_id]["status"] = "error"
         video_tasks[task_id]["message"] = f"Lỗi khi xóa account: {e}"
 
+
+from app.models import CheckVideoReq
+def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool = False):
+    from playwright.sync_api import sync_playwright
+    import time, os
+    from pathlib import Path
+    
+    video_tasks[task_id] = {"status": "running", "message": "Đang mở trình duyệt để kiểm tra..."}
+    profile = manager.get_profile(profile_id)
+    if not profile:
+        video_tasks[task_id] = {"status": "error", "message": "Profile not found"}
+        return
+        
+    try:
+        with pw_lock:
+            p = sync_playwright().start()
+        if True:
+            args = [
+                "--disable-blink-features=AutomationControlled",
+                "--no-first-run",
+                "--no-default-browser-check",
+                "--restore-last-session",
+                "--lang=vi-VN",
+                "--accept-lang=vi-VN,vi",
+            ]
+            if os.environ.get("HIGGSFIELD_BROWSER_ENGINE") == "cloakbrowser":
+                args.append("--fingerprint=" + str(profile.fingerprint.get("random_id", 123456)))
+            
+            ignore_args = []
+            
+            if is_headless:
+                args.append("--window-position=-32000,-32000")
+                args.append("--window-size=1366,768")
+                
+            try:
+                from app.browser_settings import browser_launch_options
+                b_opts = browser_launch_options()
+            except:
+                b_opts = {}
+
+            context = p.chromium.launch_persistent_context(
+                profile.user_data_dir,
+                headless=False,
+                channel="chrome" if not b_opts else None,
+                ignore_default_args=ignore_args,
+                args=args,
+                accept_downloads=True,
+                downloads_path=str(Path.home() / "Downloads"),
+                **b_opts
+            )
+            
+            # Tìm tab higgsfield.ai đã mở sẵn, nếu không có thì lấy tab đầu tiên
+            page = None
+            for pg in context.pages:
+                if "higgsfield.ai" in pg.url:
+                    page = pg
+                    break
+                    
+            if not page:
+                if context.pages:
+                    page = context.pages[0]
+                else:
+                    page = context.new_page()
+                    
+            # Đóng tất cả các tab khác (bao gồm cả about:blank hoặc tab khôi phục)
+            for pg in context.pages:
+                if pg != page:
+                    try: pg.close()
+                    except: pass
+            
+            try: page.bring_to_front()
+            except: pass
+            
+            video_tasks[task_id]["message"] = "Đang vào trang Genjutsu..."
+            page.goto("https://higgsfield.ai/ai/video?model=genjutsu", timeout=60000)
+            
+            # Wait a bit
+            page.wait_for_timeout(5000)
+            
+            video_tasks[task_id]["message"] = "Đang chuyển sang tab History..."
+            try:
+                # History is a span with class q-tabs-tab-label
+                # Use a specific JS selector to click it reliably
+                page.evaluate("""() => {
+                    let tabs = document.querySelectorAll('span.q-tabs-tab-label');
+                    for(let t of tabs) {
+                        if(t.innerText.includes('History')) {
+                            t.click();
+                            return;
+                        }
+                    }
+                }""")
+                page.wait_for_timeout(3000)
+            except Exception as e:
+                print("Loi click History:", e)
+                
+            # XEM RA VIDEO CHUA
+            video_tasks[task_id]["message"] = "Đang kiểm tra trạng thái video..."
+            
+            generating_start_time = None  # Thời điểm bắt đầu Generating
+            generating_countdown_done = False  # Đã qua 15 phút chưa
+            buffer_countdown_done = False  # Đã qua 5 phút bù chưa
+            
+            while True:
+                # Kiểm tra cờ dừng
+                if video_tasks.get(task_id, {}).get("force_stop"):
+                    video_tasks[task_id]["status"] = "error"
+                    video_tasks[task_id]["message"] = "🛑 Đã dừng theo yêu cầu!"
+                    context.close()
+                    with pw_lock:
+                        p.stop()
+                    return
+                # Lấy trạng thái hiện tại
+                status_info = page.evaluate("""() => {
+                    // Kiểm tra Processing
+                    let spans = document.querySelectorAll('span');
+                    for(let s of spans) {
+                        if(s.innerText && s.innerText.trim() === 'Processing') return 'processing';
+                    }
+                    // Kiểm tra Generating
+                    for(let s of spans) {
+                        if(s.innerText && s.innerText.trim() === 'Generating') return 'generating';
+                    }
+                    // Kiểm tra video đã xong chưa (trong assets-grid)
+                    let grid = document.getElementById('assets-grid');
+                    if(grid) {
+                        let completed = grid.querySelector('[data-job-status="completed"] video');
+                        if(completed && completed.src && completed.src.includes('http')) return 'done';
+                    }
+                    return 'unknown';
+                }""")
+                
+                now = time.time()
+                
+                if status_info == 'processing':
+                    # Trạng thái Processing → chờ
+                    generating_start_time = None  # Reset nếu quay lại processing
+                    generating_countdown_done = False
+                    buffer_countdown_done = False
+                    video_tasks[task_id]["message"] = "Đang chờ video tạo xong (Processing)..."
+                    page.wait_for_timeout(3000)
+                    
+                elif status_info == 'generating':
+                    # Trạng thái Generating → bắt đầu đếm ngược
+                    if generating_start_time is None:
+                        generating_start_time = now
+                        generating_countdown_done = False
+                        buffer_countdown_done = False
+                    
+                    elapsed = now - generating_start_time
+                    
+                    if not generating_countdown_done:
+                        # Đếm ngược 15 phút (900 giây)
+                        remaining = max(0, 900 - elapsed)
+                        mins = int(remaining // 60)
+                        secs = int(remaining % 60)
+                        video_tasks[task_id]["message"] = f"⏳ Sắp ra rồi! Còn khoảng {mins} phút {secs} giây nữa..."
+                        if elapsed >= 900:
+                            generating_countdown_done = True
+                    elif not buffer_countdown_done:
+                        # Hết 15 phút, đếm thêm 5 phút bù
+                        extra_elapsed = elapsed - 900
+                        remaining = max(0, 300 - extra_elapsed)
+                        mins = int(remaining // 60)
+                        secs = int(remaining % 60)
+                        video_tasks[task_id]["message"] = f"⏳ Thêm chút nữa thôi! Bù giờ còn {mins} phút {secs} giây..."
+                        if extra_elapsed >= 300:
+                            buffer_countdown_done = True
+                    else:
+                        # Đã qua 20 phút vẫn chưa ra → vẫn chờ
+                        video_tasks[task_id]["message"] = "⏳ Đang chờ video... (có thể mất thêm chút thời gian)"
+                    
+                    page.wait_for_timeout(3000)
+                    
+                elif status_info == 'done':
+                    # Video đã xong!
+                    video_tasks[task_id]["message"] = "✅ Video đã sẵn sàng, đang tải xuống..."
+                    break
+                else:
+                    # Không rõ trạng thái → kiểm tra thêm xem có video chưa
+                    has_video = page.evaluate("""() => {
+                        let grid = document.getElementById('assets-grid');
+                        if(grid) {
+                            let completed = grid.querySelector('[data-job-status="completed"] video');
+                            if(completed && completed.src && completed.src.includes('http')) return true;
+                        }
+                        return false;
+                    }""")
+                    if has_video:
+                        video_tasks[task_id]["message"] = "✅ Video đã sẵn sàng, đang tải xuống..."
+                        break
+                    else:
+                        video_tasks[task_id]["message"] = "Đang chờ video tạo xong..."
+                        page.wait_for_timeout(3000)
+                    
+            page.wait_for_timeout(2000)
+            
+            # Get Video URLs - CHỈ LẤY VIDEO TRONG assets-grid (video kết quả thật)
+            video_urls = page.evaluate("""() => {
+                let urls = [];
+                // Ưu tiên lấy từ #assets-grid với data-job-status="completed"
+                let grid = document.getElementById('assets-grid');
+                if(grid) {
+                    let cells = grid.querySelectorAll('[data-job-status="completed"]');
+                    for(let cell of cells) {
+                        let v = cell.querySelector('video');
+                        if(v && v.src && v.src.includes('http') && !v.src.includes('blob:')) {
+                            urls.push(v.src);
+                        } else if(v && v.src && v.src.includes('blob:')) {
+                            urls.push(v.src);
+                        }
+                    }
+                }
+                // Nếu không tìm được trong grid, fallback lấy video từ history có URL cloudfront/cdn
+                if(urls.length === 0) {
+                    document.querySelectorAll('video').forEach(v => {
+                        if(v.src && v.src.includes('cloudfront.net')) urls.push(v.src);
+                        if(v.src && v.src.includes('higgsfield') && v.src.includes('.mp4')) urls.push(v.src);
+                    });
+                }
+                return [...new Set(urls)];
+            }""")
+            
+            if video_urls:
+                import urllib.parse
+                out_dir = Path.home() / "Downloads"
+                all_result_urls = []
+                try:
+                    for v_idx, v_url in enumerate(video_urls[:1]): # Get latest 1
+                        video_url = v_url
+                        out_file = out_dir / (f"{task_id}.mp4")
+                        if video_url.startswith("blob:"):
+                            b64_data = page.evaluate("""async (url) => {
+                                const response = await fetch(url);
+                                const blob = await response.blob();
+                                return new Promise((resolve, reject) => {
+                                    const reader = new FileReader();
+                                    reader.onloadend = () => resolve(reader.result);
+                                    reader.onerror = reject;
+                                    reader.readAsDataURL(blob);
+                                });
+                            }""", video_url)
+                            import base64
+                            header, encoded = b64_data.split(",", 1)
+                            with open(out_file, "wb") as f:
+                                f.write(base64.b64decode(encoded))
+                        else:
+                            ua = page.evaluate("navigator.userAgent")
+                            resp = context.request.get(video_url, headers={
+                                "User-Agent": ua,
+                                "Referer": "https://higgsfield.ai/",
+                                "Accept": "*/*"
+                            })
+                            with open(out_file, "wb") as f:
+                                f.write(resp.body())
+                                
+                        all_urls = [f"/api/video/download/{task_id}?path={urllib.parse.quote(str(out_file))}"]
+                        all_result_urls.extend(all_urls)
+                        
+                    video_tasks[task_id]["result_urls"] = all_result_urls
+                    video_tasks[task_id]["status"] = "success"
+                    video_tasks[task_id]["message"] = "Đã tải xong!"
+                except Exception as e:
+                    video_tasks[task_id] = {"status": "error", "message": f"Lỗi khi tải video: {e}"}
+            else:
+                video_tasks[task_id] = {"status": "error", "message": "Không tìm thấy video nào!"}
+                
+            page.wait_for_timeout(2000)
+            context.close()
+            with pw_lock:
+                p.stop()
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        video_tasks[task_id] = {"status": "error", "message": str(e)}
+
+# Lưu các task_id đang check video để có thể dừng hàng loạt
+check_video_task_ids = set()
+
+@app.post("/api/video/check")
+def api_check_video(req: CheckVideoReq):
+    import uuid
+    import threading
+    task_id = str(uuid.uuid4())
+    video_tasks[task_id] = {"status": "pending", "message": "Chuẩn bị kiểm tra video..."}
+    check_video_task_ids.add(task_id)
+    def _run_and_cleanup(*args):
+        try:
+            run_check_video_automation(*args)
+        finally:
+            check_video_task_ids.discard(task_id)
+    t = threading.Thread(target=_run_and_cleanup, args=(task_id, req.profile_id, req.is_headless), daemon=True)
+    t.start()
+    return {"ok": True, "task_id": task_id}
+
+@app.post("/api/video/check/stop_all")
+def api_stop_all_check_video():
+    """Dừng tất cả tiến trình check video đang chạy"""
+    stopped = []
+    for tid in list(check_video_task_ids):
+        if tid in video_tasks:
+            video_tasks[tid]["force_stop"] = True
+            stopped.append(tid)
+    return {"ok": True, "stopped": stopped}
+
 @app.post("/api/video/delete_account_direct")
 def api_delete_account_direct(req: DeleteAccountDirectReq):
     import uuid
@@ -2476,3 +2676,4 @@ if __name__ == "__main__":
 -> http://localhost:5333
     """)
     uvicorn.run("main:app", host="0.0.0.0", port=5333, reload=False)
+
