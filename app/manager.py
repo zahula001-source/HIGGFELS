@@ -1,3 +1,4 @@
+from . import browser_settings
 import json
 import os
 import random
@@ -21,6 +22,21 @@ class ProfileManager:
         if not PROFILES_FILE.exists():
             PROFILES_FILE.write_text("[]", encoding="utf-8")
         self.profiles: List[Profile] = self._load()
+        self._cleanup_orphaned_folders()
+
+    def _cleanup_orphaned_folders(self):
+        import shutil
+        active_ids = {p.id for p in self.profiles}
+        if BROWSERS_DIR.exists():
+            for d in BROWSERS_DIR.iterdir():
+                if d.is_dir() and d.name.startswith("profile_"):
+                    # Extract ID from 'profile_xxx'
+                    pid = d.name.replace("profile_", "")
+                    if pid not in active_ids:
+                        try:
+                            shutil.rmtree(d)
+                        except:
+                            pass
 
     def _load(self) -> List[Profile]:
         try:

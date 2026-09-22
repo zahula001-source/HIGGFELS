@@ -959,30 +959,33 @@ def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False
     ]
     if os.environ.get("HIGGSFIELD_BROWSER_ENGINE") == "cloakbrowser":
         args.append("--fingerprint=" + str(profile.fingerprint.get("random_id", 123456)))
+    # Bỏ tải extension theo yêu cầu
     ignore_args = []
-    if ext_path:
-        args.append(f"--load-extension={ext_path}")
-        ignore_args = ["--disable-extensions"]
-    else:
-        args.append("--disable-extensions")
+    args.append("--disable-extensions")
     if is_headless:
         # Tắt chế độ headless thật để tránh bị website phát hiện/cắt xén DOM
         # Thay vào đó, đẩy cửa sổ ra tít ngoài màn hình để giấu giao diện đi (vẫn tiết kiệm tài nguyên mà an toàn 100%)
-        args.append("--window-position=-32000,-32000")
-        args.append("--window-size=1366,768")
+        # Đã comment lại theo yêu cầu người dùng để luôn hiển thị Chrome
+        # args.append("--window-position=-32000,-32000")
+        # args.append("--window-size=1366,768")
+        pass
         
     engine = os.environ.get("HIGGSFIELD_BROWSER_ENGINE", "chrome").lower()
     if engine == "cloakbrowser":
         from cloakbrowser import launch_persistent_context
-        # CloakBrowser package doesn't use p.chromium, it's a standalone function
-        context = launch_persistent_context(
-            user_data_dir=profile.user_data_dir,
-            headless=False,
-            ignore_default_args=ignore_args,
-            args=args,
-            accept_downloads=True,
-            downloads_path=str(Path.home() / "Downloads"),
-        )
+        # CloakBrowser tự động xử lý extension_paths và ignore_default_args
+        cloak_args = [a for a in args if not a.startswith("--load-extension") and a != "--disable-extensions"]
+        cloak_kwargs = {
+            "user_data_dir": profile.user_data_dir,
+            "headless": False,
+            "args": cloak_args,
+            "accept_downloads": True,
+            "downloads_path": str(Path.home() / "Downloads")
+        }
+        # if ext_path:
+        #     cloak_kwargs["extension_paths"] = [ext_path]
+            
+        context = launch_persistent_context(**cloak_kwargs)
     else:
         context = p.chromium.launch_persistent_context(
             profile.user_data_dir,
@@ -997,58 +1000,6 @@ def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False
     # Chrome tự xử lý download 100% native - Không chặn, không xử lý bằng Playwright để tránh crash/lỗi .crdownload
 
 
-    try:
-        import random
-        ext_page = context.new_page()
-        ext_page.goto("chrome-extension://facgnnelgcipeopfbjcajpaibhhdjgcp/popup.html", wait_until="load", timeout=5000)
-        try:
-            ext_page.wait_for_function("document.querySelector('#spoofCanvas') && document.querySelector('#spoofCanvas').textContent !== ''", timeout=3000)
-        except:
-            pass
-            
-        # Lần 1: OFF, OFF (0)
-        # Lần 2: ON, OFF (1)
-        # Lần 3: OFF, ON (2)
-        # Lần 4: ON, ON (3)
-        state = (attempt - 1) % 4
-        btn1_on = (state == 1 or state == 3)
-        btn2_on = (state == 2 or state == 3)
-        
-        script = f"""() => {{
-            const navBtn = document.querySelector('#spoofNav');
-            const canBtn = document.querySelector('#spoofCanvas');
-            
-            if ({'true' if btn1_on else 'false'}) {{
-                if (navBtn && !navBtn.classList.contains('btn-danger')) navBtn.click();
-            }} else {{
-                if (navBtn && navBtn.classList.contains('btn-danger')) navBtn.click();
-            }}
-            
-            if ({'true' if btn2_on else 'false'}) {{
-                if (canBtn && !canBtn.classList.contains('btn-danger')) canBtn.click();
-            }} else {{
-                if (canBtn && canBtn.classList.contains('btn-danger')) canBtn.click();
-            }}
-        }}"""
-        
-        try:
-            ext_page.evaluate(script)
-        except: pass
-                
-        ext_page.close()
-    except:
-        pass
-    
-    # Đóng tab trống của extension hoặc about:blank
-    try:
-        for pg in context.pages:
-            try:
-                if pg.url in ('about:blank', '') or pg.url.startswith('chrome-extension://'):
-                    pg.close()
-            except:
-                pass
-    except:
-        pass
     return context
 
 def _activate_canvas_spoof(context, ext_path):
@@ -1406,1023 +1357,1035 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                 p = sync_playwright().start()
             context = _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=enable_ext_btn2, is_headless=is_headless)
             
-            # Tái sử dụng tab đầu tiên nếu có để tránh mở nhiều tab
-            page = None
-            for _ in range(5):
-                if context.pages:
-                    page = context.pages[0]
+        # Tái sử dụng tab đầu tiên nếu có để tránh mở nhiều tab
+        page = None
+        for _ in range(5):
+            if context.pages:
+                page = context.pages[0]
+                break
+            else:
+                try:
+                    page = context.new_page()
                     break
-                else:
-                    try:
-                        page = context.new_page()
-                        break
-                    except Exception as e:
-                        print(f"Lỗi lấy page, thử lại sau 1s: {e}")
-                        time.sleep(1)
+                except Exception as e:
+                    print(f"Lỗi lấy page, thử lại sau 1s: {e}")
+                    time.sleep(1)
+        
+        if not page:
+            raise Exception("Không thể khởi tạo tab Chrome. Vui lòng tắt thủ công Chrome của profile này và thử lại!")
             
-            if not page:
-                raise Exception("Không thể khởi tạo tab Chrome. Vui lòng tắt thủ công Chrome của profile này và thử lại!")
-                
-            # Đóng các tab dư thừa
-            for i in range(1, len(context.pages)):
-                try: context.pages[i].close()
-                except: pass
+        # Đóng các tab dư thừa
+        for i in range(1, len(context.pages)):
+            try: context.pages[i].close()
+            except: pass
 
-            # (ĐÃ BỎ CẮT COOKIE HIGGSFIELD ĐỂ GIỮ TRẠNG THÁI LOGIN TỪ PROFILE)
-            # video_tasks[task_id] = {"status": "running", "message": "Đang giả lập máy tính hoàn toàn mới (Clear Cookies)..."}
-            # ... đoạn code xóa cookie đã bị vô hiệu hóa ...
+        # (ĐÃ BỎ CẮT COOKIE HIGGSFIELD ĐỂ GIỮ TRẠNG THÁI LOGIN TỪ PROFILE)
+        # video_tasks[task_id] = {"status": "running", "message": "Đang giả lập máy tính hoàn toàn mới (Clear Cookies)..."}
+        # ... đoạn code xóa cookie đã bị vô hiệu hóa ...
 
-            # ── BƯỚC 1: Mở higgsfield.ai/chat ──────────────────────────────────
-            video_tasks[task_id] = {"status": "running", "message": "Đang mở higgsfield.ai/ai/video..."}
-            page.goto("https://higgsfield.ai/ai/video?model=genjutsu", wait_until="domcontentloaded", timeout=30000)
-            page.wait_for_timeout(2000)
-            
-            # Xử lý trang lỗi "This page is temporarily unavailable"
+        # ── BƯỚC 1: Mở higgsfield.ai/chat ──────────────────────────────────
+        video_tasks[task_id] = {"status": "running", "message": "Đang mở higgsfield.ai/ai/video..."}
+        page.goto("https://higgsfield.ai/ai/video?model=genjutsu", wait_until="domcontentloaded", timeout=30000)
+        page.wait_for_timeout(2000)
+        
+        # Xử lý trang lỗi "This page is temporarily unavailable"
+        try:
+            if page.locator("text='This page is temporarily unavailable'").is_visible(timeout=3000):
+                video_tasks[task_id] = {"status": "running", "message": "higgsfield bị lỗi tạm thời, đang ấn Refresh..."}
+                page.locator("button:has-text('Refresh')").click(timeout=3000)
+                page.wait_for_timeout(5000)
+        except:
+            pass
+
+        def check_age_popup(pg):
             try:
-                if page.locator("text='This page is temporarily unavailable'").is_visible(timeout=3000):
-                    video_tasks[task_id] = {"status": "running", "message": "higgsfield bị lỗi tạm thời, đang ấn Refresh..."}
-                    page.locator("button:has-text('Refresh')").click(timeout=3000)
-                    page.wait_for_timeout(5000)
+                pg.evaluate("""() => {
+                    const btns = Array.from(document.querySelectorAll('button, div[role="button"], span'));
+                    const confirmBtn = btns.reverse().find(el => el.innerText && (
+                        el.innerText.trim() === 'Confirm' || 
+                        el.innerText.trim() === 'Xác nhận' ||
+                        el.innerText.trim() === 'OK' ||
+                        el.innerText.trim() === 'Ok'
+                    ));
+                    if (confirmBtn) {
+                        confirmBtn.click();
+                        console.log("Clicked Confirm Age popup!");
+                    }
+                }""")
             except:
                 pass
 
-            def check_age_popup(pg):
-                try:
-                    pg.evaluate("""() => {
-                        const btns = Array.from(document.querySelectorAll('button, div[role="button"], span'));
-                        const confirmBtn = btns.reverse().find(el => el.innerText && (
-                            el.innerText.trim() === 'Confirm' || 
-                            el.innerText.trim() === 'Xác nhận' ||
-                            el.innerText.trim() === 'OK' ||
-                            el.innerText.trim() === 'Ok'
-                        ));
-                        if (confirmBtn) {
-                            confirmBtn.click();
-                            console.log("Clicked Confirm Age popup!");
-                        }
-                    }""")
-                except:
-                    pass
-
-            # ── BƯỚC 2: Kiểm tra đã login chưa (Dựa vào sự tồn tại của nút Log In) ──
-            video_tasks[task_id] = {"status": "running", "message": "Kiểm tra trạng thái đăng nhập..."}
-            already_logged_in = False
+        # ── BƯỚC 2: Kiểm tra đã login chưa (Dựa vào sự tồn tại của nút Log In) ──
+        video_tasks[task_id] = {"status": "running", "message": "Kiểm tra trạng thái đăng nhập..."}
+        already_logged_in = False
+        try:
+            # Đợi cho trang load xong và các phần tử ổn định
             try:
-                # Đợi cho trang load xong và các phần tử ổn định
-                try:
-                    page.wait_for_load_state("load", timeout=10000) # Dùng load thay vì networkidle cho lẹ
-                except:
-                    pass
-                
-                # ── BƯỚC 2: Kiểm tra đã login chưa (Chờ giao diện load xong chữ 'Use free gens' hoặc nút 'Log In') ──
-                is_logged_in = False
-                try:
-                    import re
-                    # Vòng lặp chờ thông minh (tối đa 15 giây) để React load xong dữ liệu
-                    for _ in range(30):
-                        # 1. Quét tìm chữ "Use free gens" (dấu hiệu chắc chắn đã login)
-                        try:
-                            # Dùng JS cho chắc vì text có thể nằm rải rác
-                            has_free_gens = page.evaluate("() => document.body.innerText.toLowerCase().includes('use free gens')")
-                            if has_free_gens:
-                                is_logged_in = True
-                                print("--- Đã thấy 'Use free gens' -> Đã login!")
-                                break
-                        except: pass
-                        
-                        # 2. Quét tìm nút Avatar đã đăng nhập
-                        try:
-                            avatar_loc = page.locator('button[aria-label="Account menu"], button[aria-haspopup="menu"], button:has(.rounded-full), div[role="button"]:has(.rounded-full)').filter(has_not_text=re.compile(r"^(Đăng nhập|Log In|Sign In)$", re.IGNORECASE))
-                            if avatar_loc.count() > 0 and avatar_loc.first.is_visible():
-                                is_logged_in = True
-                                print("--- Đã thấy nút Avatar -> Đã login!")
-                                break
-                        except: pass
-
-                        # 3. Quét tìm nút Log In (nếu thấy nút này nghĩa là chắc chắn CHƯA login)
-                        try:
-                            login_btn = page.locator("button, a").filter(has_text=re.compile(r"^(Đăng nhập|Log In|Login|Sign In)$", re.IGNORECASE))
-                            if login_btn.count() > 0 and login_btn.first.is_visible():
-                                print("--- Đã thấy nút Log In -> Chưa login!")
-                                break # Thoát vòng lặp, is_logged_in vẫn là False
-                        except: pass
-                        
-                        page.wait_for_timeout(500)
-                        
-                except Exception as inner_e:
-                    print(f"Lỗi soi trạng thái login: {inner_e}")
-                    pass
-                
-                already_logged_in = is_logged_in
-                print(f"--- [BƯỚC 2] Kết quả quét trạng thái: {'ĐÃ LOGIN TỪ TRƯỚC' if already_logged_in else 'CHƯA LOGIN (Sẽ chạy Bước 3 & 4)'}")
-            except Exception as e:
-                print(f"--- Lỗi kiểm tra login: {e}")
-                already_logged_in = False
-
-            if not already_logged_in:
-                # Quét xem có modal "Log In to Unlock More Features" đang mở sẵn không
-                is_modal_open = False
-                try:
-                    is_modal_open = page.locator("text='Log In to Unlock More Features'").is_visible(timeout=2000)
-                except:
-                    pass
-                
-                if not is_modal_open:
-                    # ── BƯỚC 3: Ấn "Đăng nhập" / "Log In" ───────────────────────
-                    video_tasks[task_id] = {"status": "running", "message": "Đang mở bảng Đăng nhập..."}
-                    
+                page.wait_for_load_state("load", timeout=10000) # Dùng load thay vì networkidle cho lẹ
+            except:
+                pass
+            
+            # ── BƯỚC 2: Kiểm tra đã login chưa (Chờ giao diện load xong chữ 'Use free gens' hoặc nút 'Log In') ──
+            is_logged_in = False
+            try:
+                import re
+                # Vòng lặp chờ thông minh (tối đa 15 giây) để React load xong dữ liệu
+                for _ in range(30):
+                    # 1. Quét tìm chữ "Use free gens" (dấu hiệu chắc chắn đã login)
                     try:
-                        # Vòng lặp ấn nút Log In cho đến khi bảng hiện ra (tối đa 5 lần)
-                        for _ in range(5):
-                            # Tìm nút Log In (thường nằm góc phải trên cùng)
-                            login_btn = page.locator("button, a").filter(has_text=re.compile(r"^(Đăng nhập|Log In|Login|Sign In)$", re.IGNORECASE)).first
-                            if login_btn.is_visible():
-                                box = login_btn.bounding_box()
-                                if box:
-                                    page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
-                                    page.wait_for_timeout(300)
-                                    page.mouse.down()
-                                    page.wait_for_timeout(150)
-                                    page.mouse.up()
-                                    page.wait_for_timeout(500)
-                                    # Fallback click JS nếu mouse click bị xịt
-                                    page.evaluate("""(btn) => { if(btn) btn.click(); }""", login_btn.element_handle())
-                            else:
-                                # Nếu không thấy nút Log In, thử tìm nút bất kỳ ở góc trên bên phải
-                                page.evaluate("""() => {
-                                    const btns = Array.from(document.querySelectorAll('button'));
-                                    const loginBtn = btns.find(b => b.innerText && b.innerText.toLowerCase().includes('log'));
-                                    if(loginBtn) loginBtn.click();
-                                }""")
-                            
-                            page.wait_for_timeout(2000) # Đợi 2s để bảng bung ra rồi check lại
-                            
-                            try:
-                                is_modal = page.locator("text='Log In to Unlock More Features'").is_visible(timeout=1000)
-                                if is_modal:
-                                    print("--- Đã thấy bảng Log In to Unlock More Features!")
-                                    break
-                            except:
-                                pass
-                    except Exception as e:
-                        print(f"--- Lỗi khi ấn nút Log In: {e}")
-                else:
-                    print("--- Bảng đăng nhập đã mở sẵn!")
+                        # Dùng JS cho chắc vì text có thể nằm rải rác
+                        has_free_gens = page.evaluate("() => document.body.innerText.toLowerCase().includes('use free gens')")
+                        if has_free_gens:
+                            is_logged_in = True
+                            print("--- Đã thấy 'Use free gens' -> Đã login!")
+                            break
+                    except: pass
+                    
+                    # 2. Quét tìm nút Avatar đã đăng nhập
+                    try:
+                        avatar_loc = page.locator('button[aria-label="Account menu"], button[aria-haspopup="menu"], button:has(.rounded-full), div[role="button"]:has(.rounded-full)').filter(has_not_text=re.compile(r"^(Đăng nhập|Log In|Sign In)$", re.IGNORECASE))
+                        if avatar_loc.count() > 0 and avatar_loc.first.is_visible():
+                            is_logged_in = True
+                            print("--- Đã thấy nút Avatar -> Đã login!")
+                            break
+                    except: pass
 
-                # ── BƯỚC 4: Ấn "Continue with Microsoft" / "Tiếp tục bằng Microsoft" ──
+                    # 3. Quét tìm nút Log In (nếu thấy nút này nghĩa là chắc chắn CHƯA login)
+                    try:
+                        login_btn = page.locator("button, a").filter(has_text=re.compile(r"^(Đăng nhập|Log In|Login|Sign In)$", re.IGNORECASE))
+                        if login_btn.count() > 0 and login_btn.first.is_visible():
+                            print("--- Đã thấy nút Log In -> Chưa login!")
+                            break # Thoát vòng lặp, is_logged_in vẫn là False
+                    except: pass
+                    
+                    page.wait_for_timeout(500)
+                    
+            except Exception as inner_e:
+                print(f"Lỗi soi trạng thái login: {inner_e}")
+                pass
+            
+            already_logged_in = is_logged_in
+            print(f"--- [BƯỚC 2] Kết quả quét trạng thái: {'ĐÃ LOGIN TỪ TRƯỚC' if already_logged_in else 'CHƯA LOGIN (Sẽ chạy Bước 3 & 4)'}")
+        except Exception as e:
+            print(f"--- Lỗi kiểm tra login: {e}")
+            already_logged_in = False
+
+        if not already_logged_in:
+            # Quét xem có modal "Log In to Unlock More Features" đang mở sẵn không
+            is_modal_open = False
+            try:
+                is_modal_open = page.locator("text='Log In to Unlock More Features'").is_visible(timeout=2000)
+            except:
+                pass
+            
+            if not is_modal_open:
+                # ── BƯỚC 3: Ấn "Đăng nhập" / "Log In" ───────────────────────
+                video_tasks[task_id] = {"status": "running", "message": "Đang mở bảng Đăng nhập..."}
+                
                 try:
-                    video_tasks[task_id] = {"status": "running", "message": "Đang dò tọa độ nút Microsoft để click thật..."}
-                    
-                    # Chờ 3s cho popup có thời gian bung ra hoàn chỉnh
-                    page.wait_for_timeout(3000)
-                    
-                    # Dùng JS lấy tọa độ (x, y, width, height) của nút thay vì click ảo bằng JS (vì JS click ảo bị web bỏ qua)
-                    js_get_rect = """
-                    () => {
-                        let btn = document.evaluate(
-                          "//button[.//*[normalize-space()='Continue with Microsoft']]",
-                          document,
-                          null,
-                          XPathResult.FIRST_ORDERED_NODE_TYPE,
-                          null
-                        ).singleNodeValue;
-                        
-                        if (!btn) {
-                            const btns = Array.from(document.querySelectorAll('button'));
-                            btn = btns.find(b => b.innerText && b.innerText.includes('Microsoft'));
-                        }
-                        
-                        if (btn) {
-                            const rect = btn.getBoundingClientRect();
-                            return {
-                                x: rect.x,
-                                y: rect.y,
-                                width: rect.width,
-                                height: rect.height,
-                                found: true
-                            };
-                        }
-                        return { found: false };
-                    }
-                    """
-                    
-                    success_click = False
-                    for i in range(15): # Lặp 15 lần (tối đa 30s)
-                        try:
-                            rect_info = page.evaluate(js_get_rect)
-                            if rect_info and rect_info.get("found"):
-                                # Dùng Playwright di chuột VẬT LÝ đến tọa độ tâm nút và nhấp đúp như người thật
-                                center_x = rect_info["x"] + rect_info["width"] / 2
-                                center_y = rect_info["y"] + rect_info["height"] / 2
-                                
-                                page.mouse.move(center_x, center_y, steps=10)
-                                page.wait_for_timeout(500)
-                                
-                                # Click lần 1
-                                page.mouse.down()
-                                page.wait_for_timeout(100)
-                                page.mouse.up()
-                                page.wait_for_timeout(200)
-                                
-                                # Click lần 2
+                    # Vòng lặp ấn nút Log In cho đến khi bảng hiện ra (tối đa 5 lần)
+                    for _ in range(5):
+                        # Tìm nút Log In (thường nằm góc phải trên cùng)
+                        login_btn = page.locator("button, a").filter(has_text=re.compile(r"^(Đăng nhập|Log In|Login|Sign In)$", re.IGNORECASE)).first
+                        if login_btn.is_visible():
+                            box = login_btn.bounding_box()
+                            if box:
+                                page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+                                page.wait_for_timeout(300)
                                 page.mouse.down()
                                 page.wait_for_timeout(150)
                                 page.mouse.up()
-                                
-                                # Kiểm tra xem bảng popup đã biến mất chưa (chứng tỏ click ăn, mở popup Microsoft)
-                                page.wait_for_timeout(3000)
-                                check_still_there = page.evaluate(js_get_rect)
-                                if not check_still_there.get("found"):
-                                    print(f"--- [BƯỚC 4] Đã CLICK THẬT thành công nút Microsoft ở lần thử {i+1}!")
-                                    success_click = True
-                                    break
-                                else:
-                                    print(f"--- [BƯỚC 4] Lần {i+1}: Đã ấn chuột vật lý nhưng popup chưa tắt, thử lại...")
-                            else:
-                                print(f"--- [BƯỚC 4] Lần {i+1}: Chưa thấy nút Microsoft. Có thể do click Log In hụt, đang thử click lại Log In...")
-                                try:
-                                    # Tìm nút bằng nhiều cách để chắc chắn không trượt
-                                    login_btn = page.locator('button:has-text("Log In"), button:has-text("Login"), .login-btn-header-CTKsn1').first
-                                    if login_btn.is_visible(timeout=500):
-                                        box = login_btn.bounding_box()
-                                        if box:
-                                            page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
-                                            page.wait_for_timeout(200)
-                                            page.mouse.down()
-                                            page.wait_for_timeout(100)
-                                            page.mouse.up()
-                                except:
-                                    pass
-                        except Exception as js_err:
-                            print(f"--- [BƯỚC 4] Lỗi JS lần {i+1}: {js_err}")
-                        
-                        page.wait_for_timeout(2000)
-                    
-                    if not success_click:
-                        # CHẶN CHẠY MÙ QUÁNG: Báo lỗi và dừng tiến trình
-                        video_tasks[task_id] = {"status": "error", "message": "Lỗi: Quá thời gian chờ nút Continue with Microsoft."}
-                        print("====== [LỖI] KHÔNG THỂ ẤN NÚT MICROSOFT, DỪNG TIẾN TRÌNH TRÁNH CHẠY MÙ QUÁNG ======")
-                        return
-                    
-                    # Đã click thành công, chờ Microsoft Auth xử lý
-                    page.wait_for_timeout(6000)
-                except Exception as e:
-                    print(f"\n====== LỖI BƯỚC 4 ======\n{str(e)}\n========================\n")
-                    video_tasks[task_id] = {"status": "error", "message": f"Lỗi ở bước đăng nhập Microsoft: {str(e)}"}
-                    return # Ngăn chạy tiếp xuống các bước tạo video
-
-                # ── BƯỚC 5 & 6: Xử lý Xác nhận tuổi (nếu có) và Chờ đăng nhập thành công ──
-                video_tasks[task_id] = {"status": "running", "message": "Đang chờ đăng nhập hoàn tất..."}
-                try:
-                    page.wait_for_timeout(4000) # Đợi trang load xong sau khi Auth
-                    
-                    login_success = False
-                    for _ in range(15): # Lặp tối đa ~30s
-                        # 0. Quét xem có bị báo lỗi Limit từ server higgsfield không
-                        try:
-                            limit_msg = page.evaluate("""() => {
-                                const texts = ['Maximum number of attempts reached', "Couldn't load", 'experiencing high demand'];
-                                return texts.find(t => document.body && document.body.innerText.includes(t));
+                                page.wait_for_timeout(500)
+                                # Fallback click JS nếu mouse click bị xịt
+                                page.evaluate("""(btn) => { if(btn) btn.click(); }""", login_btn.element_handle())
+                        else:
+                            # Nếu không thấy nút Log In, thử tìm nút bất kỳ ở góc trên bên phải
+                            page.evaluate("""() => {
+                                const btns = Array.from(document.querySelectorAll('button'));
+                                const loginBtn = btns.find(b => b.innerText && b.innerText.toLowerCase().includes('log'));
+                                if(loginBtn) loginBtn.click();
                             }""")
-                            if limit_msg:
-                                video_tasks[task_id] = {"status": "limit", "message": f"Tài khoản đã bị Limit: {limit_msg}"}
-                                print(f"====== [LIMIT] TÀI KHOẢN BỊ GIỚI HẠN: {limit_msg} ======")
-                                return
-                        except: pass
                         
-                        # 1. Quét xem có dialog xác nhận tuổi không, nếu có thì click
-                        check_age_popup(page)
+                        page.wait_for_timeout(2000) # Đợi 2s để bảng bung ra rồi check lại
                         
-                        page.wait_for_timeout(1000)
-                        
-                        # 2. Bấm vào nút Avatar bằng Playwright (như người thật) thay vì JS
                         try:
-                            # Nút button có aria-haspopup="menu" và chứa thẻ img.rounded-full
-                            avatar_loc = page.locator('button[aria-haspopup="menu"]:has(img.rounded-full)').first
-                            if avatar_loc.count() > 0:
-                                avatar_loc.click(timeout=2000)
+                            is_modal = page.locator("text='Log In to Unlock More Features'").is_visible(timeout=1000)
+                            if is_modal:
+                                print("--- Đã thấy bảng Log In to Unlock More Features!")
+                                break
                         except:
                             pass
-                            
-                        page.wait_for_timeout(1000)
-                        
-                        # 3. Kiểm tra xem menu Settings có xổ ra không
-                        has_settings = page.evaluate("""() => {
-                            const allBtns = Array.from(document.querySelectorAll('button, p, div, span'));
-                            return allBtns.some(b => b.innerText && (b.innerText.includes('Settings') || b.innerText.includes('Cài đặt')));
-                        }""")
-                        
-                        if has_settings:
-                            login_success = True
-                            # Click ra ngoài để đóng menu Settings
-                            page.mouse.click(0, 0)
-                            page.wait_for_timeout(500)
-                            break
-                            
-                        page.wait_for_timeout(1000)
-
-                    if login_success:
-                        video_tasks[task_id] = {"status": "running", "message": "✅ Đăng nhập thành công! Đang chuẩn bị tạo video..."}
-                    else:
-                        raise Exception("Không tìm thấy menu Settings, đăng nhập có thể đã thất bại.")
-                        
                 except Exception as e:
-                    video_tasks[task_id] = {"status": "error", "message": f"Đăng nhập thất bại: {e}"}
-                    try: context.close()
-                    except: pass
-                    return
+                    print(f"--- Lỗi khi ấn nút Log In: {e}")
             else:
-                video_tasks[task_id] = {"status": "running", "message": "✅ Đã đăng nhập sẵn! Đang chuẩn bị tạo video..."}
+                print("--- Bảng đăng nhập đã mở sẵn!")
 
-            page.wait_for_timeout(1500)
-
-            # ĐỀ PHÒNG WEB TỰ VĂNG (LOGOUT)
-            if "from_logout=1" in page.url or page.evaluate("() => Array.from(document.querySelectorAll('button')).some(b => b.innerText && b.innerText.includes('Continue with Microsoft'))"):
-                raise Exception("Tài khoản higgsfield bị văng (Logout) giữa chừng. Vui lòng tắt và CHẠY LẠI profile này!")
-
-
-            # ── BƯỚC 7.5: Chọn Model, Duration, Ratio ──────────────
-            video_tasks[task_id] = {"status": "running", "message": "Đang chọn cài đặt video..."}
+            # ── BƯỚC 4: Ấn "Continue with Microsoft" / "Tiếp tục bằng Microsoft" ──
             try:
-                # Chọn Model
-                if video_model:
-                    page.locator('button[data-input-engine-actionbar-control-key="video-model"]').click(timeout=500, force=True)
-                    page.wait_for_timeout(500)
-                    page.evaluate(f"""(text) => {{
-                        const items = Array.from(document.querySelectorAll('div[role="menuitem"], div[role="menuitemradio"], div[role="option"], button'));
-                        const item = items.find(el => el.innerText && el.innerText.trim().includes(text));
-                        if(item) item.click();
-                    }}""", video_model)
-                    page.wait_for_timeout(500)
+                video_tasks[task_id] = {"status": "running", "message": "Đang dò tọa độ nút Microsoft để click thật..."}
                 
-                # Chọn Duration
-                if video_duration:
-                    page.locator('button[data-input-engine-actionbar-control-key="video-duration"]').click(timeout=500, force=True)
-                    page.wait_for_timeout(500)
-                    page.evaluate(f"""(text) => {{
-                        const items = Array.from(document.querySelectorAll('div[role="menuitem"], div[role="menuitemradio"], div[role="option"], button'));
-                        const item = items.find(el => el.innerText && el.innerText.trim() === text);
-                        if(item) item.click();
-                    }}""", video_duration)
-                    page.wait_for_timeout(500)
+                # Chờ 3s cho popup có thời gian bung ra hoàn chỉnh
+                page.wait_for_timeout(3000)
+                
+                # Dùng JS lấy tọa độ (x, y, width, height) của nút thay vì click ảo bằng JS (vì JS click ảo bị web bỏ qua)
+                js_get_rect = """
+                () => {
+                    let btn = document.evaluate(
+                      "//button[.//*[normalize-space()='Continue with Microsoft']]",
+                      document,
+                      null,
+                      XPathResult.FIRST_ORDERED_NODE_TYPE,
+                      null
+                    ).singleNodeValue;
                     
-                # Chọn Ratio
-                if video_ratio:
-                    page.locator('button[data-input-engine-actionbar-control-key="video-ratio"]').click(timeout=500, force=True)
+                    if (!btn) {
+                        const btns = Array.from(document.querySelectorAll('button'));
+                        btn = btns.find(b => b.innerText && b.innerText.includes('Microsoft'));
+                    }
+                    
+                    if (btn) {
+                        const rect = btn.getBoundingClientRect();
+                        return {
+                            x: rect.x,
+                            y: rect.y,
+                            width: rect.width,
+                            height: rect.height,
+                            found: true
+                        };
+                    }
+                    return { found: false };
+                }
+                """
+                
+                success_click = False
+                for i in range(15): # Lặp 15 lần (tối đa 30s)
+                    try:
+                        rect_info = page.evaluate(js_get_rect)
+                        if rect_info and rect_info.get("found"):
+                            # Dùng Playwright di chuột VẬT LÝ đến tọa độ tâm nút và nhấp đúp như người thật
+                            center_x = rect_info["x"] + rect_info["width"] / 2
+                            center_y = rect_info["y"] + rect_info["height"] / 2
+                            
+                            page.mouse.move(center_x, center_y, steps=10)
+                            page.wait_for_timeout(500)
+                            
+                            # Click lần 1
+                            page.mouse.down()
+                            page.wait_for_timeout(100)
+                            page.mouse.up()
+                            page.wait_for_timeout(200)
+                            
+                            # Click lần 2
+                            page.mouse.down()
+                            page.wait_for_timeout(150)
+                            page.mouse.up()
+                            
+                            # Kiểm tra xem bảng popup đã biến mất chưa (chứng tỏ click ăn, mở popup Microsoft)
+                            page.wait_for_timeout(3000)
+                            check_still_there = page.evaluate(js_get_rect)
+                            if not check_still_there.get("found"):
+                                print(f"--- [BƯỚC 4] Đã CLICK THẬT thành công nút Microsoft ở lần thử {i+1}!")
+                                success_click = True
+                                break
+                            else:
+                                print(f"--- [BƯỚC 4] Lần {i+1}: Đã ấn chuột vật lý nhưng popup chưa tắt, thử lại...")
+                        else:
+                            print(f"--- [BƯỚC 4] Lần {i+1}: Chưa thấy nút Microsoft. Có thể do click Log In hụt, đang thử click lại Log In...")
+                            try:
+                                # Tìm nút bằng nhiều cách để chắc chắn không trượt
+                                login_btn = page.locator('button:has-text("Log In"), button:has-text("Login"), .login-btn-header-CTKsn1').first
+                                if login_btn.is_visible(timeout=500):
+                                    box = login_btn.bounding_box()
+                                    if box:
+                                        page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+                                        page.wait_for_timeout(200)
+                                        page.mouse.down()
+                                        page.wait_for_timeout(100)
+                                        page.mouse.up()
+                            except:
+                                pass
+                    except Exception as js_err:
+                        print(f"--- [BƯỚC 4] Lỗi JS lần {i+1}: {js_err}")
+                    
+                    page.wait_for_timeout(2000)
+                
+                if not success_click:
+                    # CHẶN CHẠY MÙ QUÁNG: Báo lỗi và dừng tiến trình
+                    video_tasks[task_id] = {"status": "error", "message": "Lỗi: Quá thời gian chờ nút Continue with Microsoft."}
+                    print("====== [LỖI] KHÔNG THỂ ẤN NÚT MICROSOFT, DỪNG TIẾN TRÌNH TRÁNH CHẠY MÙ QUÁNG ======")
+                    return
+                
+                # Đã click thành công, chờ Microsoft Auth xử lý
+                page.wait_for_timeout(6000)
+            except Exception as e:
+                print(f"\n====== LỖI BƯỚC 4 ======\n{str(e)}\n========================\n")
+                video_tasks[task_id] = {"status": "error", "message": f"Lỗi ở bước đăng nhập Microsoft: {str(e)}"}
+                return # Ngăn chạy tiếp xuống các bước tạo video
+
+            # ── BƯỚC 5 & 6: Xử lý Xác nhận tuổi (nếu có) và Chờ đăng nhập thành công ──
+            video_tasks[task_id] = {"status": "running", "message": "Đang chờ đăng nhập hoàn tất..."}
+            try:
+                page.wait_for_timeout(4000) # Đợi trang load xong sau khi Auth
+                
+                login_success = False
+                for _ in range(15): # Lặp tối đa ~30s
+                    # 0. Quét xem có bị báo lỗi Limit từ server higgsfield không
+                    try:
+                        limit_msg = page.evaluate("""() => {
+                            const texts = ['Maximum number of attempts reached', "Couldn't load", 'experiencing high demand'];
+                            return texts.find(t => document.body && document.body.innerText.includes(t));
+                        }""")
+                        if limit_msg:
+                            video_tasks[task_id] = {"status": "limit", "message": f"Tài khoản đã bị Limit: {limit_msg}"}
+                            print(f"====== [LIMIT] TÀI KHOẢN BỊ GIỚI HẠN: {limit_msg} ======")
+                            return
+                    except: pass
+                    
+                    # 1. Quét xem có dialog xác nhận tuổi không, nếu có thì click
+                    check_age_popup(page)
+                    
+                    page.wait_for_timeout(1000)
+                    
+                    # 2. Bấm vào nút Avatar bằng Playwright (như người thật) thay vì JS
+                    try:
+                        # Nút button có aria-haspopup="menu" và chứa thẻ img.rounded-full
+                        avatar_loc = page.locator('button[aria-haspopup="menu"]:has(img.rounded-full)').first
+                        if avatar_loc.count() > 0:
+                            avatar_loc.click(timeout=2000)
+                    except:
+                        pass
+                        
+                    page.wait_for_timeout(1000)
+                    
+                    # 3. Kiểm tra xem menu Settings có xổ ra không
+                    has_settings = page.evaluate("""() => {
+                        const allBtns = Array.from(document.querySelectorAll('button, p, div, span'));
+                        return allBtns.some(b => b.innerText && (b.innerText.includes('Settings') || b.innerText.includes('Cài đặt')));
+                    }""")
+                    
+                    if has_settings:
+                        login_success = True
+                        # Click ra ngoài để đóng menu Settings
+                        page.mouse.click(0, 0)
+                        page.wait_for_timeout(500)
+                        break
+                        
+                    page.wait_for_timeout(1000)
+
+                if login_success:
+                    video_tasks[task_id] = {"status": "running", "message": "✅ Đăng nhập thành công! Đang chuẩn bị tạo video..."}
+                else:
+                    raise Exception("Không tìm thấy menu Settings, đăng nhập có thể đã thất bại.")
+                    
+            except Exception as e:
+                video_tasks[task_id] = {"status": "error", "message": f"Đăng nhập thất bại: {e}"}
+                try: context.close()
+                except: pass
+                return
+        else:
+            video_tasks[task_id] = {"status": "running", "message": "✅ Đã đăng nhập sẵn! Đang chuẩn bị tạo video..."}
+
+        page.wait_for_timeout(1500)
+
+        # ĐỀ PHÒNG WEB TỰ VĂNG (LOGOUT)
+        if "from_logout=1" in page.url or page.evaluate("() => Array.from(document.querySelectorAll('button')).some(b => b.innerText && b.innerText.includes('Continue with Microsoft'))"):
+            raise Exception("Tài khoản higgsfield bị văng (Logout) giữa chừng. Vui lòng tắt và CHẠY LẠI profile này!")
+
+
+        # ── BƯỚC 7.5: Chọn Model, Duration, Ratio ──────────────
+        video_tasks[task_id] = {"status": "running", "message": "Đang chọn cài đặt video..."}
+        try:
+            # Chọn Model
+            if video_model:
+                page.locator('button[data-input-engine-actionbar-control-key="video-model"]').click(timeout=500, force=True)
+                page.wait_for_timeout(500)
+                page.evaluate(f"""(text) => {{
+                    const items = Array.from(document.querySelectorAll('div[role="menuitem"], div[role="menuitemradio"], div[role="option"], button'));
+                    const item = items.find(el => el.innerText && el.innerText.trim().includes(text));
+                    if(item) item.click();
+                }}""", video_model)
+                page.wait_for_timeout(500)
+            
+            # Chọn Duration
+            if video_duration:
+                page.locator('button[data-input-engine-actionbar-control-key="video-duration"]').click(timeout=500, force=True)
+                page.wait_for_timeout(500)
+                page.evaluate(f"""(text) => {{
+                    const items = Array.from(document.querySelectorAll('div[role="menuitem"], div[role="menuitemradio"], div[role="option"], button'));
+                    const item = items.find(el => el.innerText && el.innerText.trim() === text);
+                    if(item) item.click();
+                }}""", video_duration)
+                page.wait_for_timeout(500)
+                
+            # Chọn Ratio
+            if video_ratio:
+                page.locator('button[data-input-engine-actionbar-control-key="video-ratio"]').click(timeout=500, force=True)
+                page.wait_for_timeout(500)
+                page.evaluate(f"""(text) => {{
+                    const items = Array.from(document.querySelectorAll('div[role="menuitem"], div[role="menuitemradio"], div[role="option"], button'));
+                    const item = items.find(el => el.innerText && el.innerText.trim() === text);
+                    if(item) item.click();
+                }}""", video_ratio)
+                page.wait_for_timeout(500)
+        except Exception as e:
+            # Ẩn print lỗi để tránh làm người dùng hoang mang (do nút này là của web khác, trên higgsfield có thể không có)
+            pass # Bỏ qua nếu lỗi, web có thể dùng mặc định
+
+        # ĐỀ PHÒNG WEB TỰ VĂNG (LOGOUT)
+        if "from_logout=1" in page.url or page.evaluate("() => Array.from(document.querySelectorAll('button')).some(b => b.innerText && b.innerText.includes('Continue with Microsoft'))"):
+            raise Exception("higgsfield_logout")
+
+        # ── BƯỚC 8: Upload ảnh & Video theo giao diện MỚI ─────────────────────────────
+        images_to_upload = []
+        videos_to_upload = []
+        
+        if media_paths:
+            for path in media_paths:
+                if path and Path(path).exists():
+                    if path.lower().endswith(('.mp4', '.mov', '.avi', '.webm', '.mkv')):
+                        videos_to_upload.append(path)
+                    else:
+                        images_to_upload.append(path)
+
+        def handle_media_upload_modal(pg):
+            # Xử lý modal "Media upload agreement" nếu hiện ra
+            try:
+                agree_btn = pg.locator('button:has-text("I agree, continue")')
+                if agree_btn.is_visible(timeout=2000):
+                    agree_btn.click(timeout=3000)
+                    pg.wait_for_timeout(1000)
+                    return True
+            except: pass
+            return False
+
+        def upload_and_select(pg, btn_aria_label, file_paths):
+            print(f"--- B?t d?u upload cho {btn_aria_label}, s? lu?ng file: {len(file_paths)}")
+            if not file_paths: return
+            try:
+                # 1. Click vào khu vực Add media (Ảnh hoặc Video)
+                pg.locator(f'button[aria-label="{btn_aria_label}"]').click(timeout=5000)
+                pg.wait_for_timeout(1500)
+                handle_media_upload_modal(pg)
+                
+                # 2. Click nút Upload media
+                upload_btn = pg.locator('button[aria-label="Upload media"]').last
+                if not upload_btn.is_visible():
+                    upload_btn = pg.locator('button[aria-label="Upload media"]').last
+                
+                try:
+                    with pg.expect_file_chooser(timeout=3000) as fc_info:
+                        upload_btn.click(timeout=5000, force=True)
+                    fc_info.value.set_files(file_paths)
+                except:
+                    # Có thể do modal "I agree" hiện ra thay vì file dialog, thử xử lý
+                    print("  -> Intercept file chooser failed. Handling modal...")
+                    handle_media_upload_modal(pg)
+                    # Thử lại
+                    with pg.expect_file_chooser(timeout=8000) as fc_info:
+                        upload_btn.click(timeout=5000, force=True)
+                    fc_info.value.set_files(file_paths)
+                    
+                # Xử lý modal "Confirm" (Edit reference) dành cho Video
+                try:
+                    confirm_btn = pg.locator('button:has-text("Confirm"), span:has-text("Confirm")').last
+                    if confirm_btn.is_visible(timeout=3000):
+                        print("  -> Thấy nút Confirm, tiến hành bấm...")
+                        confirm_btn.click(timeout=3000, force=True)
+                        pg.wait_for_timeout(1000)
+                except: pass
+
+                # 3. Chờ quá trình upload xong (Mất chữ Uploading...)
+                try:
+                    uploading_indicator = pg.locator('text="Uploading..."')
+                    uploading_indicator.wait_for(state="hidden", timeout=60000)
+                except: pass
+                pg.wait_for_timeout(2000) # Đợi thêm tí cho list update
+                
+                # Kiểm tra lỗi Failed to upload media
+                if pg.locator('text="Failed to upload media"').is_visible(timeout=1000):
+                    print("  -> CẢNH BÁO: Bị lỗi 'Failed to upload media'!")
+                    raise Exception("ReloadRequired")
+                
+                # 4. Chọn các file vừa upload (Click như người thật)
+                print(f"  -> Đang chọn {len(file_paths)} file vừa upload...")
+                items = pg.locator('div[data-assets-picker-selectable-card="true"]')
+                count = items.count()
+                
+                # Click chọn N file đầu tiên tương ứng số file vừa up
+                for i in range(min(len(file_paths), count)):
+                    try:
+                        # Phải rê chuột và click vật lý
+                        box = items.nth(i).bounding_box()
+                        if box:
+                            pg.mouse.move(box["x"] + box["width"]/2, box["y"] + box["height"]/2)
+                            pg.wait_for_timeout(200)
+                            pg.mouse.down()
+                            pg.wait_for_timeout(100)
+                            pg.mouse.up()
+                        else:
+                            items.nth(i).click(timeout=3000, force=True)
+                        pg.wait_for_timeout(500)
+                    except: pass
+                    
+                # Tắt modal upload bằng nút X (nếu có)
+                try:
+                    close_btn = pg.locator('button[aria-label="Close"], button svg.lucide-x').first
+                    if close_btn.is_visible(timeout=1000):
+                        close_btn.click()
+                        pg.wait_for_timeout(500)
+                except: pass
+                
+            except Exception as e:
+                print(f"Lỗi upload {btn_aria_label}: {e}")
+
+        # Upload Ảnh và Video (Có cơ chế Retry nếu bị lỗi Failed to upload media)
+        for attempt in range(3):
+            try:
+                if images_to_upload:
+                    try:
+                        objects_tab = page.locator('button[role="tab"]:has-text("Objects swap")').first
+                        if objects_tab.is_visible(timeout=2000):
+                            objects_tab.click(timeout=3000)
+                            page.wait_for_timeout(1000)
+                    except: pass
+                    print(f"=== BẮT ĐẦU UPLOAD ẢNH ({len(images_to_upload)} file) (Lần {attempt+1}) ===")
+                    video_tasks[task_id] = {"status": "running", "message": f"Đang tải {len(images_to_upload)} ảnh lên..."}
+                    upload_and_select(page, "Add reference images", images_to_upload)
+                    
+                if videos_to_upload:
+                    try:
+                        motion_tab = page.locator('button[role="tab"]:has-text("Motion transfer")').first
+                        if motion_tab.is_visible(timeout=2000):
+                            motion_tab.click(timeout=3000)
+                            page.wait_for_timeout(1000)
+                    except: pass
+                    print(f"=== BẮT ĐẦU UPLOAD VIDEO ({len(videos_to_upload)} file) (Lần {attempt+1}) ===")
+                    video_tasks[task_id] = {"status": "running", "message": f"Đang tải {len(videos_to_upload)} video lên..."}
+                    upload_and_select(page, "Add a reference video to extract motion", videos_to_upload)
+                break # Thành công thì thoát loop
+            except Exception as e:
+                if "ReloadRequired" in str(e):
+                    print("  -> Đang tải lại trang để làm lại từ đầu...")
+                    video_tasks[task_id] = {"status": "running", "message": "Video bị lỗi, đang tải lại trang để thử lại..."}
+                    page.reload()
+                    page.wait_for_load_state('networkidle')
+                    page.wait_for_timeout(3000)
+                    if attempt == 2:
+                        raise Exception("Đã thử tải lại trang 3 lần nhưng upload media vẫn báo Failed!")
+                    continue
+                raise e
+
+        # ĐỀ PHÒNG WEB TỰ VĂNG (LOGOUT)
+        if "from_logout=1" in page.url or page.evaluate("() => Array.from(document.querySelectorAll('button')).some(b => b.innerText && b.innerText.includes('Continue with Microsoft'))"):
+            raise Exception("Tài khoản higgsfield bị văng (Logout) giữa chừng. Vui lòng tắt và CHẠY LẠI profile này!")
+            
+        check_age_popup(page)
+        # ── BƯỚC 9: Bật công tắc Prompt và điền ──────────────
+        if prompt:
+            print(f"=== ĐIỀN PROMPT: {prompt[:30]}... ===")
+            video_tasks[task_id] = {"status": "running", "message": "Đang nhập prompt..."}
+            try:
+                # Bật công tắc "Prompt"
+                prompt_toggle = page.locator('span[aria-label="Toggle prompt"]')
+                if prompt_toggle.is_visible(timeout=3000):
+                    if prompt_toggle.get_attribute("aria-checked") == "false":
+                        print("  -> Bật công tắc Prompt")
+                        prompt_toggle.click(timeout=3000)
+                        page.wait_for_timeout(1000)
+                
+                # Điền prompt
+                prompt_input = page.locator('div[aria-label="Prompt"][contenteditable="true"]')
+                if prompt_input.is_visible(timeout=3000):
+                    prompt_input.fill("")
                     page.wait_for_timeout(500)
-                    page.evaluate(f"""(text) => {{
-                        const items = Array.from(document.querySelectorAll('div[role="menuitem"], div[role="menuitemradio"], div[role="option"], button'));
-                        const item = items.find(el => el.innerText && el.innerText.trim() === text);
-                        if(item) item.click();
-                    }}""", video_ratio)
+                    # Dùng page.evaluate để bypass react 
+                    page.evaluate("(text) => { document.querySelector('div[aria-label=\"Prompt\"][contenteditable=\"true\"]').textContent = text; }", prompt)
+                    prompt_input.type(" ") # kích hoạt sự kiện input
                     page.wait_for_timeout(500)
             except Exception as e:
-                # Ẩn print lỗi để tránh làm người dùng hoang mang (do nút này là của web khác, trên higgsfield có thể không có)
-                pass # Bỏ qua nếu lỗi, web có thể dùng mặc định
+                print(f"Lỗi nhập prompt: {e}")
 
-            # ĐỀ PHÒNG WEB TỰ VĂNG (LOGOUT)
-            if "from_logout=1" in page.url or page.evaluate("() => Array.from(document.querySelectorAll('button')).some(b => b.innerText && b.innerText.includes('Continue with Microsoft'))"):
-                raise Exception("higgsfield_logout")
-
-            # ── BƯỚC 8: Upload ảnh & Video theo giao diện MỚI ─────────────────────────────
-            images_to_upload = []
-            videos_to_upload = []
+        # ── BƯỚC 10: Bật công tắc "Use free gens" và nhấn Generate ──────────────
+        print("=== BẬT FREE GENS VÀ NHẤN GENERATE ===")
+        video_tasks[task_id] = {"status": "running", "message": "Đang nhấn nút Generate..."}
+        try:
+            # Bật công tắc Use free gens
+            free_gens = page.locator('button[aria-label="Use free gens"]')
+            if free_gens.is_visible(timeout=2000):
+                if free_gens.get_attribute("aria-checked") == "false":
+                    free_gens.click(timeout=3000)
+                    page.wait_for_timeout(1000)
             
-            if media_paths:
-                for path in media_paths:
-                    if path and Path(path).exists():
-                        if path.lower().endswith(('.mp4', '.mov', '.avi', '.webm', '.mkv')):
-                            videos_to_upload.append(path)
-                        else:
-                            images_to_upload.append(path)
+            # Nhấn nút Generate
+            generate_btn = page.locator('button:has-text("Generate")').last
+            if generate_btn.is_visible(timeout=3000):
+                print("  -> Đã thấy nút Generate, tiến hành click!")
+                generate_btn.click(timeout=3000)
+                page.wait_for_timeout(2000)
+        except Exception as e:
+            print(f"Lỗi nhấn Generate: {e}")
 
-            def handle_media_upload_modal(pg):
-                # Xử lý modal "Media upload agreement" nếu hiện ra
-                try:
-                    agree_btn = pg.locator('button:has-text("I agree, continue")')
-                    if agree_btn.is_visible(timeout=2000):
-                        agree_btn.click(timeout=3000)
-                        pg.wait_for_timeout(1000)
-                        return True
-                except: pass
-                return False
 
-            def upload_and_select(pg, btn_aria_label, file_paths):
-                print(f"--- B?t d?u upload cho {btn_aria_label}, s? lu?ng file: {len(file_paths)}")
-                if not file_paths: return
-                try:
-                    # 1. Click vào khu vực Add media (Ảnh hoặc Video)
-                    pg.locator(f'button[aria-label="{btn_aria_label}"]').click(timeout=5000)
-                    pg.wait_for_timeout(1500)
-                    handle_media_upload_modal(pg)
-                    
-                    # 2. Click nút Upload media
-                    upload_btn = pg.locator('button[aria-label="Upload media"]').last
-                    if not upload_btn.is_visible():
-                        upload_btn = pg.locator('button[aria-label="Upload media"]').last
-                    
-                    try:
-                        with pg.expect_file_chooser(timeout=3000) as fc_info:
-                            upload_btn.click(timeout=5000, force=True)
-                        fc_info.value.set_files(file_paths)
-                    except:
-                        # Có thể do modal "I agree" hiện ra thay vì file dialog, thử xử lý
-                        print("  -> Intercept file chooser failed. Handling modal...")
-                        handle_media_upload_modal(pg)
-                        # Thử lại
-                        with pg.expect_file_chooser(timeout=8000) as fc_info:
-                            upload_btn.click(timeout=5000, force=True)
-                        fc_info.value.set_files(file_paths)
-                        
-                    # Xử lý modal "Confirm" (Edit reference) dành cho Video
-                    try:
-                        confirm_btn = pg.locator('button:has-text("Confirm"), span:has-text("Confirm")').last
-                        if confirm_btn.is_visible(timeout=3000):
-                            print("  -> Thấy nút Confirm, tiến hành bấm...")
-                            confirm_btn.click(timeout=3000, force=True)
-                            pg.wait_for_timeout(1000)
-                    except: pass
+        video_tasks[task_id] = {"status": "running", "message": "✅ Đã gửi yêu cầu! Đang chờ higgsfield.ai tạo video..."}
 
-                    # 3. Chờ quá trình upload xong (Mất chữ Uploading...)
-                    try:
-                        uploading_indicator = pg.locator('text="Uploading..."')
-                        uploading_indicator.wait_for(state="hidden", timeout=60000)
-                    except: pass
-                    pg.wait_for_timeout(2000) # Đợi thêm tí cho list update
-                    
-                    # Kiểm tra lỗi Failed to upload media
-                    if pg.locator('text="Failed to upload media"').is_visible(timeout=1000):
-                        print("  -> CẢNH BÁO: Bị lỗi 'Failed to upload media'!")
-                        raise Exception("ReloadRequired")
-                    
-                    # 4. Chọn các file vừa upload (Click như người thật)
-                    print(f"  -> Đang chọn {len(file_paths)} file vừa upload...")
-                    items = pg.locator('div[data-assets-picker-selectable-card="true"]')
-                    count = items.count()
-                    
-                    # Click chọn N file đầu tiên tương ứng số file vừa up
-                    for i in range(min(len(file_paths), count)):
-                        try:
-                            # Phải rê chuột và click vật lý
-                            box = items.nth(i).bounding_box()
-                            if box:
-                                pg.mouse.move(box["x"] + box["width"]/2, box["y"] + box["height"]/2)
-                                pg.wait_for_timeout(200)
-                                pg.mouse.down()
-                                pg.wait_for_timeout(100)
-                                pg.mouse.up()
-                            else:
-                                items.nth(i).click(timeout=3000, force=True)
-                            pg.wait_for_timeout(500)
-                        except: pass
-                        
-                    # Tắt modal upload bằng nút X (nếu có)
-                    try:
-                        close_btn = pg.locator('button[aria-label="Close"], button svg.lucide-x').first
-                        if close_btn.is_visible(timeout=1000):
-                            close_btn.click()
-                            pg.wait_for_timeout(500)
-                    except: pass
-                    
-                except Exception as e:
-                    print(f"Lỗi upload {btn_aria_label}: {e}")
-
-            # Upload Ảnh và Video (Có cơ chế Retry nếu bị lỗi Failed to upload media)
-            for attempt in range(3):
-                try:
-                    if images_to_upload:
-                        print(f"=== BẮT ĐẦU UPLOAD ẢNH ({len(images_to_upload)} file) (Lần {attempt+1}) ===")
-                        video_tasks[task_id] = {"status": "running", "message": f"Đang tải {len(images_to_upload)} ảnh lên..."}
-                        upload_and_select(page, "Add reference images", images_to_upload)
-                        
-                    if videos_to_upload:
-                        print(f"=== BẮT ĐẦU UPLOAD VIDEO ({len(videos_to_upload)} file) (Lần {attempt+1}) ===")
-                        video_tasks[task_id] = {"status": "running", "message": f"Đang tải {len(videos_to_upload)} video lên..."}
-                        upload_and_select(page, "Add a reference video to extract motion", videos_to_upload)
-                    break # Thành công thì thoát loop
-                except Exception as e:
-                    if "ReloadRequired" in str(e):
-                        print("  -> Đang tải lại trang để làm lại từ đầu...")
-                        video_tasks[task_id] = {"status": "running", "message": "Video bị lỗi, đang tải lại trang để thử lại..."}
-                        page.reload()
-                        page.wait_for_load_state('networkidle')
-                        page.wait_for_timeout(3000)
-                        if attempt == 2:
-                            raise Exception("Đã thử tải lại trang 3 lần nhưng upload media vẫn báo Failed!")
-                        continue
-                    raise e
-
-            # ĐỀ PHÒNG WEB TỰ VĂNG (LOGOUT)
-            if "from_logout=1" in page.url or page.evaluate("() => Array.from(document.querySelectorAll('button')).some(b => b.innerText && b.innerText.includes('Continue with Microsoft'))"):
-                raise Exception("Tài khoản higgsfield bị văng (Logout) giữa chừng. Vui lòng tắt và CHẠY LẠI profile này!")
+        # ── BƯỚC 11: Đợi video xuất hiện (tối đa 10 phút) ───────────────
+        video_url = None
+        video_urls = []
+        for i in range(600):
+            page.wait_for_timeout(1000)
+            
+            # Cập nhật log chat
+            sync_chat(page)
+            
+            # CHÚ Ý: Đề phòng web tự văng acc giữa chừng (như lúc đang chờ video)
+            if "from_logout=1" in page.url:
+                raise Exception("higgsfield_logout")
                 
             check_age_popup(page)
-            # ── BƯỚC 9: Bật công tắc Prompt và điền ──────────────
-            if prompt:
-                print(f"=== ĐIỀN PROMPT: {prompt[:30]}... ===")
-                video_tasks[task_id] = {"status": "running", "message": "Đang nhập prompt..."}
-                try:
-                    # Bật công tắc "Prompt"
-                    prompt_toggle = page.locator('span[aria-label="Toggle prompt"]')
-                    if prompt_toggle.is_visible(timeout=3000):
-                        if prompt_toggle.get_attribute("aria-checked") == "false":
-                            print("  -> Bật công tắc Prompt")
-                            prompt_toggle.click(timeout=3000)
-                            page.wait_for_timeout(1000)
-                    
-                    # Điền prompt
-                    prompt_input = page.locator('div[aria-label="Prompt"][contenteditable="true"]')
-                    if prompt_input.is_visible(timeout=3000):
-                        prompt_input.fill("")
-                        page.wait_for_timeout(500)
-                        # Dùng page.evaluate để bypass react 
-                        page.evaluate("(text) => { document.querySelector('div[aria-label=\"Prompt\"][contenteditable=\"true\"]').textContent = text; }", prompt)
-                        prompt_input.type(" ") # kích hoạt sự kiện input
-                        page.wait_for_timeout(500)
-                except Exception as e:
-                    print(f"Lỗi nhập prompt: {e}")
-
-            # ── BƯỚC 10: Bật công tắc "Use free gens" và nhấn Generate ──────────────
-            print("=== BẬT FREE GENS VÀ NHẤN GENERATE ===")
-            video_tasks[task_id] = {"status": "running", "message": "Đang nhấn nút Generate..."}
+                
+            if video_tasks.get(task_id, {}).get("force_stop"):
+                print(f"--- Task {task_id} bị force_stop. Thoát vòng lặp chờ video.")
+                break
+            
             try:
-                # Bật công tắc Use free gens
-                free_gens = page.locator('button[aria-label="Use free gens"]')
-                if free_gens.is_visible(timeout=2000):
-                    if free_gens.get_attribute("aria-checked") == "false":
-                        free_gens.click(timeout=3000)
-                        page.wait_for_timeout(1000)
-                
-                # Nhấn nút Generate
-                generate_btn = page.locator('button:has-text("Generate")').last
-                if generate_btn.is_visible(timeout=3000):
-                    print("  -> Đã thấy nút Generate, tiến hành click!")
-                    generate_btn.click(timeout=3000)
-                    page.wait_for_timeout(2000)
-            except Exception as e:
-                print(f"Lỗi nhấn Generate: {e}")
-
-
-            video_tasks[task_id] = {"status": "running", "message": "✅ Đã gửi yêu cầu! Đang chờ higgsfield.ai tạo video..."}
-
-            # ── BƯỚC 11: Đợi video xuất hiện (tối đa 10 phút) ───────────────
-            video_url = None
-            video_urls = []
-            for i in range(600):
-                page.wait_for_timeout(1000)
-                
-                # Cập nhật log chat
-                sync_chat(page)
-                
-                # CHÚ Ý: Đề phòng web tự văng acc giữa chừng (như lúc đang chờ video)
-                if "from_logout=1" in page.url:
+                # Quét xem có popup Log In bất ngờ hiện lên không
+                new_urls = page.evaluate("""() => {
+                    const extracted = Array.from(document.querySelectorAll('.studio-relay-extracted-video'));
+                    const urls = extracted.map(el => el.getAttribute('data-url')).filter(Boolean);
+                    
+                    const videos = Array.from(document.querySelectorAll('video'));
+                    for (let v of videos) {
+                        if (v.src && (v.src.startsWith('http') || v.src.startsWith('blob'))) urls.push(v.src);
+                        else {
+                            const s = v.querySelector('source');
+                            if (s && s.src && (s.src.startsWith('http') || s.src.startsWith('blob'))) urls.push(s.src);
+                        }
+                    }
+                    return [...new Set(urls)];
+                }""")
+                has_login_modal = page.evaluate("""() => {
+                    const btns = Array.from(document.querySelectorAll('button'));
+                    return btns.some(b => b.innerText && b.innerText.includes('Continue with Microsoft'));
+                }""")
+                if has_login_modal:
                     raise Exception("higgsfield_logout")
+            except Exception as eval_e:
+                if "higgsfield_logout" in str(eval_e):
+                    raise
+            
+            try:
+                # Cuộn xuống cuối và Hover để ép higgsfield tải thẻ video (Lazy load)
+                page.evaluate("""() => {
+                    // 1. Cuộn màn hình xuống cuối cùng
+                    const scrollers = document.querySelectorAll('.v_list_row, .container-enLQFx, .block-video-MzfWVN, [data-message-id]');
+                    if (scrollers.length > 0) {
+                        scrollers[scrollers.length - 1].scrollIntoView({behavior: 'smooth', block: 'end'});
+                    }
                     
-                check_age_popup(page)
+                    // 2. Hover vào tất cả các vùng có khả năng chứa video
+                    const targets = document.querySelectorAll('.v_list_row, .block-video-MzfWVN, .image-box-grid-EYaIcP, .video-player-wrapper-IZ7Zoq, .xgplayer');
+                    targets.forEach(t => {
+                        try { t.dispatchEvent(new MouseEvent('mouseover', {bubbles: true})); } catch(e){}
+                    });
                     
-                if video_tasks.get(task_id, {}).get("force_stop"):
-                    print(f"--- Task {task_id} bị force_stop. Thoát vòng lặp chờ video.")
+                    // 3. Click thẳng vào nút Play hoặc ảnh đại diện để ÉP nó tải luồng video (Bắt buộc phải Play mới lấy được link)
+                    const playBtns = document.querySelectorAll('.play-icon-gWzeeV, .xg-icon-play, [aria-label="play"], .video-hover-button-group-container-mh06XY, .image-box-grid-EYaIcP img');
+                    playBtns.forEach(b => {
+                        try { 
+                            b.dispatchEvent(new MouseEvent('mouseover', {bubbles: true})); 
+                            b.click(); // Phải CLICK thì xgplayer mới bơm link vào thẻ <video>
+                        } catch(e){}
+                    });
+                }""")
+                page.wait_for_timeout(1000) # Chờ 1 giây để nó nạp link sau khi click
+            except:
+                pass
+
+            try:
+                new_url = page.evaluate("""() => {
+                    const extracted = Array.from(document.querySelectorAll('.studio-relay-extracted-video'));
+                    const urls = extracted.map(el => el.getAttribute('data-url')).filter(Boolean);
+                    const videos = Array.from(document.querySelectorAll('video'));
+                    for (let v of videos) { if (v.src && (v.src.startsWith('http') || v.src.startsWith('blob'))) urls.push(v.src); else { const s = v.querySelector('source'); if (s && s.src && (s.src.startsWith('http') || s.src.startsWith('blob'))) urls.push(s.src); } }
+                    return [...new Set(urls)];
+                }""")
+                if new_url and len(new_url) > 0:
+                    video_urls = new_url
+                    video_url = new_url[0]
                     break
-                
-                try:
-                    # Quét xem có popup Log In bất ngờ hiện lên không
-                    new_urls = page.evaluate("""() => {
-                        const extracted = Array.from(document.querySelectorAll('.studio-relay-extracted-video'));
-                        const urls = extracted.map(el => el.getAttribute('data-url')).filter(Boolean);
-                        
-                        const videos = Array.from(document.querySelectorAll('video'));
-                        for (let v of videos) {
-                            if (v.src && (v.src.startsWith('http') || v.src.startsWith('blob'))) urls.push(v.src);
-                            else {
-                                const s = v.querySelector('source');
-                                if (s && s.src && (s.src.startsWith('http') || s.src.startsWith('blob'))) urls.push(s.src);
-                            }
-                        }
-                        return [...new Set(urls)];
-                    }""")
-                    has_login_modal = page.evaluate("""() => {
-                        const btns = Array.from(document.querySelectorAll('button'));
-                        return btns.some(b => b.innerText && b.innerText.includes('Continue with Microsoft'));
-                    }""")
-                    if has_login_modal:
-                        raise Exception("higgsfield_logout")
-                except Exception as eval_e:
-                    if "higgsfield_logout" in str(eval_e):
-                        raise
-                
-                try:
-                    # Cuộn xuống cuối và Hover để ép higgsfield tải thẻ video (Lazy load)
-                    page.evaluate("""() => {
-                        // 1. Cuộn màn hình xuống cuối cùng
-                        const scrollers = document.querySelectorAll('.v_list_row, .container-enLQFx, .block-video-MzfWVN, [data-message-id]');
-                        if (scrollers.length > 0) {
-                            scrollers[scrollers.length - 1].scrollIntoView({behavior: 'smooth', block: 'end'});
-                        }
-                        
-                        // 2. Hover vào tất cả các vùng có khả năng chứa video
-                        const targets = document.querySelectorAll('.v_list_row, .block-video-MzfWVN, .image-box-grid-EYaIcP, .video-player-wrapper-IZ7Zoq, .xgplayer');
-                        targets.forEach(t => {
-                            try { t.dispatchEvent(new MouseEvent('mouseover', {bubbles: true})); } catch(e){}
-                        });
-                        
-                        // 3. Click thẳng vào nút Play hoặc ảnh đại diện để ÉP nó tải luồng video (Bắt buộc phải Play mới lấy được link)
-                        const playBtns = document.querySelectorAll('.play-icon-gWzeeV, .xg-icon-play, [aria-label="play"], .video-hover-button-group-container-mh06XY, .image-box-grid-EYaIcP img');
-                        playBtns.forEach(b => {
-                            try { 
-                                b.dispatchEvent(new MouseEvent('mouseover', {bubbles: true})); 
-                                b.click(); // Phải CLICK thì xgplayer mới bơm link vào thẻ <video>
-                            } catch(e){}
-                        });
-                    }""")
-                    page.wait_for_timeout(1000) # Chờ 1 giây để nó nạp link sau khi click
-                except:
-                    pass
+            except:
+                pass
 
-                try:
-                    new_url = page.evaluate("""() => {
-                        const extracted = Array.from(document.querySelectorAll('.studio-relay-extracted-video'));
-                        const urls = extracted.map(el => el.getAttribute('data-url')).filter(Boolean);
-                        const videos = Array.from(document.querySelectorAll('video'));
-                        for (let v of videos) { if (v.src && (v.src.startsWith('http') || v.src.startsWith('blob'))) urls.push(v.src); else { const s = v.querySelector('source'); if (s && s.src && (s.src.startsWith('http') || s.src.startsWith('blob'))) urls.push(s.src); } }
-                        return [...new Set(urls)];
-                    }""")
-                    if new_url and len(new_url) > 0:
-                        video_urls = new_url
-                        video_url = new_url[0]
-                        break
-                except:
-                    pass
+            mins = i // 60
+            secs = i % 60
+            video_tasks[task_id]["message"] = f"Đang chờ higgsfield.ai tạo video... {mins:02d}:{secs:02d}"
 
-                mins = i // 60
-                secs = i % 60
-                video_tasks[task_id]["message"] = f"Đang chờ higgsfield.ai tạo video... {mins:02d}:{secs:02d}"
-
-            if video_urls:
-                out_dir = Path(save_path)
-                out_dir.mkdir(parents=True, exist_ok=True)
-                all_result_urls = []
-                try:
-                    for v_idx, v_url in enumerate(video_urls):
-                        video_url = v_url
-                        out_file = out_dir / (f"{task_id}.mp4" if len(video_urls) == 1 else f"{task_id}_{v_idx+1}.mp4")
-                        if video_url.startswith("blob:"):
-                            b64_data = page.evaluate("""async (url) => {
-                                const response = await fetch(url);
-                                const blob = await response.blob();
-                                return new Promise((resolve, reject) => {
-                                    const reader = new FileReader();
-                                    reader.onloadend = () => resolve(reader.result);
-                                    reader.onerror = reject;
-                                    reader.readAsDataURL(blob);
-                                });
-                            }""", video_url)
-                            import base64
-                            header, encoded = b64_data.split(",", 1)
-                            with open(out_file, "wb") as f:
-                                f.write(base64.b64decode(encoded))
-                        else:
-                            # DỰ PHÒNG 3 LỚP ĐỂ TẢI VIDEO THÀNH CÔNG 100%
-                            success = False
-                            err_msg = ""
-                            
-                            # Lớp 1: Tải bằng Playwright API (thêm User-Agent và Referer để tránh bị CDN block gây lỗi ETIMEDOUT)
-                            try:
-                                ua = page.evaluate("navigator.userAgent")
-                                resp = context.request.get(video_url, headers={
-                                    "User-Agent": ua,
-                                    "Referer": "https://higgsfield.ai/",
-                                    "Accept": "*/*"
-                                }, timeout=60000)
-                                if resp.ok:
-                                    with open(out_file, "wb") as f:
-                                        f.write(resp.body())
-                                    success = True
-                                else:
-                                    err_msg = f"HTTP {resp.status}"
-                            except Exception as e:
-                                err_msg = str(e)
-                                
-                            # Lớp 2: Nếu Lớp 1 thất bại (bị block kết nối), tải trực tiếp bằng JS trong lòng Page
-                            if not success:
-                                try:
-                                    b64_data = page.evaluate("""async (url) => {
-                                        const response = await fetch(url);
-                                        if (!response.ok) throw new Error('Fetch failed');
-                                        const blob = await response.blob();
-                                        return new Promise((resolve, reject) => {
-                                            const reader = new FileReader();
-                                            reader.onloadend = () => resolve(reader.result);
-                                            reader.onerror = reject;
-                                            reader.readAsDataURL(blob);
-                                        });
-                                    }""", video_url)
-                                    import base64
-                                    header, encoded = b64_data.split(",", 1)
-                                    with open(out_file, "wb") as f:
-                                        f.write(base64.b64decode(encoded))
-                                    success = True
-                                except Exception as e:
-                                    err_msg = f"JS Fetch Lỗi: {e}"
-                                    
-                            # Lớp 3: Phương án cuối cùng, bắn sang tab mới để ép trình duyệt tải
-                            if not success:
-                                try:
-                                    dl_page = context.new_page()
-                                    dl_page.goto(video_url, timeout=30000)
-                                    dl_page.wait_for_timeout(5000)
-                                    # File tải về sẽ rơi vào _on_download event của Playwright, nhưng ta không biết tên file. 
-                                    # Cách tốt nhất là báo lỗi để retry nếu 2 lớp trên thất bại.
-                                    dl_page.close()
-                                    raise Exception(f"Tải video thất bại sau 3 cách. Lỗi gốc: {err_msg}")
-                                except Exception as e:
-                                    raise e
-                                   
-                        # Phần này chạy chung cho cả 2 trường hợp tải thành công (blob hoặc http)
-                        if tg_enabled:
-                            _send_video_to_telegram(str(out_file), tg_token, tg_chat_id)
-                        all_urls = [f"/api/video/download/{task_id}?path={urllib.parse.quote(str(out_file))}"]
-                        all_result_urls.extend(all_urls)
-                    video_tasks[task_id]["result_urls"] = all_result_urls
-                    video_tasks[task_id]["message"] = f"🎉 {len(video_urls)} Video tạo xong! Đang hiển thị lên Tool..."
-                    page.wait_for_timeout(3000)
-                except Exception as e:
-                    video_tasks[task_id] = {"status": "error", "message": f"Tạo thành công nhưng tải video thất bại: {e}"}
-            else:
-                if video_tasks.get(task_id, {}).get("force_stop"):
-                    video_tasks[task_id]["message"] = "Đã hủy tiến trình!"
-                    # Không set status = done ở đây, để UI tiếp tục cập nhật tiến trình xóa acc
-                else:
-                    video_tasks[task_id] = {"status": "error", "message": "Timeout 10 phút: Video không xuất hiện trên higgsfield.ai."}
-
-            # ── BƯỚC 12: Xóa tài khoản (Delete Account) ─────────
-            video_tasks[task_id]["message"] = video_tasks[task_id].get("message", "") + "\nĐang hủy hoạt động và Xóa tài khoản..."
-            
-            # Thoát khỏi chế độ xem video (Modal/Fullscreen) do lúc nãy ta đã click Play
+        if video_urls:
+            out_dir = Path(save_path)
+            out_dir.mkdir(parents=True, exist_ok=True)
+            all_result_urls = []
             try:
-                page.keyboard.press("Escape")
-                page.wait_for_timeout(500)
-                page.keyboard.press("Escape")
-                # Click chuột ra một góc trống để đảm bảo các menu/modal đang mở sẽ bị đóng
-                page.mouse.click(10, 10)
-                page.wait_for_timeout(1000)
-            except: pass
-            
-            try:
-                # Nếu bị force stop, tải lại trang để HỦY NGAY LẬP TỨC các file đang upload
-                if video_tasks.get(task_id, {}).get("force_stop"):
-                    page.reload(wait_until="domcontentloaded")
-                    page.wait_for_timeout(2000)
-                    
-                # 1. Bấm Avatar (Sử dụng locator chính xác theo DOM của higgsfield)
-                page.locator("button[aria-haspopup='menu']").filter(has=page.locator("img.rounded-full")).click(timeout=8000)
-                
-                def click_by_coords(texts, selector='button, p, div, span, a', retries=10):
-                    import json, random
-                    for _ in range(retries):
-                        box = page.evaluate(f"""() => {{
-                            const texts = {json.dumps(texts)};
-                            const allBtns = Array.from(document.querySelectorAll('{selector}'));
-                            const btn = allBtns.reverse().find(b => {{
-                                if (!b.innerText) return false;
-                                const rect = b.getBoundingClientRect();
-                                if (rect.width === 0 || rect.height === 0) return false;
-                                const style = window.getComputedStyle(b);
-                                if (style.opacity === '0' || style.visibility === 'hidden' || style.display === 'none') return false;
-                                const text = b.innerText.trim();
-                                return texts.includes(text) || texts.some(t => text === t + ' >' || text === t + ' ❯' || text === t + ' 〉') || texts.some(t => text.includes(t) && text.length <= t.length + 5);
-                            }});
-                            
-                            let clickable = btn;
-                            while(clickable && clickable !== document.body) {{
-                                const style = window.getComputedStyle(clickable);
-                                if (style.cursor === 'pointer' || clickable.tagName === 'BUTTON' || clickable.tagName === 'A') {{
-                                    break;
-                                }}
-                                clickable = clickable.parentElement;
-                            }}
-                            if (!clickable || clickable === document.body) clickable = btn;
-                            
-                            if (clickable.scrollIntoView) {{
-                                clickable.scrollIntoView({{block: 'center', inline: 'center'}});
-                            }}
-                            const rect = clickable.getBoundingClientRect();
-                            return {{
-                                x: rect.x + rect.width / 2,
-                                y: rect.y + rect.height / 2
-                            }};
-                        }}""")
-                        if box:
-                            tx = box['x'] + random.uniform(-2, 2)
-                            ty = box['y'] + random.uniform(-2, 2)
-                            page.mouse.move(tx, ty)
-                            page.wait_for_timeout(100)
-                            # Thực hiện click bằng hàm click chuẩn
-                            page.mouse.click(tx, ty)
-                            return True
-                        page.wait_for_timeout(1000) # Đợi lâu hơn xíu giữa các lần thử
-                    return False
-
-                # 2. Bấm Settings / Cài đặt
-                page.wait_for_timeout(2000)
-                if not click_by_coords(['Settings', 'Cài đặt']): raise Exception("Không tìm thấy nút Settings / Cài đặt")
-                
-                # 3. Bấm Account / Tài khoản
-                page.wait_for_timeout(2000)
-                if not click_by_coords(['Account', 'Tài khoản']): raise Exception("Không tìm thấy nút Account / Tài khoản")
-                
-                # 4. Bấm Delete Account / Xóa tài khoản
-                page.wait_for_timeout(2000)
-                if not click_by_coords(['Delete Account', 'Xóa tài khoản']): raise Exception("Không tìm thấy nút Delete Account / Xóa tài khoản")
-                
-                # 5. Bấm Delete / Xóa
-                page.wait_for_timeout(2000)
-                if not click_by_coords(['Delete', 'Xóa'], 'button'): raise Exception("Không tìm thấy nút Delete / Xóa (Lần 1)")
-                
-                # 5.5. Bấm Xóa trong modal xác nhận nhỏ (Hủy / Xóa)
-                page.wait_for_timeout(2000)
-                print("[XoaNgay] Đang bấm nút Xóa màu đỏ trong modal xác nhận...")
-                try:
-                    clicked_modal = page.evaluate("""() => {
-                        const btns = Array.from(document.querySelectorAll('button'));
-                        // Tìm các nút có chữ Xóa hoặc Delete chính xác
-                        const deleteBtns = btns.filter(b => b.innerText.trim() === 'Xóa' || b.innerText.trim() === 'Delete');
-                        if (deleteBtns.length > 0) {
-                            // Click nút cuối cùng (thường là nút trong modal vừa hiện ra)
-                            deleteBtns[deleteBtns.length - 1].click();
-                            return true;
-                        }
-                        return false;
-                    }""")
-                    if clicked_modal:
-                        print("[XoaNgay] Đã click nút Xóa trong modal thành công!")
+                for v_idx, v_url in enumerate(video_urls):
+                    video_url = v_url
+                    out_file = out_dir / (f"{task_id}.mp4" if len(video_urls) == 1 else f"{task_id}_{v_idx+1}.mp4")
+                    if video_url.startswith("blob:"):
+                        b64_data = page.evaluate("""async (url) => {
+                            const response = await fetch(url);
+                            const blob = await response.blob();
+                            return new Promise((resolve, reject) => {
+                                const reader = new FileReader();
+                                reader.onloadend = () => resolve(reader.result);
+                                reader.onerror = reject;
+                                reader.readAsDataURL(blob);
+                            });
+                        }""", video_url)
+                        import base64
+                        header, encoded = b64_data.split(",", 1)
+                        with open(out_file, "wb") as f:
+                            f.write(base64.b64decode(encoded))
                     else:
-                        print("[XoaNgay] Không tìm thấy nút Xóa trong modal bằng JS, thử Playwright...")
-                        page.locator('button:has-text("Xóa"), button:has-text("Delete")').last.click(timeout=2000, force=True)
-                except Exception as e:
-                    print(f"[XoaNgay] Lỗi click nút Xóa trong modal: {e}")
-                
-                # 5.6. Bấm Xác nhận (nếu có popup Xác nhận tuổi)
-                page.wait_for_timeout(2000)
-                try:
-                    clicked_confirm = page.evaluate("""() => {
-                        const btns = Array.from(document.querySelectorAll('button'));
-                        const confirmBtns = btns.filter(b => b.innerText.trim() === 'Xác nhận' || b.innerText.trim() === 'Confirm');
-                        if (confirmBtns.length > 0) {
-                            confirmBtns[confirmBtns.length - 1].click();
-                            return true;
-                        }
-                        return false;
-                    }""")
-                    if clicked_confirm:
-                        print("[XoaNgay] Đã click nút Xác nhận tuổi!")
-                except Exception as e:
-                    pass
-                
-                # 6. Bấm Xóa ngay - Dùng kịch bản ElementFromPoint siêu việt của User
-                print("[XoaNgay] Đang bắt đầu bấm Xóa ngay bằng kịch bản ElementFromPoint...")
-                
-                success = False
-                for attempt in range(6):
-                    page.wait_for_timeout(2000)
-                    frames_list = page.frames
-                    print(f"[XoaNgay] Attempt {attempt+1}: Bơm mã JS vào tất cả {len(frames_list)} frames (như Extension)...")
-                    
-                    js_code = """
-                        async () => {
-                          const logo = document.querySelector("img.icon-ieQdCp");
-                          if (!logo) return "KhongThayLogo";
-
-                          // Vị trí: dưới logo 30px
-                          const r = logo.getBoundingClientRect();
-                          const size = 50;
-                          const x = r.left + (r.width - size) / 2;
-                          const y = r.bottom + 30;
-
-                          // Tạo highlight
-                          document.getElementById("test-square-highlight")?.remove();
-
-                          const square = document.createElement("div");
-                          square.id = "test-square-highlight";
-
-                          Object.assign(square.style, {
-                            position: "fixed",
-                            left: `${x}px`,
-                            top: `${y}px`,
-                            width: `${size}px`,
-                            height: `${size}px`,
-                            boxSizing: "border-box",
-                            border: "4px solid #ff0033",
-                            borderRadius: "4px",
-                            background: "rgba(255, 0, 51, .18)",
-                            boxShadow: "0 0 18px 7px rgba(255, 0, 51, .75)",
-                            zIndex: "2147483647",
-                            pointerEvents: "none"
-                          });
-
-                          document.body.appendChild(square);
-                          console.log("Đã highlight. Sẽ click sau 1.5 giây.");
-
-                          await new Promise(resolve => setTimeout(resolve, 1500));
-
-                          // Ẩn overlay để lấy chính phần tử phía dưới tâm ô
-                          square.style.display = "none";
-                          const target = document.elementFromPoint(x + size / 2, y + size / 2);
-                          square.remove();
-
-                          if (!target) return "KhongCoPhanTu";
-
-                          const clickable = target.closest(
-                            ".confirm-button-ZuDQ59, [role='button'], button, a, [onclick]"
-                          ) || target;
-
-                          console.log("Đang click phần tử:", clickable);
-                          clickable.click();
-                          
-                          return "DaClick";
-                        }
-                    """
-                    
-                    clicked_this_round = False
-                    for f in frames_list:
+                        # DỰ PHÒNG 3 LỚP ĐỂ TẢI VIDEO THÀNH CÔNG 100%
+                        success = False
+                        err_msg = ""
+                        
+                        # Lớp 1: Tải bằng Playwright API (thêm User-Agent và Referer để tránh bị CDN block gây lỗi ETIMEDOUT)
                         try:
-                            result = f.evaluate(js_code)
-                            if result == "DaClick":
-                                print(f"     -> [Tuyệt vời] Đã vẽ highlight và CLICK TRÚNG ĐÍCH trong frame: {f.name or f.url}")
-                                clicked_this_round = True
-                                break
-                        except Exception:
-                            # Frame có thể bị huỷ hoặc lỗi kết nối, bỏ qua
-                            pass
+                            ua = page.evaluate("navigator.userAgent")
+                            resp = context.request.get(video_url, headers={
+                                "User-Agent": ua,
+                                "Referer": "https://higgsfield.ai/",
+                                "Accept": "*/*"
+                            }, timeout=60000)
+                            if resp.ok:
+                                with open(out_file, "wb") as f:
+                                    f.write(resp.body())
+                                success = True
+                            else:
+                                err_msg = f"HTTP {resp.status}"
+                        except Exception as e:
+                            err_msg = str(e)
                             
-                    if clicked_this_round:
-                        page.wait_for_timeout(3000)
-                        # Kiểm tra xem logo có biến mất khỏi tất cả frames chưa
-                        still_there = False
-                        for f in page.frames:
+                        # Lớp 2: Nếu Lớp 1 thất bại (bị block kết nối), tải trực tiếp bằng JS trong lòng Page
+                        if not success:
                             try:
-                                has_logo = f.evaluate('() => !!document.querySelector("img.icon-ieQdCp")')
-                                if has_logo:
-                                    still_there = True
-                                    break
-                            except: pass
-                            
-                        if not still_there:
-                            success = True
-                            print("[XoaNgay] Xác nhận cửa sổ Xóa ngay đã đóng -> THÀNH CÔNG!")
-                            break
-                        else:
-                            print("[XoaNgay] Vẫn còn thấy Logo, click chưa ăn hoặc mạng lag...")
-                
-                if not success:
-                    print("[XoaNgay] Cảnh báo: Vượt quá số lần thử click Xóa ngay!")
-                
+                                b64_data = page.evaluate("""async (url) => {
+                                    const response = await fetch(url);
+                                    if (!response.ok) throw new Error('Fetch failed');
+                                    const blob = await response.blob();
+                                    return new Promise((resolve, reject) => {
+                                        const reader = new FileReader();
+                                        reader.onloadend = () => resolve(reader.result);
+                                        reader.onerror = reject;
+                                        reader.readAsDataURL(blob);
+                                    });
+                                }""", video_url)
+                                import base64
+                                header, encoded = b64_data.split(",", 1)
+                                with open(out_file, "wb") as f:
+                                    f.write(base64.b64decode(encoded))
+                                success = True
+                            except Exception as e:
+                                err_msg = f"JS Fetch Lỗi: {e}"
+                                
+                        # Lớp 3: Phương án cuối cùng, bắn sang tab mới để ép trình duyệt tải
+                        if not success:
+                            try:
+                                dl_page = context.new_page()
+                                dl_page.goto(video_url, timeout=30000)
+                                dl_page.wait_for_timeout(5000)
+                                # File tải về sẽ rơi vào _on_download event của Playwright, nhưng ta không biết tên file. 
+                                # Cách tốt nhất là báo lỗi để retry nếu 2 lớp trên thất bại.
+                                dl_page.close()
+                                raise Exception(f"Tải video thất bại sau 3 cách. Lỗi gốc: {err_msg}")
+                            except Exception as e:
+                                raise e
+                               
+                    # Phần này chạy chung cho cả 2 trường hợp tải thành công (blob hoặc http)
+                    if tg_enabled:
+                        _send_video_to_telegram(str(out_file), tg_token, tg_chat_id)
+                    all_urls = [f"/api/video/download/{task_id}?path={urllib.parse.quote(str(out_file))}"]
+                    all_result_urls.extend(all_urls)
+                video_tasks[task_id]["result_urls"] = all_result_urls
+                video_tasks[task_id]["message"] = f"🎉 {len(video_urls)} Video tạo xong! Đang hiển thị lên Tool..."
+                page.wait_for_timeout(3000)
+            except Exception as e:
+                video_tasks[task_id] = {"status": "error", "message": f"Tạo thành công nhưng tải video thất bại: {e}"}
+        else:
+            if video_tasks.get(task_id, {}).get("force_stop"):
+                video_tasks[task_id]["message"] = "Đã hủy tiến trình!"
+                # Không set status = done ở đây, để UI tiếp tục cập nhật tiến trình xóa acc
+            else:
+                video_tasks[task_id] = {"status": "error", "message": "Timeout 10 phút: Video không xuất hiện trên higgsfield.ai."}
+
+        # ── BƯỚC 12: Xóa tài khoản (Delete Account) ─────────
+        video_tasks[task_id]["message"] = video_tasks[task_id].get("message", "") + "\nĐang hủy hoạt động và Xóa tài khoản..."
+        
+        # Thoát khỏi chế độ xem video (Modal/Fullscreen) do lúc nãy ta đã click Play
+        try:
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(500)
+            page.keyboard.press("Escape")
+            # Click chuột ra một góc trống để đảm bảo các menu/modal đang mở sẽ bị đóng
+            page.mouse.click(10, 10)
+            page.wait_for_timeout(1000)
+        except: pass
+        
+        try:
+            # Nếu bị force stop, tải lại trang để HỦY NGAY LẬP TỨC các file đang upload
+            if video_tasks.get(task_id, {}).get("force_stop"):
+                page.reload(wait_until="domcontentloaded")
                 page.wait_for_timeout(2000)
-
-
                 
-                # Đợi web load và kiểm tra trạng thái Đăng xuất (chứng tỏ đã xóa thành công)
-                try:
+            # 1. Bấm Avatar (Sử dụng locator chính xác theo DOM của higgsfield)
+            page.locator("button[aria-haspopup='menu']").filter(has=page.locator("img.rounded-full")).click(timeout=8000)
+            
+            def click_by_coords(texts, selector='button, p, div, span, a', retries=10):
+                import json, random
+                for _ in range(retries):
+                    box = page.evaluate(f"""() => {{
+                        const texts = {json.dumps(texts)};
+                        const allBtns = Array.from(document.querySelectorAll('{selector}'));
+                        const btn = allBtns.reverse().find(b => {{
+                            if (!b.innerText) return false;
+                            const rect = b.getBoundingClientRect();
+                            if (rect.width === 0 || rect.height === 0) return false;
+                            const style = window.getComputedStyle(b);
+                            if (style.opacity === '0' || style.visibility === 'hidden' || style.display === 'none') return false;
+                            const text = b.innerText.trim();
+                            return texts.includes(text) || texts.some(t => text === t + ' >' || text === t + ' ❯' || text === t + ' 〉') || texts.some(t => text.includes(t) && text.length <= t.length + 5);
+                        }});
+                        
+                        let clickable = btn;
+                        while(clickable && clickable !== document.body) {{
+                            const style = window.getComputedStyle(clickable);
+                            if (style.cursor === 'pointer' || clickable.tagName === 'BUTTON' || clickable.tagName === 'A') {{
+                                break;
+                            }}
+                            clickable = clickable.parentElement;
+                        }}
+                        if (!clickable || clickable === document.body) clickable = btn;
+                        
+                        if (clickable.scrollIntoView) {{
+                            clickable.scrollIntoView({{block: 'center', inline: 'center'}});
+                        }}
+                        const rect = clickable.getBoundingClientRect();
+                        return {{
+                            x: rect.x + rect.width / 2,
+                            y: rect.y + rect.height / 2
+                        }};
+                    }}""")
+                    if box:
+                        tx = box['x'] + random.uniform(-2, 2)
+                        ty = box['y'] + random.uniform(-2, 2)
+                        page.mouse.move(tx, ty)
+                        page.wait_for_timeout(100)
+                        # Thực hiện click bằng hàm click chuẩn
+                        page.mouse.click(tx, ty)
+                        return True
+                    page.wait_for_timeout(1000) # Đợi lâu hơn xíu giữa các lần thử
+                return False
+
+            # 2. Bấm Settings / Cài đặt
+            page.wait_for_timeout(2000)
+            if not click_by_coords(['Settings', 'Cài đặt']): raise Exception("Không tìm thấy nút Settings / Cài đặt")
+            
+            # 3. Bấm Account / Tài khoản
+            page.wait_for_timeout(2000)
+            if not click_by_coords(['Account', 'Tài khoản']): raise Exception("Không tìm thấy nút Account / Tài khoản")
+            
+            # 4. Bấm Delete Account / Xóa tài khoản
+            page.wait_for_timeout(2000)
+            if not click_by_coords(['Delete Account', 'Xóa tài khoản']): raise Exception("Không tìm thấy nút Delete Account / Xóa tài khoản")
+            
+            # 5. Bấm Delete / Xóa
+            page.wait_for_timeout(2000)
+            if not click_by_coords(['Delete', 'Xóa'], 'button'): raise Exception("Không tìm thấy nút Delete / Xóa (Lần 1)")
+            
+            # 5.5. Bấm Xóa trong modal xác nhận nhỏ (Hủy / Xóa)
+            page.wait_for_timeout(2000)
+            print("[XoaNgay] Đang bấm nút Xóa màu đỏ trong modal xác nhận...")
+            try:
+                clicked_modal = page.evaluate("""() => {
+                    const btns = Array.from(document.querySelectorAll('button'));
+                    // Tìm các nút có chữ Xóa hoặc Delete chính xác
+                    const deleteBtns = btns.filter(b => b.innerText.trim() === 'Xóa' || b.innerText.trim() === 'Delete');
+                    if (deleteBtns.length > 0) {
+                        // Click nút cuối cùng (thường là nút trong modal vừa hiện ra)
+                        deleteBtns[deleteBtns.length - 1].click();
+                        return true;
+                    }
+                    return false;
+                }""")
+                if clicked_modal:
+                    print("[XoaNgay] Đã click nút Xóa trong modal thành công!")
+                else:
+                    print("[XoaNgay] Không tìm thấy nút Xóa trong modal bằng JS, thử Playwright...")
+                    page.locator('button:has-text("Xóa"), button:has-text("Delete")').last.click(timeout=2000, force=True)
+            except Exception as e:
+                print(f"[XoaNgay] Lỗi click nút Xóa trong modal: {e}")
+            
+            # 5.6. Bấm Xác nhận (nếu có popup Xác nhận tuổi)
+            page.wait_for_timeout(2000)
+            try:
+                clicked_confirm = page.evaluate("""() => {
+                    const btns = Array.from(document.querySelectorAll('button'));
+                    const confirmBtns = btns.filter(b => b.innerText.trim() === 'Xác nhận' || b.innerText.trim() === 'Confirm');
+                    if (confirmBtns.length > 0) {
+                        confirmBtns[confirmBtns.length - 1].click();
+                        return true;
+                    }
+                    return false;
+                }""")
+                if clicked_confirm:
+                    print("[XoaNgay] Đã click nút Xác nhận tuổi!")
+            except Exception as e:
+                pass
+            
+            # 6. Bấm Xóa ngay - Dùng kịch bản ElementFromPoint siêu việt của User
+            print("[XoaNgay] Đang bắt đầu bấm Xóa ngay bằng kịch bản ElementFromPoint...")
+            
+            success = False
+            for attempt in range(6):
+                page.wait_for_timeout(2000)
+                frames_list = page.frames
+                print(f"[XoaNgay] Attempt {attempt+1}: Bơm mã JS vào tất cả {len(frames_list)} frames (như Extension)...")
+                
+                js_code = """
+                    async () => {
+                      const logo = document.querySelector("img.icon-ieQdCp");
+                      if (!logo) return "KhongThayLogo";
+
+                      // Vị trí: dưới logo 30px
+                      const r = logo.getBoundingClientRect();
+                      const size = 50;
+                      const x = r.left + (r.width - size) / 2;
+                      const y = r.bottom + 30;
+
+                      // Tạo highlight
+                      document.getElementById("test-square-highlight")?.remove();
+
+                      const square = document.createElement("div");
+                      square.id = "test-square-highlight";
+
+                      Object.assign(square.style, {
+                        position: "fixed",
+                        left: `${x}px`,
+                        top: `${y}px`,
+                        width: `${size}px`,
+                        height: `${size}px`,
+                        boxSizing: "border-box",
+                        border: "4px solid #ff0033",
+                        borderRadius: "4px",
+                        background: "rgba(255, 0, 51, .18)",
+                        boxShadow: "0 0 18px 7px rgba(255, 0, 51, .75)",
+                        zIndex: "2147483647",
+                        pointerEvents: "none"
+                      });
+
+                      document.body.appendChild(square);
+                      console.log("Đã highlight. Sẽ click sau 1.5 giây.");
+
+                      await new Promise(resolve => setTimeout(resolve, 1500));
+
+                      // Ẩn overlay để lấy chính phần tử phía dưới tâm ô
+                      square.style.display = "none";
+                      const target = document.elementFromPoint(x + size / 2, y + size / 2);
+                      square.remove();
+
+                      if (!target) return "KhongCoPhanTu";
+
+                      const clickable = target.closest(
+                        ".confirm-button-ZuDQ59, [role='button'], button, a, [onclick]"
+                      ) || target;
+
+                      console.log("Đang click phần tử:", clickable);
+                      clickable.click();
+                      
+                      return "DaClick";
+                    }
+                """
+                
+                clicked_this_round = False
+                for f in frames_list:
+                    try:
+                        result = f.evaluate(js_code)
+                        if result == "DaClick":
+                            print(f"     -> [Tuyệt vời] Đã vẽ highlight và CLICK TRÚNG ĐÍCH trong frame: {f.name or f.url}")
+                            clicked_this_round = True
+                            break
+                    except Exception:
+                        # Frame có thể bị huỷ hoặc lỗi kết nối, bỏ qua
+                        pass
+                        
+                if clicked_this_round:
                     page.wait_for_timeout(3000)
-                    # Kiểm tra xem có xuất hiện nút "Đăng nhập" (Login) hoặc có chuyển hướng URL from_logout không
-                    page.evaluate("""() => {
-                        const all = document.body.innerText;
-                        const hasLoginBtn = all.includes('Đăng nhập') || all.includes('Log in') || all.includes('Sign in');
-                        const isLoggedOutUrl = window.location.href.includes('from_logout');
+                    # Kiểm tra xem logo có biến mất khỏi tất cả frames chưa
+                    still_there = False
+                    for f in page.frames:
+                        try:
+                            has_logo = f.evaluate('() => !!document.querySelector("img.icon-ieQdCp")')
+                            if has_logo:
+                                still_there = True
+                                break
+                        except: pass
                         
-                        if (!hasLoginBtn && !isLoggedOutUrl && !all.includes('Account deleted') && !all.includes('đã xóa') && !all.includes('deleted')) {
-                            throw new Error('Chưa thấy dấu hiệu đăng xuất/xóa tài khoản');
-                        }
-                    }""")
-                    page.wait_for_timeout(1000) # Thêm 1 giây cho chắc cú sau khi thông báo hiện
-                except Exception as e:
-                    print(f"Chưa thấy dấu hiệu xóa thành công, đợi thêm 5s: {e}")
-                    page.wait_for_timeout(5000)
-                    # Lần 2 bắt buộc phải có, nếu không có quăng lỗi để ra catch
-                    page.evaluate("""() => {
-                        const all = document.body.innerText;
-                        const hasLoginBtn = all.includes('Đăng nhập') || all.includes('Log in') || all.includes('Sign in');
-                        const isLoggedOutUrl = window.location.href.includes('from_logout');
-                        
-                        if (!hasLoginBtn && !isLoggedOutUrl && !all.includes('Account deleted') && !all.includes('đã xóa') && !all.includes('deleted')) {
-                            throw new Error('Timeout: Không thấy thông báo hoặc dấu hiệu xóa thành công (chưa thấy nút Đăng nhập)!');
-                        }
-                    }""")
-                video_tasks[task_id]["message"] = video_tasks[task_id]["message"].replace("Đang hủy hoạt động và Xóa tài khoản...", "Đã xóa Account thành công!")
-            except Exception as del_err:
-                print(f"Lỗi khi xóa account: {del_err}")
-                video_tasks[task_id]["message"] = video_tasks[task_id]["message"].replace("Đang hủy hoạt động và Xóa tài khoản...", "Gặp lỗi khi xóa Account!")
-                
-            # Đánh dấu done ở bước cuối cùng
-            video_tasks[task_id]["status"] = "done"
+                    if not still_there:
+                        success = True
+                        print("[XoaNgay] Xác nhận cửa sổ Xóa ngay đã đóng -> THÀNH CÔNG!")
+                        break
+                    else:
+                        print("[XoaNgay] Vẫn còn thấy Logo, click chưa ăn hoặc mạng lag...")
+            
+            if not success:
+                print("[XoaNgay] Cảnh báo: Vượt quá số lần thử click Xóa ngay!")
+            
+            page.wait_for_timeout(2000)
 
-            try: context.close()
-            except: pass
+
+            
+            # Đợi web load và kiểm tra trạng thái Đăng xuất (chứng tỏ đã xóa thành công)
+            try:
+                page.wait_for_timeout(3000)
+                # Kiểm tra xem có xuất hiện nút "Đăng nhập" (Login) hoặc có chuyển hướng URL from_logout không
+                page.evaluate("""() => {
+                    const all = document.body.innerText;
+                    const hasLoginBtn = all.includes('Đăng nhập') || all.includes('Log in') || all.includes('Sign in');
+                    const isLoggedOutUrl = window.location.href.includes('from_logout');
+                    
+                    if (!hasLoginBtn && !isLoggedOutUrl && !all.includes('Account deleted') && !all.includes('đã xóa') && !all.includes('deleted')) {
+                        throw new Error('Chưa thấy dấu hiệu đăng xuất/xóa tài khoản');
+                    }
+                }""")
+                page.wait_for_timeout(1000) # Thêm 1 giây cho chắc cú sau khi thông báo hiện
+            except Exception as e:
+                print(f"Chưa thấy dấu hiệu xóa thành công, đợi thêm 5s: {e}")
+                page.wait_for_timeout(5000)
+                # Lần 2 bắt buộc phải có, nếu không có quăng lỗi để ra catch
+                page.evaluate("""() => {
+                    const all = document.body.innerText;
+                    const hasLoginBtn = all.includes('Đăng nhập') || all.includes('Log in') || all.includes('Sign in');
+                    const isLoggedOutUrl = window.location.href.includes('from_logout');
+                    
+                    if (!hasLoginBtn && !isLoggedOutUrl && !all.includes('Account deleted') && !all.includes('đã xóa') && !all.includes('deleted')) {
+                        throw new Error('Timeout: Không thấy thông báo hoặc dấu hiệu xóa thành công (chưa thấy nút Đăng nhập)!');
+                    }
+                }""")
+            video_tasks[task_id]["message"] = video_tasks[task_id]["message"].replace("Đang hủy hoạt động và Xóa tài khoản...", "Đã xóa Account thành công!")
+        except Exception as del_err:
+            print(f"Lỗi khi xóa account: {del_err}")
+            video_tasks[task_id]["message"] = video_tasks[task_id]["message"].replace("Đang hủy hoạt động và Xóa tài khoản...", "Gặp lỗi khi xóa Account!")
+            
+        # Đánh dấu done ở bước cuối cùng
+        video_tasks[task_id]["status"] = "done"
+
+        try: context.close()
+        except: pass
 
     except Exception as e:
         # Bắt buộc đóng trình duyệt ngay lập tức nếu có lỗi hoặc văng để retry có thể lấy FP mới
         try: context.close()
         except: pass
-        
+    
         if "higgsfield_logout" in str(e):
             print(f"--- Bị văng! Báo cho frontend tự động thử lại task {task_id}...")
             video_tasks[task_id] = {

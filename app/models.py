@@ -31,6 +31,7 @@ class Profile(BaseModel):
     auto_random_fp: bool = False
     last_used: Optional[str] = None
     status: str = "idle"  # idle, running
+    extensions: str = ""
 
     @staticmethod
     def generate_id():
@@ -42,3 +43,9 @@ class LaunchRequest(BaseModel):
     startup_urls: Optional[str] = None
     startup_mode: Optional[str] = None
     enable_ext_btn2: bool = False
+    enable_ext: bool = False
+
+
+class CheckVideoReq(BaseModel):
+    profile_id: str
+    is_headless: bool = False

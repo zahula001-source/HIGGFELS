@@ -23,7 +23,7 @@ echo.
 
 :: Cai pip packages
 echo [1/3] Dang cai thu vien Python...
-pip install fastapi uvicorn[standard] playwright pydantic aiofiles python-multipart requests --quiet
+pip install fastapi uvicorn[standard] playwright pydantic aiofiles python-multipart requests cloakbrowser --quiet
 if errorlevel 1 (
     echo [LOI] Cai thu vien that bai! Kiem tra ket noi mang.
     pause
