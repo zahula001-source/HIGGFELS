@@ -681,9 +681,9 @@ def auto_signup_endpoint(profile_id: str):
                                                 continue
                                                 
                                         # 6. Nút Có (Yes) / Chấp nhận (Accept) - Duy trì đăng nhập / Cho phép ứng dụng
-                                        yes_btn = page.locator('input#idSIButton9, button#idSIButton9, input[value="Có"], input[value="Yes"], input[value="Chấp nhận"], input[value="Accept"], button:has-text("Chấp nhận")')
+                                        yes_btn = page.locator('input#idSIButton9, button#idSIButton9, button#acceptButton, input#acceptButton, input[value="Có"], input[value="Yes"], input[value="Chấp nhận"], input[value="Accept"], button:text-is("Có"), button:text-is("Yes"), button:has-text("Chấp nhận")')
                                         if yes_btn.count() > 0 and yes_btn.first.is_visible():
-                                            yes_btn.first.click()
+                                            yes_btn.first.click(force=True)
                                             print("Clicked Yes / Accept")
                                             continue
                                             
