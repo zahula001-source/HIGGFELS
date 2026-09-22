@@ -2432,14 +2432,16 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
 
 
 
-from typing import List
+from typing import List, Optional
 
 @app.post("/api/video/create")
 async def create_video(
     prompt: str = Form(...),
     profile_id: str = Form(""),
-    images: List[UploadFile] = File(None),
-    upload_video: UploadFile = File(None),
+    images: Optional[List[UploadFile]] = File(None),
+    upload_video: Optional[UploadFile] = File(None),
+    video_duration: str = Form(""),
+    video_ratio: str = Form(""),
     save_path: str = Form(None),
     is_headless: str = Form("false"),
     enable_ext: str = Form("false"),

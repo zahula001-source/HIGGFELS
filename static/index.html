@@ -1239,7 +1239,8 @@ async function startVideoCreationDynamic(fId) {
   // Append video upload (nếu có)
   const videoInput = document.getElementById(`videoInputUpload_${fId}`);
   if (videoInput && videoInput.files[0]) {
-    formData.append("upload_video", videoInput.files[0]);
+    const safeName = "video_upload" + (videoInput.files[0].name.substring(videoInput.files[0].name.lastIndexOf('.')) || ".mp4");
+    formData.append("upload_video", videoInput.files[0], safeName);
   }
 
   try {
