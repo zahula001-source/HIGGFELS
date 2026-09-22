@@ -1782,32 +1782,82 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
             if "from_logout=1" in page.url or page.evaluate("() => Array.from(document.querySelectorAll('button')).some(b => b.innerText && b.innerText.includes('Continue with Google'))"):
                 raise Exception("higgsfield_logout")
 
-            # ── BƯỚC 8: Upload ảnh (ấn nút "+") ─────────────────────────────
+            # ── BƯỚC 8: Upload ảnh & Video theo giao diện MỚI ─────────────────────────────
             images_to_upload = []
-            if img1_path and Path(img1_path).exists():
-                images_to_upload.append(img1_path)
-            if img2_path and Path(img2_path).exists():
-                images_to_upload.append(img2_path)
+            videos_to_upload = []
+            
+            for path in [img1_path, img2_path]:
+                if path and Path(path).exists():
+                    if path.lower().endswith(('.mp4', '.mov', '.avi', '.webm', '.mkv')):
+                        videos_to_upload.append(path)
+                    else:
+                        images_to_upload.append(path)
 
+            def handle_media_upload_modal(pg):
+                # Xử lý modal "Media upload agreement" nếu hiện ra
+                try:
+                    agree_btn = pg.locator('button:has-text("I agree, continue")')
+                    if agree_btn.is_visible(timeout=2000):
+                        agree_btn.click(timeout=3000)
+                        pg.wait_for_timeout(1000)
+                except: pass
+
+            def upload_and_select(pg, btn_aria_label, file_paths):
+                if not file_paths: return
+                try:
+                    # 1. Click vào khu vực Add media (Ảnh hoặc Video)
+                    pg.locator(f'button[aria-label="{btn_aria_label}"]').click(timeout=5000)
+                    pg.wait_for_timeout(1500)
+                    handle_media_upload_modal(pg)
+                    
+                    # 2. Click nút Upload media và chọn file
+                    with pg.expect_file_chooser(timeout=8000) as fc_info:
+                        # Nút Upload media thường có div chữ Upload media hoặc text trực tiếp
+                        upload_btn = pg.locator('text="Upload media"').last
+                        if not upload_btn.is_visible():
+                            upload_btn = pg.locator('button:has-text("Upload media")').last
+                        upload_btn.click(timeout=5000)
+                        
+                    fc_info.value.set_files(file_paths)
+                    
+                    # 3. Chờ quá trình upload xong (Mất chữ Uploading...)
+                    try:
+                        uploading_indicator = pg.locator('text="Uploading..."')
+                        uploading_indicator.wait_for(state="hidden", timeout=60000)
+                    except: pass
+                    pg.wait_for_timeout(2000) # Đợi thêm tí cho list update
+                    
+                    # 4. Chọn các file vừa upload (các file ở đầu danh sách Recent)
+                    # Lấy tất cả các thumbnail trong danh sách (bỏ qua nút Upload media)
+                    items = pg.locator('div[data-assets-picker-content-panel="true"] div.relative.w-full')
+                    count = items.count()
+                    
+                    # Click chọn N file đầu tiên tương ứng số file vừa up
+                    for i in range(min(len(file_paths), count)):
+                        try:
+                            items.nth(i).click(timeout=3000)
+                            pg.wait_for_timeout(500)
+                        except: pass
+                        
+                    # Tắt modal upload bằng nút X (nếu có)
+                    try:
+                        close_btn = pg.locator('button[aria-label="Close"], button svg.lucide-x').first
+                        if close_btn.is_visible(timeout=1000):
+                            close_btn.click()
+                    except: pass
+                    
+                except Exception as e:
+                    print(f"Lỗi upload {btn_aria_label}: {e}")
+
+            # Thực hiện upload Ảnh
             if images_to_upload:
                 video_tasks[task_id] = {"status": "running", "message": f"Đang tải {len(images_to_upload)} ảnh lên..."}
-                try:
-                    # Nút "+" là input[type=file] ẩn, trigger qua file chooser
-                    with page.expect_file_chooser(timeout=8000) as fc_info:
-                        # Click nút "+" (button đầu tiên trong input boundary)
-                        page.locator("div[data-guidance-input-boundary='true'] button").first.click()
-                    fc_info.value.set_files(images_to_upload)
-                    page.wait_for_timeout(2000)
-                    video_tasks[task_id] = {"status": "running", "message": f"✅ Đã tải lên {len(images_to_upload)} ảnh!"}
-                except:
-                    try:
-                        # Fallback: set trực tiếp vào input file
-                        file_input = page.locator("input[type='file']").first
-                        file_input.set_input_files(images_to_upload)
-                        page.wait_for_timeout(2000)
-                        video_tasks[task_id] = {"status": "running", "message": f"✅ Đã tải lên {len(images_to_upload)} ảnh (fallback)!"}
-                    except Exception as e:
-                        video_tasks[task_id] = {"status": "running", "message": f"Cảnh báo: Không tải được ảnh - {e}"}
+                upload_and_select(page, "Add reference images", images_to_upload)
+                
+            # Thực hiện upload Video
+            if videos_to_upload:
+                video_tasks[task_id] = {"status": "running", "message": f"Đang tải {len(videos_to_upload)} video lên..."}
+                upload_and_select(page, "Add a reference video to extract motion", videos_to_upload)
 
             # ĐỀ PHÒNG WEB TỰ VĂNG (LOGOUT)
             if "from_logout=1" in page.url or page.evaluate("() => Array.from(document.querySelectorAll('button')).some(b => b.innerText && b.innerText.includes('Continue with Google'))"):
@@ -1815,65 +1865,7 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
                 
             check_age_popup(page)
 
-            # ── BƯỚC 9: Nhập prompt vào ô chat ──────────────────────────────
-            video_tasks[task_id] = {"status": "running", "message": "Đang nhập prompt..."}
-            try:
-                editor = page.locator("div[contenteditable='true']").first
-                editor.click(timeout=5000, force=True)
-                page.wait_for_timeout(300)
-                
-                # Dùng execCommand để PASTE nguyên cục text có xuống dòng, tránh gõ từng chữ (Enter bị hiểu là "Gửi")
-                page.evaluate("""([el, txt]) => {
-                    el.focus();
-                    // Lệnh insertText hoạt động y hệt như ấn Ctrl+V, sẽ dán nguyên khối văn bản
-                    if (!document.execCommand('insertText', false, txt)) {
-                        // Fallback nếu trình duyệt chặn
-                        el.innerText = txt;
-                        el.dispatchEvent(new Event('input', {bubbles: true}));
-                    }
-                }""", [editor.element_handle(), prompt])
-                
-                page.wait_for_timeout(500)
-            except Exception as e:
-                print(f"Lỗi nhập prompt: {e}")
 
-            # ── BƯỚC 10: Ấn nút Gửi (send button) ──────────────────────────
-            video_tasks[task_id] = {"status": "running", "message": "Đang gửi yêu cầu tạo video..."}
-            try:
-                # Nút gửi có id "flow-end-msg-send"
-                send_btn = page.locator("#flow-end-msg-send")
-                # Đợi nút không bị disabled (sau khi nhập prompt)
-                for _ in range(10):
-                    if video_tasks.get(task_id, {}).get("force_stop"):
-                        raise Exception("force_stop")
-                    is_disabled = send_btn.is_disabled()
-                    if not is_disabled:
-                        break
-                    page.wait_for_timeout(500)
-                    
-                if video_tasks.get(task_id, {}).get("force_stop"):
-                    raise Exception("force_stop")
-                    
-                send_btn.click(timeout=8000)
-                page.wait_for_timeout(1000)
-            except Exception as e:
-                if str(e) == "force_stop":
-                    # Nhảy thẳng xuống cuối (BƯỚC 12)
-                    video_tasks[task_id]["status"] = "done"
-                else:
-                    try:
-                        page.evaluate("""() => {
-                            const btn = document.getElementById('flow-end-msg-send');
-                            if (btn && !btn.disabled) btn.click();
-                        }""")
-                        page.wait_for_timeout(1000)
-                    except:
-                        # Fallback: ấn Enter
-                        try:
-                            page.locator("div[contenteditable='true']").first.press("Enter")
-                            page.wait_for_timeout(1000)
-                        except:
-                            pass
 
             video_tasks[task_id] = {"status": "running", "message": "✅ Đã gửi yêu cầu! Đang chờ higgsfield.ai tạo video..."}
 
