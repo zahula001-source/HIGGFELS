@@ -629,27 +629,30 @@ def auto_signup_endpoint(profile_id: str):
                                             print("Filled password again")
                                             continue
                                             
-                                        # 5. Nút Có (Yes) / Chấp nhận (Accept) - Duy trì đăng nhập / Cho phép ứng dụng
-                                        yes_btn = page.locator('input#idSIButton9, button#idSIButton9, input[value="Có"], input[value="Yes"], input[value="Chấp nhận"], input[value="Accept"], button:has-text("Chấp nhận")')
-                                        if yes_btn.count() > 0 and yes_btn.first.is_visible():
-                                            yes_btn.first.click()
-                                            print("Clicked Yes / Accept")
-                                            continue
-                                            
-                                        # 6. Trang thiết lập Security Key (bảng đen FIDO2) -> Bấm Hủy (Cancel)
+                                        # 5. Trang thiết lập Security Key (bảng đen FIDO2) -> Bấm Hủy (Cancel)
                                         if "fido" in cur_url or "fido/create" in cur_url:
+                                            # Cố gắng tắt dialog native của Windows (Security key)
+                                            page.keyboard.press("Escape")
+                                            page.wait_for_timeout(500)
                                             cancel_btn = page.locator('#iCancel, a#iCancel, button#iCancel, input[value="Hủy"], input[value="Cancel"], a:has-text("Hủy"), button:has-text("Hủy")')
                                             if cancel_btn.count() > 0 and cancel_btn.first.is_visible():
                                                 cancel_btn.first.click()
                                                 print("Clicked Cancel for Security Key setup")
                                                 continue
                                                 
+                                        # 6. Nút Có (Yes) / Chấp nhận (Accept) - Duy trì đăng nhập / Cho phép ứng dụng
+                                        yes_btn = page.locator('input#idSIButton9, button#idSIButton9, input[value="Có"], input[value="Yes"], input[value="Chấp nhận"], input[value="Accept"], button:has-text("Chấp nhận")')
+                                        if yes_btn.count() > 0 and yes_btn.first.is_visible():
+                                            yes_btn.first.click()
+                                            print("Clicked Yes / Accept")
+                                            continue
+                                            
                                         # 7. Tích chọn Cloudflare Turnstile "Xác minh bạn là con người"
                                         try:
                                             # Nếu nằm ngoài cùng
                                             cf_checkbox = page.locator('input[type="checkbox"][aria-label*="con người"], input[type="checkbox"][aria-label*="human"]')
                                             if cf_checkbox.count() > 0 and cf_checkbox.first.is_visible():
-                                                cf_checkbox.first.click(force=True)
+                                                cf_checkbox.first.click(force=True, position={"x": 5, "y": 5})
                                                 print("Clicked Turnstile checkbox (main frame)")
                                                 continue
                                                 
