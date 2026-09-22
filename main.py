@@ -58,6 +58,19 @@ def get_profiles():
                 d["tabs_count"] = len(json.loads(tabs_file.read_text(encoding="utf-8")))
             except:
                 pass
+                
+        # MS account
+        ms_acc_file = Path(p.user_data_dir) / "ms_account.txt"
+        d["ms_account"] = ""
+        d["ms_email"] = ""
+        if ms_acc_file.exists():
+            try:
+                acc_text = ms_acc_file.read_text(encoding="utf-8").strip()
+                d["ms_account"] = acc_text
+                d["ms_email"] = acc_text.split("|")[0].strip() if "|" in acc_text else acc_text
+            except:
+                pass
+                
         result.append(d)
     return result
 
