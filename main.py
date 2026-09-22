@@ -1817,12 +1817,26 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                             upload_btn.click(timeout=5000, force=True)
                         fc_info.value.set_files(file_paths)
                         
+                    # Xử lý modal "Confirm" (Edit reference) dành cho Video
+                    try:
+                        confirm_btn = pg.locator('button:has-text("Confirm"), span:has-text("Confirm")').last
+                        if confirm_btn.is_visible(timeout=3000):
+                            print("  -> Thấy nút Confirm, tiến hành bấm...")
+                            confirm_btn.click(timeout=3000, force=True)
+                            pg.wait_for_timeout(1000)
+                    except: pass
+
                     # 3. Chờ quá trình upload xong (Mất chữ Uploading...)
                     try:
                         uploading_indicator = pg.locator('text="Uploading..."')
                         uploading_indicator.wait_for(state="hidden", timeout=60000)
                     except: pass
                     pg.wait_for_timeout(2000) # Đợi thêm tí cho list update
+                    
+                    # Kiểm tra lỗi Failed to upload media
+                    if pg.locator('text="Failed to upload media"').is_visible(timeout=1000):
+                        print("  -> CẢNH BÁO: Bị lỗi 'Failed to upload media'!")
+                        raise Exception("ReloadRequired")
                     
                     # 4. Chọn các file vừa upload (Click như người thật)
                     print(f"  -> Đang chọn {len(file_paths)} file vừa upload...")
@@ -1856,17 +1870,30 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                 except Exception as e:
                     print(f"Lỗi upload {btn_aria_label}: {e}")
 
-            # Thực hiện upload Ảnh
-            if images_to_upload:
-                print(f"=== BẮT ĐẦU UPLOAD ẢNH ({len(images_to_upload)} file) ===")
-                video_tasks[task_id] = {"status": "running", "message": f"Đang tải {len(images_to_upload)} ảnh lên..."}
-                upload_and_select(page, "Add reference images", images_to_upload)
-                
-            # Thực hiện upload Video
-            if videos_to_upload:
-                print(f"=== BẮT ĐẦU UPLOAD VIDEO ({len(videos_to_upload)} file) ===")
-                video_tasks[task_id] = {"status": "running", "message": f"Đang tải {len(videos_to_upload)} video lên..."}
-                upload_and_select(page, "Add a reference video to extract motion", videos_to_upload)
+            # Upload Ảnh và Video (Có cơ chế Retry nếu bị lỗi Failed to upload media)
+            for attempt in range(3):
+                try:
+                    if images_to_upload:
+                        print(f"=== BẮT ĐẦU UPLOAD ẢNH ({len(images_to_upload)} file) (Lần {attempt+1}) ===")
+                        video_tasks[task_id] = {"status": "running", "message": f"Đang tải {len(images_to_upload)} ảnh lên..."}
+                        upload_and_select(page, "Add reference images", images_to_upload)
+                        
+                    if videos_to_upload:
+                        print(f"=== BẮT ĐẦU UPLOAD VIDEO ({len(videos_to_upload)} file) (Lần {attempt+1}) ===")
+                        video_tasks[task_id] = {"status": "running", "message": f"Đang tải {len(videos_to_upload)} video lên..."}
+                        upload_and_select(page, "Add a reference video to extract motion", videos_to_upload)
+                    break # Thành công thì thoát loop
+                except Exception as e:
+                    if "ReloadRequired" in str(e):
+                        print("  -> Đang tải lại trang để làm lại từ đầu...")
+                        video_tasks[task_id] = {"status": "running", "message": "Video bị lỗi, đang tải lại trang để thử lại..."}
+                        page.reload()
+                        page.wait_for_load_state('networkidle')
+                        page.wait_for_timeout(3000)
+                        if attempt == 2:
+                            raise Exception("Đã thử tải lại trang 3 lần nhưng upload media vẫn báo Failed!")
+                        continue
+                    raise e
 
             # ĐỀ PHÒNG WEB TỰ VĂNG (LOGOUT)
             if "from_logout=1" in page.url or page.evaluate("() => Array.from(document.querySelectorAll('button')).some(b => b.innerText && b.innerText.includes('Continue with Microsoft'))"):
