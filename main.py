@@ -442,7 +442,7 @@ def auto_signup_endpoint(profile_id: str):
                     # Xử lý trang "Giúp bảo vệ tài khoản của bạn" → Click "Thêm email"
                     try:
                         # Đợi trang bảo vệ hoặc redirect
-                        for _ in range(10):
+                        for _ in range(15):
                             cur_url = page.url
                             if "account.live.com/interrupt" in cur_url or "credentialaction" in cur_url:
                                 break
@@ -456,7 +456,6 @@ def auto_signup_endpoint(profile_id: str):
                                 them_email_btn.first.click()
                                 print("Clicked 'Thêm email'!")
                             else:
-                                # Fallback JS
                                 page.evaluate("""() => {
                                     const all = document.querySelectorAll('button, input[type=submit], a');
                                     for (let el of all) {
@@ -469,12 +468,136 @@ def auto_signup_endpoint(profile_id: str):
                                 }""")
                                 print("Clicked 'Thêm email' via JS fallback")
                             page.wait_for_timeout(2000)
+                            
+                            # === TinyHost API: Lấy email temp để xác minh ===
+                            import urllib.request, json as json_mod, re as re_mod, string, random as random_mod
+                            
+                            def tinyhost_get_random_domain():
+                                """Lấy domain ngẫu nhiên từ TinyHost API"""
+                                try:
+                                    req = urllib.request.Request("https://tinyhost.shop/api/random-domains/?limit=10")
+                                    with urllib.request.urlopen(req, timeout=10) as resp:
+                                        data = json_mod.loads(resp.read().decode())
+                                        domains = data.get("domains", [])
+                                        if domains:
+                                            return random_mod.choice(domains)
+                                except Exception as e:
+                                    print(f"Error getting domain: {e}")
+                                return "spacezin.space"  # fallback domain
+                            
+                            def tinyhost_check_inbox(domain, user, keyword="Mã bảo mật"):
+                                """Poll inbox tìm email chứa keyword"""
+                                try:
+                                    url = f"https://tinyhost.shop/api/email/{domain}/{user}/?limit=20"
+                                    req = urllib.request.Request(url)
+                                    with urllib.request.urlopen(req, timeout=10) as resp:
+                                        data = json_mod.loads(resp.read().decode())
+                                        emails = data.get("emails", [])
+                                        for em in emails:
+                                            subj = em.get("subject", "") or ""
+                                            body = em.get("body", "") or ""
+                                            if keyword.lower() in subj.lower() or keyword.lower() in body.lower() or "microsoft" in subj.lower():
+                                                return em
+                                except Exception as e:
+                                    print(f"Inbox check err: {e}")
+                                return None
+                            
+                            def extract_otp_code(text):
+                                """Trích xuất mã OTP 6 chữ số từ body email"""
+                                # Tìm "Mã bảo mật: XXXXXX" hoặc 6 chữ số đứng riêng
+                                m = re_mod.search(r'[Mm]ã bảo mật[:\s]+(\d{6})', text)
+                                if m: return m.group(1)
+                                m = re_mod.search(r'security code[:\s]+(\d{6})', text, re_mod.IGNORECASE)
+                                if m: return m.group(1)
+                                # Tìm mọi chuỗi 6 chữ số
+                                codes = re_mod.findall(r'\b(\d{6})\b', text)
+                                if codes: return codes[0]
+                                return None
+                            
+                            # Tạo email temp ngẫu nhiên
+                            temp_domain = tinyhost_get_random_domain()
+                            temp_user = ''.join(random_mod.choices(string.ascii_lowercase, k=6)) + ''.join(random_mod.choices(string.digits, k=4))
+                            temp_email = f"{temp_user}@{temp_domain}"
+                            print(f"Temp email for verification: {temp_email}")
+                            
+                            # Trang "Thêm địa chỉ email" - điền email temp vào
+                            try:
+                                # Đợi trang "Thêm địa chỉ email" load
+                                page.wait_for_selector('input[type="email"], input[name="Email"]', timeout=10000)
+                                email_field = page.locator('input[type="email"], input[name="Email"]')
+                                email_field.wait_for(state="visible", timeout=5000)
+                                email_field.triple_click()  # chọn tất cả và xóa
+                                email_field.fill(temp_email)
+                                page.wait_for_timeout(500)
+                                print(f"Filled temp email: {temp_email}")
+                                
+                                # Click Tiếp theo
+                                next_btn = page.locator('input[type="submit"], button[type="submit"], button:has-text("Tiếp theo"), button:has-text("Next")')
+                                if next_btn.count() > 0:
+                                    next_btn.first.click()
+                                else:
+                                    page.keyboard.press("Enter")
+                                print("Clicked Next after temp email")
+                                page.wait_for_timeout(3000)
+                            except Exception as e:
+                                print(f"Error filling temp email: {e}")
+                            
+                            # === Poll TinyHost API để lấy mã OTP ===
+                            otp_code = None
+                            print(f"Polling TinyHost inbox for OTP... ({temp_email})")
+                            for attempt in range(20):  # thử 20 lần, mỗi lần cách 5 giây = 100s tổng
+                                page.wait_for_timeout(5000)
+                                em = tinyhost_check_inbox(temp_domain, temp_user)
+                                if em:
+                                    body_text = em.get("body", "") or ""
+                                    otp_code = extract_otp_code(body_text)
+                                    if otp_code:
+                                        print(f"OTP found: {otp_code}")
+                                        break
+                                    else:
+                                        print(f"Email found but no OTP in body: {body_text[:100]}")
+                                else:
+                                    print(f"Waiting for OTP email... attempt {attempt+1}/20")
+                            
+                            if otp_code:
+                                # Điền mã OTP vào trang "Nhập mã của bạn"
+                                # Microsoft dùng 6 ô input riêng biệt hoặc 1 ô nhập 6 số
+                                try:
+                                    # Thử 6 ô riêng biệt trước
+                                    otp_inputs = page.locator('input[type="tel"], input[type="number"], input[data-testid]')
+                                    if otp_inputs.count() >= 6:
+                                        for i, digit in enumerate(otp_code):
+                                            otp_inputs.nth(i).fill(digit)
+                                            page.wait_for_timeout(100)
+                                        print(f"Filled OTP in 6 separate inputs: {otp_code}")
+                                    else:
+                                        # 1 ô nhập dạng text/number
+                                        single_input = page.locator('input[type="text"], input[type="tel"], input[type="number"]').first
+                                        single_input.fill(otp_code)
+                                        print(f"Filled OTP in single input: {otp_code}")
+                                    
+                                    page.wait_for_timeout(500)
+                                    
+                                    # Click Tiếp theo để xác nhận
+                                    confirm_btn = page.locator('input[type="submit"], button[type="submit"], button:has-text("Tiếp theo"), button:has-text("Verify"), button:has-text("Next")')
+                                    if confirm_btn.count() > 0:
+                                        confirm_btn.first.click()
+                                    else:
+                                        page.keyboard.press("Enter")
+                                    print("Submitted OTP code!")
+                                    page.wait_for_timeout(3000)
+                                except Exception as e:
+                                    print(f"Error filling OTP: {e}")
+                            else:
+                                print("OTP not received within timeout. Manual intervention needed.")
                     except Exception as e:
                         print(f"Error on protection page: {e}")
                 else:
                     print("Không có thông tin tài khoản MS. Vui lòng bấm nút 'Dán mail' để thêm tài khoản trước!")
                 
-                browser.disconnect()
+                try:
+                    p.stop()
+                except: pass
         except Exception as e:
             print(f"Auto signup FATAL err: {e}")
 
