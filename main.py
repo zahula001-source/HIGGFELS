@@ -971,15 +971,29 @@ def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False
         args.append("--window-position=-32000,-32000")
         args.append("--window-size=1366,768")
         
-    context = p.chromium.launch_persistent_context(
-        profile.user_data_dir,
-        headless=False,
-        **browser_launch_options(),
-        ignore_default_args=ignore_args,
-        args=args,
-        accept_downloads=True,
-        downloads_path=str(Path.home() / "Downloads"),
-    )
+    engine = os.environ.get("HIGGSFIELD_BROWSER_ENGINE", "chrome").lower()
+    if engine == "cloakbrowser":
+        from cloakbrowser import launch_persistent_context
+        # CloakBrowser package doesn't use p.chromium, it's a standalone function
+        context = launch_persistent_context(
+            user_data_dir=profile.user_data_dir,
+            headless=False,
+            **browser_launch_options(),
+            ignore_default_args=ignore_args,
+            args=args,
+            accept_downloads=True,
+            downloads_path=str(Path.home() / "Downloads"),
+        )
+    else:
+        context = p.chromium.launch_persistent_context(
+            profile.user_data_dir,
+            headless=False,
+            **browser_launch_options(),
+            ignore_default_args=ignore_args,
+            args=args,
+            accept_downloads=True,
+            downloads_path=str(Path.home() / "Downloads"),
+        )
 
     # Chrome tự xử lý download 100% native - Không chặn, không xử lý bằng Playwright để tránh crash/lỗi .crdownload
 
