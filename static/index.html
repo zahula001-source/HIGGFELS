@@ -177,6 +177,8 @@ body{background:#0b0e14;color:#e5e7eb;min-height:100vh;}
         <input type="checkbox" id="globalAutoSignup" onchange="localStorage.setItem('globalAutoSignup', this.checked)">
         <label for="globalAutoSignup" style="font-size:13px; cursor:pointer; color:#34d399; font-weight:bold; margin:0;" title="Bật: Sau khi mở Chrome xong sẽ TỰ ĐỘNG chạy Tạo acc + login ngay lập tức (không cần bấm tay)">🤖 Auto Tạo Acc</label>
       </div>
+
+      <button class="btn btn-ghost" onclick="openBatchCheckFreeGenModal()" style="border:1px solid #10b981; color:#10b981; margin-left: 8px; font-weight: bold;">🔍 Check Free Gen</button>
     </div>
     <input id="searchInput" class="search-box" placeholder="🔍 Tim ten, proxy, OS..." oninput="filterProfiles()">
   </div>
@@ -319,6 +321,29 @@ body{background:#0b0e14;color:#e5e7eb;min-height:100vh;}
     <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;">
       <button class="btn btn-ghost" onclick="closeTelegramModal()">Hủy</button>
       <button class="btn btn-primary" onclick="saveTelegramConfig()">Lưu Cấu Hình</button>
+    </div>
+  </div>
+</div>
+
+<div id="batchCheckModal" class="modal-overlay" onclick="if(event.target==this) closeBatchCheckModal()">
+  <div class="modal">
+    <h2>🔍 Check Free Gen Số Lượng Lớn</h2>
+    <p style="font-size:12px;color:#94a3b8;margin-bottom:12px;">
+      Chọn các thẻ Chrome muốn tự động mở và kiểm tra trạng thái "Use free gens".<br>
+      <i>Hệ thống sẽ chạy từng thẻ một cách an toàn. Bạn có thể bật "Chạy Ẩn Chrome" để không hiện cửa sổ.</i>
+    </p>
+    
+    <label style="display:flex; align-items:center; gap:8px; cursor:pointer; color:#fff; font-weight:bold; margin-bottom: 12px; background: #1e293b; padding: 10px; border-radius: 8px;">
+      <input type="checkbox" id="batchCheckAll" style="width:16px;height:16px;" onchange="toggleBatchCheckAll(this.checked)"> Chọn tất cả
+    </label>
+    
+    <div id="batchCheckList" style="max-height: 300px; overflow-y: auto; background: #0f172a; border-radius: 8px; border: 1px solid #1e2535; padding: 10px; display: flex; flex-direction: column; gap: 8px;">
+        <!-- Checkboxes populated here via JS -->
+    </div>
+    
+    <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;">
+      <button class="btn btn-ghost" onclick="closeBatchCheckModal()">Hủy</button>
+      <button id="batchCheckStartBtn" class="btn btn-primary" onclick="startBatchCheckFreeGen()">▶️ Bắt đầu kiểm tra</button>
     </div>
   </div>
 </div>
@@ -721,6 +746,97 @@ async function autoSignup(id) {
         alert("❌ Lỗi: " + e.message);
     }
 }
+
+// ================= BATCH CHECK FREE GEN =================
+function openBatchCheckFreeGenModal() {
+    const list = document.getElementById("batchCheckList");
+    list.innerHTML = "";
+    document.getElementById("batchCheckAll").checked = false;
+    
+    if (allProfiles.length === 0) {
+        list.innerHTML = "<div style='color:#94a3b8; font-size:12px; padding:10px;'>Không có thẻ nào.</div>";
+    } else {
+        allProfiles.forEach(p => {
+            const notes = p.notes ? ` (${p.notes})` : "";
+            const isFreeGen = p.notes === "free gen";
+            const colorStyle = isFreeGen ? "color: #10b981;" : (p.notes === "không free" ? "color: #f59e0b;" : "color: #cbd5e1;");
+            
+            list.innerHTML += `
+                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; background: #151a27; padding: 8px 12px; border-radius: 6px; border: 1px solid #1e2535;">
+                    <input type="checkbox" class="batch-chk" value="${p.id}" style="width:16px;height:16px;" onchange="updateBatchCheckAllStatus()">
+                    <span style="font-weight:bold; ${colorStyle}">${esc(p.name)}${notes}</span>
+                </label>
+            `;
+        });
+    }
+    
+    document.getElementById("batchCheckModal").classList.add("active");
+}
+
+function closeBatchCheckModal() {
+    document.getElementById("batchCheckModal").classList.remove("active");
+}
+
+function toggleBatchCheckAll(checked) {
+    const chks = document.querySelectorAll('.batch-chk');
+    chks.forEach(chk => chk.checked = checked);
+}
+
+function updateBatchCheckAllStatus() {
+    const chks = document.querySelectorAll('.batch-chk');
+    const allChecked = Array.from(chks).every(c => c.checked);
+    document.getElementById("batchCheckAll").checked = allChecked;
+}
+
+async function startBatchCheckFreeGen() {
+    const checkboxes = document.querySelectorAll('.batch-chk:checked');
+    if (checkboxes.length === 0) { alert('Vui lòng chọn ít nhất 1 profile!'); return; }
+    
+    const btn = document.getElementById("batchCheckStartBtn");
+    btn.disabled = true;
+    btn.textContent = "⏳ Đang chạy...";
+    
+    const autoFp = document.getElementById("globalAutoFp") ? document.getElementById("globalAutoFp").checked : false;
+    const enableExt = document.getElementById("globalEnableExt") ? document.getElementById("globalEnableExt").checked : false;
+    const isHeadless = document.getElementById("globalHeadless") ? document.getElementById("globalHeadless").checked : false;
+    
+    // Gửi lệnh một lượt hoặc chạy tuần tự
+    for (const chk of checkboxes) {
+        const id = chk.value;
+        try {
+            // 1. Mở Chrome
+            await fetch(`/api/profiles/${id}/launch`, {
+                method:"POST", 
+                headers:{"Content-Type":"application/json"}, 
+                body:JSON.stringify({
+                    headless: isHeadless, 
+                    auto_random_fp: autoFp,
+                    startup_urls: "",
+                    startup_mode: "once",
+                    enable_ext_btn2: false,
+                    enable_ext: enableExt
+                })
+            });
+            
+            // 2. Chờ 8 giây cho Chrome khởi động (nếu mở mới)
+            await new Promise(r => setTimeout(r, 8000));
+            
+            // 3. Gọi auto-signup để nó tự login và check free gen (vì auto-signup đã có check free gen ở cuối)
+            await fetch(`/api/profiles/${id}/auto-signup`, {method:"POST"});
+            
+            // Đợi 5 giây rồi mới chạy tab tiếp theo để tránh dồn dập
+            await new Promise(r => setTimeout(r, 5000));
+        } catch(e) {
+            console.warn(`Lỗi check free gen profile ${id}:`, e);
+        }
+    }
+    
+    alert("✅ Đã gửi lệnh Check Free Gen cho " + checkboxes.length + " thẻ! Các thẻ sẽ lần lượt tự mở Chrome và kiểm tra.");
+    closeBatchCheckModal();
+    btn.disabled = false;
+    btn.textContent = "▶️ Bắt đầu kiểm tra";
+}
+// ========================================================
 
 let pasteMailProfileId = null;
 function openPasteMailModal(id) {

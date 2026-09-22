@@ -880,11 +880,13 @@ def auto_signup_endpoint(profile_id: str):
                     except Exception as e:
                         print(f"Lỗi khi kiểm tra Free Gens: {e}")
                 
-                try:
-                    p.stop()
-                except: pass
         except Exception as e:
             print(f"Auto signup FATAL err: {e}")
+        finally:
+            try:
+                p.stop()
+                print(f"Đã đóng Chrome cho profile {profile.name} sau khi hoàn tất kiểm tra.")
+            except: pass
 
     threading.Thread(target=run_auto_signup, daemon=True).start()
     return {"ok": True, "message": "Bắt đầu Auto Login Higgsfield (Microsoft)..."}
