@@ -1790,6 +1790,7 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
                 return False
 
             def upload_and_select(pg, btn_aria_label, file_paths):
+                print(f"--- B?t d?u upload cho {btn_aria_label}, s? lu?ng file: {len(file_paths)}")
                 if not file_paths: return
                 try:
                     # 1. Click vào khu vực Add media (Ảnh hoặc Video)
@@ -1798,9 +1799,9 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
                     handle_media_upload_modal(pg)
                     
                     # 2. Click nút Upload media
-                    upload_btn = pg.locator('text="Upload media"').last
+                    upload_btn = pg.locator('button[aria-label="Upload media"]').last
                     if not upload_btn.is_visible():
-                        upload_btn = pg.locator('button:has-text("Upload media")').last
+                        upload_btn = pg.locator('button[aria-label="Upload media"]').last
                     
                     # Click thử, nếu ra modal thì đồng ý, rồi click lại
                     upload_btn.click(timeout=5000, force=True)
@@ -1859,11 +1860,13 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
 
             # Thực hiện upload Ảnh
             if images_to_upload:
+                print(f"=== BẮT ĐẦU UPLOAD ẢNH ({len(images_to_upload)} file) ===")
                 video_tasks[task_id] = {"status": "running", "message": f"Đang tải {len(images_to_upload)} ảnh lên..."}
                 upload_and_select(page, "Add reference images", images_to_upload)
                 
             # Thực hiện upload Video
             if videos_to_upload:
+                print(f"=== BẮT ĐẦU UPLOAD VIDEO ({len(videos_to_upload)} file) ===")
                 video_tasks[task_id] = {"status": "running", "message": f"Đang tải {len(videos_to_upload)} video lên..."}
                 upload_and_select(page, "Add a reference video to extract motion", videos_to_upload)
 
@@ -1874,12 +1877,14 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
             check_age_popup(page)
             # ── BƯỚC 9: Bật công tắc Prompt và điền ──────────────
             if prompt:
+                print(f"=== ĐIỀN PROMPT: {prompt[:30]}... ===")
                 video_tasks[task_id] = {"status": "running", "message": "Đang nhập prompt..."}
                 try:
                     # Bật công tắc "Prompt"
                     prompt_toggle = page.locator('span[aria-label="Toggle prompt"]')
                     if prompt_toggle.is_visible(timeout=3000):
                         if prompt_toggle.get_attribute("aria-checked") == "false":
+                            print("  -> Bật công tắc Prompt")
                             prompt_toggle.click(timeout=3000)
                             page.wait_for_timeout(1000)
                     
@@ -1896,6 +1901,7 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
                     print(f"Lỗi nhập prompt: {e}")
 
             # ── BƯỚC 10: Bật công tắc "Use free gens" và nhấn Generate ──────────────
+            print("=== BẬT FREE GENS VÀ NHẤN GENERATE ===")
             video_tasks[task_id] = {"status": "running", "message": "Đang nhấn nút Generate..."}
             try:
                 # Bật công tắc Use free gens
@@ -1908,6 +1914,7 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
                 # Nhấn nút Generate
                 generate_btn = page.locator('button:has-text("Generate")').last
                 if generate_btn.is_visible(timeout=3000):
+                    print("  -> Đã thấy nút Generate, tiến hành click!")
                     generate_btn.click(timeout=3000)
                     page.wait_for_timeout(2000)
             except Exception as e:
