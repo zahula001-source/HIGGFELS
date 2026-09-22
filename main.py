@@ -2491,7 +2491,7 @@ async def create_video(
         }
     }
     
-    t = threading.Thread(target=run_video_automation, args=(task_id, prompt, img1_path, img2_path, profile_id, save_path, headless_bool, (enable_ext.lower() == "true"), (enable_ext_btn2.lower() == "true"), (telegram_enabled.lower() == "true"), telegram_token, telegram_chat_id), daemon=True)
+    t = threading.Thread(target=run_video_automation, args=(task_id, prompt, saved_paths, profile_id, save_path, headless_bool, (enable_ext.lower() == "true"), (enable_ext_btn2.lower() == "true"), (telegram_enabled.lower() == "true"), telegram_token, telegram_chat_id), daemon=True)
     t.start()
     
     return {"ok": True, "task_id": task_id, "profile_id": profile_id}
@@ -2506,8 +2506,12 @@ def retry_video(task_id: str):
     p = task["params"]
     video_tasks[task_id]["status"] = "pending"
     video_tasks[task_id]["message"] = "Đang thử lại..."
-    video_tasks[task_id].pop("force_stop", None) # Xóa cờ force_stop nếu có
-    t = threading.Thread(target=run_video_automation, args=(task_id, p["prompt"], p["img1_path"], p["img2_path"], p["profile_id"], p.get("save_path"), p.get("is_headless", False), p.get("enable_ext", False), p.get("enable_ext_btn2", False), p.get("tg_enabled", False), p.get("tg_token", ""), p.get("tg_chat_id", "")), daemon=True)
+    video_tasks[task_id].pop("force_stop", None) # Xóa cờ force_stop nếu có    media_paths = p.get("media_paths", [])
+    if not media_paths:
+        if p.get("img1_path"): media_paths.append(p["img1_path"])
+        if p.get("img2_path"): media_paths.append(p["img2_path"])
+
+    t = threading.Thread(target=run_video_automation, args=(task_id, p["prompt"], media_paths, p.get("profile_id"), p.get("save_path"), p.get("is_headless", False), p.get("enable_ext", False), p.get("enable_ext_btn2", False), p.get("tg_enabled", False), p.get("tg_token", ""), p.get("tg_chat_id", "")), daemon=True)
     t.start()
     return {"ok": True}
 
