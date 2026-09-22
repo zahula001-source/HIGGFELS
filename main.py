@@ -2406,12 +2406,14 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
 
 
 
+from typing import List
+
 @app.post("/api/video/create")
 async def create_video(
     prompt: str = Form(...),
     profile_id: str = Form(""),
-    img1: UploadFile = File(None),
-    img2: UploadFile = File(None),
+    images: List[UploadFile] = File(None),
+    upload_video: UploadFile = File(None),
     save_path: str = Form(None),
     is_headless: str = Form("false"),
     enable_ext: str = Form("false"),
@@ -2448,16 +2450,29 @@ async def create_video(
     upload_dir.mkdir(exist_ok=True)
     
     img1_path = ""
-    if img1 and img1.filename:
-        img1_path = str(upload_dir / f"{task_id}_img1{Path(img1.filename).suffix}")
-        with open(img1_path, "wb") as f:
-            f.write(await img1.read())
-    
     img2_path = ""
-    if img2 and img2.filename:
-        img2_path = str(upload_dir / f"{task_id}_img2{Path(img2.filename).suffix}")
-        with open(img2_path, "wb") as f:
-            f.write(await img2.read())
+    saved_paths = []
+    
+    if images:
+        for idx, img in enumerate(images):
+            if img and img.filename:
+                ext = Path(img.filename).suffix
+                if not ext: ext = ".png"
+                path = str(upload_dir / f"{task_id}_img{idx}{ext}")
+                with open(path, "wb") as f:
+                    f.write(await img.read())
+                saved_paths.append(path)
+                
+    if upload_video and upload_video.filename:
+        ext = Path(upload_video.filename).suffix
+        if not ext: ext = ".mp4"
+        path = str(upload_dir / f"{task_id}_vid{ext}")
+        with open(path, "wb") as f:
+            f.write(await upload_video.read())
+        saved_paths.append(path)
+        
+    img1_path = saved_paths[0] if len(saved_paths) > 0 else ""
+    img2_path = saved_paths[1] if len(saved_paths) > 1 else ""
 
     video_tasks[task_id] = {
         "status": "pending", 
