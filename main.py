@@ -1748,7 +1748,7 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
             try:
                 # Chọn Model
                 if video_model:
-                    page.locator('button[data-input-engine-actionbar-control-key="video-model"]').click(timeout=3000)
+                    page.locator('button[data-input-engine-actionbar-control-key="video-model"]').click(timeout=3000, force=True)
                     page.wait_for_timeout(500)
                     page.evaluate(f"""(text) => {{
                         const items = Array.from(document.querySelectorAll('div[role="menuitem"], div[role="menuitemradio"], div[role="option"], button'));
@@ -1759,7 +1759,7 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
                 
                 # Chọn Duration
                 if video_duration:
-                    page.locator('button[data-input-engine-actionbar-control-key="video-duration"]').click(timeout=3000)
+                    page.locator('button[data-input-engine-actionbar-control-key="video-duration"]').click(timeout=3000, force=True)
                     page.wait_for_timeout(500)
                     page.evaluate(f"""(text) => {{
                         const items = Array.from(document.querySelectorAll('div[role="menuitem"], div[role="menuitemradio"], div[role="option"], button'));
@@ -1770,7 +1770,7 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
                     
                 # Chọn Ratio
                 if video_ratio:
-                    page.locator('button[data-input-engine-actionbar-control-key="video-ratio"]').click(timeout=3000)
+                    page.locator('button[data-input-engine-actionbar-control-key="video-ratio"]').click(timeout=3000, force=True)
                     page.wait_for_timeout(500)
                     page.evaluate(f"""(text) => {{
                         const items = Array.from(document.querySelectorAll('div[role="menuitem"], div[role="menuitemradio"], div[role="option"], button'));
@@ -1823,7 +1823,7 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
             video_tasks[task_id] = {"status": "running", "message": "Đang nhập prompt..."}
             try:
                 editor = page.locator("div[contenteditable='true']").first
-                editor.click(timeout=5000)
+                editor.click(timeout=5000, force=True)
                 page.wait_for_timeout(300)
                 
                 # Dùng execCommand để PASTE nguyên cục text có xuống dòng, tránh gõ từng chữ (Enter bị hiểu là "Gửi")
