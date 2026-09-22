@@ -616,9 +616,27 @@ def auto_signup_endpoint(profile_id: str):
                                         page.wait_for_timeout(2000)
                                         cur_url = page.url
                                         
-                                        if "higgsfield.ai/ai/video" in cur_url:
+                                        if "higgsfield.ai/ai/video" in cur_url and "quiz" not in cur_url:
                                             print("Đã đăng nhập thành công vào Higgsfield!")
                                             break
+                                            
+                                        # Xử lý trang Quiz (Khảo sát người dùng mới)
+                                        if "higgsfield.ai/quiz" in cur_url:
+                                            # Thử click các câu trả lời
+                                            for q_text in ["For personal use", "Viral content & UGC videos", "Beginner", "Canvas"]:
+                                                ans_btn = page.locator(f'text="{q_text}"')
+                                                if ans_btn.count() > 0 and ans_btn.first.is_visible():
+                                                    ans_btn.first.click(force=True)
+                                                    print(f"Quiz: Clicked '{q_text}'")
+                                                    page.wait_for_timeout(800)
+                                                    
+                                            # Bấm Continue (nếu có ở màn hình cuối)
+                                            cont_btn = page.locator('button:has-text("Continue")')
+                                            if cont_btn.count() > 0 and cont_btn.first.is_visible():
+                                                cont_btn.first.click(force=True)
+                                                print("Quiz: Clicked 'Continue'")
+                                                page.wait_for_timeout(1500)
+                                            continue
                                             
                                         # 1. Nút "Trông rất được!" / "Looks good!"
                                         looks_good_btn = page.locator('#iLooksGood, input[value*="Trông rất được"], input[value*="Looks good"]')
