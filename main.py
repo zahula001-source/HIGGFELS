@@ -635,6 +635,33 @@ def auto_signup_endpoint(profile_id: str):
                                             yes_btn.first.click()
                                             print("Clicked Yes / Accept")
                                             continue
+                                            
+                                        # 6. Trang thiết lập Security Key (bảng đen FIDO2) -> Bấm Hủy (Cancel)
+                                        if "fido" in cur_url or "fido/create" in cur_url:
+                                            cancel_btn = page.locator('#iCancel, a#iCancel, button#iCancel, input[value="Hủy"], input[value="Cancel"], a:has-text("Hủy"), button:has-text("Hủy")')
+                                            if cancel_btn.count() > 0 and cancel_btn.first.is_visible():
+                                                cancel_btn.first.click()
+                                                print("Clicked Cancel for Security Key setup")
+                                                continue
+                                                
+                                        # 7. Tích chọn Cloudflare Turnstile "Xác minh bạn là con người"
+                                        try:
+                                            # Nếu nằm ngoài cùng
+                                            cf_checkbox = page.locator('input[type="checkbox"][aria-label*="con người"], input[type="checkbox"][aria-label*="human"]')
+                                            if cf_checkbox.count() > 0 and cf_checkbox.first.is_visible():
+                                                cf_checkbox.first.click(force=True)
+                                                print("Clicked Turnstile checkbox (main frame)")
+                                                continue
+                                                
+                                            # Nếu nằm trong iframe
+                                            cf_iframe = page.frame_locator('iframe[src*="cloudflare.com"], iframe[src*="turnstile"]')
+                                            cf_checkbox_iframe = cf_iframe.locator('input[type="checkbox"]')
+                                            if cf_checkbox_iframe.count() > 0:
+                                                cf_checkbox_iframe.first.click(force=True)
+                                                print("Clicked Turnstile checkbox (in iframe)")
+                                                continue
+                                        except Exception:
+                                            pass
                                 except Exception as e:
                                     print(f"Error filling OTP: {e}")
                             else:
