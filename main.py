@@ -1300,7 +1300,7 @@ def _send_video_to_telegram(video_path, token, chat_id):
         print(f"Lỗi gửi Telegram: {e}")
 
 def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save_path, is_headless=False, enable_ext=False, enable_ext_btn2=False, tg_enabled=False, tg_token="", tg_chat_id="", video_model="Dreamina Seedance 2.0 Fast", video_duration="10s", video_ratio="9:16"):
-    """Background thread: mở higgsfield.ai, đăng nhập Google, upload ảnh, nhập prompt và tạo video."""
+    """Background thread: mở higgsfield.ai, đăng nhập Microsoft, upload ảnh, nhập prompt và tạo video."""
     from playwright.sync_api import sync_playwright
     import urllib.parse
     import uuid
@@ -1552,9 +1552,9 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
                 else:
                     print("--- Bảng đăng nhập đã mở sẵn!")
 
-                # ── BƯỚC 4: Ấn "Continue with Google" / "Tiếp tục bằng Google" ──
+                # ── BƯỚC 4: Ấn "Continue with Microsoft" / "Tiếp tục bằng Microsoft" ──
                 try:
-                    video_tasks[task_id] = {"status": "running", "message": "Đang dò tọa độ nút Google để click thật..."}
+                    video_tasks[task_id] = {"status": "running", "message": "Đang dò tọa độ nút Microsoft để click thật..."}
                     
                     # Chờ 3s cho popup có thời gian bung ra hoàn chỉnh
                     page.wait_for_timeout(3000)
@@ -1563,7 +1563,7 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
                     js_get_rect = """
                     () => {
                         let btn = document.evaluate(
-                          "//button[.//*[normalize-space()='Continue with Google']]",
+                          "//button[.//*[normalize-space()='Continue with Microsoft']]",
                           document,
                           null,
                           XPathResult.FIRST_ORDERED_NODE_TYPE,
@@ -1572,7 +1572,7 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
                         
                         if (!btn) {
                             const btns = Array.from(document.querySelectorAll('button'));
-                            btn = btns.find(b => b.innerText && b.innerText.includes('Google'));
+                            btn = btns.find(b => b.innerText && b.innerText.includes('Microsoft'));
                         }
                         
                         if (btn) {
@@ -1612,17 +1612,17 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
                                 page.wait_for_timeout(150)
                                 page.mouse.up()
                                 
-                                # Kiểm tra xem bảng popup đã biến mất chưa (chứng tỏ click ăn, mở popup Google)
+                                # Kiểm tra xem bảng popup đã biến mất chưa (chứng tỏ click ăn, mở popup Microsoft)
                                 page.wait_for_timeout(3000)
                                 check_still_there = page.evaluate(js_get_rect)
                                 if not check_still_there.get("found"):
-                                    print(f"--- [BƯỚC 4] Đã CLICK THẬT thành công nút Google ở lần thử {i+1}!")
+                                    print(f"--- [BƯỚC 4] Đã CLICK THẬT thành công nút Microsoft ở lần thử {i+1}!")
                                     success_click = True
                                     break
                                 else:
                                     print(f"--- [BƯỚC 4] Lần {i+1}: Đã ấn chuột vật lý nhưng popup chưa tắt, thử lại...")
                             else:
-                                print(f"--- [BƯỚC 4] Lần {i+1}: Chưa thấy nút Google. Có thể do click Log In hụt, đang thử click lại Log In...")
+                                print(f"--- [BƯỚC 4] Lần {i+1}: Chưa thấy nút Microsoft. Có thể do click Log In hụt, đang thử click lại Log In...")
                                 try:
                                     # Tìm nút bằng nhiều cách để chắc chắn không trượt
                                     login_btn = page.locator('button:has-text("Log In"), button:has-text("Login"), .login-btn-header-CTKsn1').first
@@ -1643,15 +1643,15 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
                     
                     if not success_click:
                         # CHẶN CHẠY MÙ QUÁNG: Báo lỗi và dừng tiến trình
-                        video_tasks[task_id] = {"status": "error", "message": "Lỗi: Quá thời gian chờ nút Continue with Google."}
-                        print("====== [LỖI] KHÔNG THỂ ẤN NÚT GOOGLE, DỪNG TIẾN TRÌNH TRÁNH CHẠY MÙ QUÁNG ======")
+                        video_tasks[task_id] = {"status": "error", "message": "Lỗi: Quá thời gian chờ nút Continue with Microsoft."}
+                        print("====== [LỖI] KHÔNG THỂ ẤN NÚT MICROSOFT, DỪNG TIẾN TRÌNH TRÁNH CHẠY MÙ QUÁNG ======")
                         return
                     
-                    # Đã click thành công, chờ Google Auth xử lý
+                    # Đã click thành công, chờ Microsoft Auth xử lý
                     page.wait_for_timeout(6000)
                 except Exception as e:
                     print(f"\n====== LỖI BƯỚC 4 ======\n{str(e)}\n========================\n")
-                    video_tasks[task_id] = {"status": "error", "message": f"Lỗi ở bước đăng nhập Google: {str(e)}"}
+                    video_tasks[task_id] = {"status": "error", "message": f"Lỗi ở bước đăng nhập Microsoft: {str(e)}"}
                     return # Ngăn chạy tiếp xuống các bước tạo video
 
                 # ── BƯỚC 5 & 6: Xử lý Xác nhận tuổi (nếu có) và Chờ đăng nhập thành công ──
@@ -1720,7 +1720,7 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
             page.wait_for_timeout(1500)
 
             # ĐỀ PHÒNG WEB TỰ VĂNG (LOGOUT)
-            if "from_logout=1" in page.url or page.evaluate("() => Array.from(document.querySelectorAll('button')).some(b => b.innerText && b.innerText.includes('Continue with Google'))"):
+            if "from_logout=1" in page.url or page.evaluate("() => Array.from(document.querySelectorAll('button')).some(b => b.innerText && b.innerText.includes('Continue with Microsoft'))"):
                 raise Exception("Tài khoản higgsfield bị văng (Logout) giữa chừng. Vui lòng tắt và CHẠY LẠI profile này!")
 
             # ── BƯỚC 7: Ấn nút "Tạo video" trong thanh công cụ ──────────────
@@ -1779,7 +1779,7 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
                 pass # Bỏ qua nếu lỗi, web có thể dùng mặc định
 
             # ĐỀ PHÒNG WEB TỰ VĂNG (LOGOUT)
-            if "from_logout=1" in page.url or page.evaluate("() => Array.from(document.querySelectorAll('button')).some(b => b.innerText && b.innerText.includes('Continue with Google'))"):
+            if "from_logout=1" in page.url or page.evaluate("() => Array.from(document.querySelectorAll('button')).some(b => b.innerText && b.innerText.includes('Continue with Microsoft'))"):
                 raise Exception("higgsfield_logout")
 
             # ── BƯỚC 8: Upload ảnh & Video theo giao diện MỚI ─────────────────────────────
@@ -1860,7 +1860,7 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
                 upload_and_select(page, "Add a reference video to extract motion", videos_to_upload)
 
             # ĐỀ PHÒNG WEB TỰ VĂNG (LOGOUT)
-            if "from_logout=1" in page.url or page.evaluate("() => Array.from(document.querySelectorAll('button')).some(b => b.innerText && b.innerText.includes('Continue with Google'))"):
+            if "from_logout=1" in page.url or page.evaluate("() => Array.from(document.querySelectorAll('button')).some(b => b.innerText && b.innerText.includes('Continue with Microsoft'))"):
                 raise Exception("Tài khoản higgsfield bị văng (Logout) giữa chừng. Vui lòng tắt và CHẠY LẠI profile này!")
                 
             check_age_popup(page)
@@ -1906,7 +1906,7 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
                     }""")
                     has_login_modal = page.evaluate("""() => {
                         const btns = Array.from(document.querySelectorAll('button'));
-                        return btns.some(b => b.innerText && b.innerText.includes('Continue with Google'));
+                        return btns.some(b => b.innerText && b.innerText.includes('Continue with Microsoft'));
                     }""")
                     if has_login_modal:
                         raise Exception("higgsfield_logout")
