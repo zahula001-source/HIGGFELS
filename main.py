@@ -652,6 +652,10 @@ def auto_signup_endpoint(profile_id: str):
                             
                         # Xử lý trang Quiz (Khảo sát người dùng mới)
                         if "higgsfield.ai/quiz" in cur_url:
+                            # Khởi tạo bộ nhớ tạm để không click lại đáp án cũ (tránh kẹt ở slide 1)
+                            if not hasattr(page, 'quiz_clicked_options'):
+                                page.quiz_clicked_options = set()
+
                             # 1. Bấm nút Chấp nhận Cookie nếu có
                             try:
                                 page.evaluate("""() => {
@@ -664,24 +668,31 @@ def auto_signup_endpoint(profile_id: str):
                                 }""")
                             except: pass
 
-                            # 2. Click các đáp án như người thật (tránh lỗi JS click không được React ghi nhận)
+                            # 2. Click các đáp án
                             for q_text in ["For personal use", "Viral content", "Beginner", "Canvas", "Video", "Visual editing"]:
+                                if q_text in page.quiz_clicked_options:
+                                    continue
                                 try:
-                                    # Tìm tất cả phần tử hiển thị có chứa text này
-                                    locs = page.locator(f'text="{q_text}"').locator("visible=true")
-                                    if locs.count() > 0:
-                                        # Dùng click() của Playwright (không dùng force) để tạo sự kiện chuột thật
-                                        locs.last.click(timeout=1500)
+                                    locs = page.get_by_text(q_text)
+                                    if locs.count() > 0 and locs.last.is_visible():
+                                        try:
+                                            locs.last.click(timeout=1000)
+                                        except:
+                                            locs.last.click(force=True, timeout=1000)
                                         print(f"Quiz: Clicked option '{q_text}'")
+                                        page.quiz_clicked_options.add(q_text)
                                         page.wait_for_timeout(800)
-                                except Exception:
+                                except Exception as e:
                                     pass
                                     
                             # 3. Bấm Continue sau khi đã chọn xong
                             try:
                                 cont_btn = page.locator('button:has-text("Continue")').locator("visible=true")
                                 if cont_btn.count() > 0 and not cont_btn.first.is_disabled():
-                                    cont_btn.first.click(timeout=1500)
+                                    try:
+                                        cont_btn.first.click(timeout=1000)
+                                    except:
+                                        cont_btn.first.click(force=True, timeout=1000)
                                     print("Quiz: Clicked 'Continue'")
                                     page.wait_for_timeout(1500)
                             except Exception:
