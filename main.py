@@ -348,12 +348,19 @@ def auto_signup_endpoint(profile_id: str):
                     }""")
                     print("Clicked auth button via JS fallback")
                 
-                # B2: Đợi popup "Welcome to Higgsfield" xuất hiện
+                # B2: Đợi popup "Welcome to Higgsfield" xuất hiện hoặc phát hiện đã login
                 try:
-                    page.wait_for_selector("text=Welcome to Higgsfield", timeout=15000)
-                    print("Welcome to Higgsfield popup appeared!")
+                    for _ in range(15):
+                        if "quiz" in page.url or "/ai/video" in page.url:
+                            print("Đã phát hiện URL login sẵn, bỏ qua chờ popup!")
+                            break
+                        wel_loc = page.locator("text=Welcome to Higgsfield")
+                        if wel_loc.count() > 0 and wel_loc.first.is_visible():
+                            print("Welcome to Higgsfield popup appeared!")
+                            break
+                        page.wait_for_timeout(1000)
                 except Exception as e:
-                    print(f"Popup chưa xuất hiện: {e}")
+                    print(f"Lỗi chờ popup: {e}")
                 
                 page.wait_for_timeout(1000)
                 
@@ -397,14 +404,15 @@ def auto_signup_endpoint(profile_id: str):
                         print(f"Error reading ms_account.txt: {e}")
                 
                 if ms_email and ms_password:
-                    # Đợi trang Microsoft login load xong
+                    # Đợi trang MS login hoặc trang higgsfield (nếu đã login)
                     try:
-                        page.wait_for_url("*login.microsoftonline.com*", timeout=15000)
+                        for _ in range(15):
+                            u = page.url
+                            if "login.microsoft" in u or "login.live" in u or "higgsfield.ai/quiz" in u or "higgsfield.ai/ai/video" in u:
+                                break
+                            page.wait_for_timeout(1000)
                     except:
-                        try:
-                            page.wait_for_url("*login.live.com*", timeout=10000)
-                        except:
-                            pass
+                        pass
                     
                     page.wait_for_timeout(2000)
                     print(f"MS login page URL: {page.url}")
