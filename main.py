@@ -656,6 +656,16 @@ def auto_signup_endpoint(profile_id: str):
                             if not hasattr(page, 'quiz_clicked_options'):
                                 page.quiz_clicked_options = set()
 
+                            # 0. Kiểm tra lỗi "Couldn't save your answer"
+                            try:
+                                error_toast = page.locator('text="Couldn\'t save your answer"')
+                                if error_toast.count() > 0 and error_toast.first.is_visible():
+                                    print("Quiz: Bị lỗi 'Couldn't save your answer', đang tải lại trang...")
+                                    page.reload()
+                                    page.wait_for_timeout(3000)
+                                    continue
+                            except: pass
+
                             # 1. Bấm nút Chấp nhận Cookie nếu có
                             try:
                                 page.evaluate("""() => {
@@ -667,9 +677,29 @@ def auto_signup_endpoint(profile_id: str):
                                     }
                                 }""")
                             except: pass
+                            
+                            # 1.5 Kiểm tra trang Claim Username (Bước cuối cùng)
+                            try:
+                                if page.locator('text="Claim your username"').count() > 0:
+                                    terms_label = page.locator('label:has-text("I agree to the Terms of Use")').locator("visible=true")
+                                    if terms_label.count() > 0:
+                                        # Click checkbox
+                                        terms_box = terms_label.first.bounding_box()
+                                        if terms_box:
+                                            page.mouse.click(terms_box["x"] + 10, terms_box["y"] + terms_box["height"] / 2)
+                                            print("Quiz: Tích chọn 'I agree to the Terms of Use'")
+                                            page.wait_for_timeout(500)
+                            except Exception as e:
+                                pass
 
                             # 2. Click các đáp án bằng Tọa độ chuột vật lý (vượt qua mọi giới hạn của React)
-                            for q_text in ["For personal use", "Viral content", "Beginner", "Canvas", "Video", "Visual editing", "Supercomputer"]:
+                            quiz_options = [
+                                "For personal use", "Viral content", "Beginner", "Canvas", 
+                                "Video", "Visual editing", "Supercomputer", 
+                                "Instagram", "TikTok", "YouTube", 
+                                "I'm new to this", "Prompting is hard"
+                            ]
+                            for q_text in quiz_options:
                                 if q_text in page.quiz_clicked_options:
                                     continue
                                 try:
@@ -692,7 +722,7 @@ def auto_signup_endpoint(profile_id: str):
                                 except Exception as e:
                                     pass
                                     
-                            # 3. Bấm Continue sau khi đã chọn xong
+                            # 3. Bấm Continue sau khi đã chọn xong (Kể cả popup Start with Higgsfield Academy)
                             try:
                                 cont_btn = page.locator('button:has-text("Continue")').locator("visible=true")
                                 if cont_btn.count() > 0 and not cont_btn.first.is_disabled():
