@@ -681,7 +681,7 @@ def auto_signup_endpoint(profile_id: str):
                             
                         # 0.5 Kiểm tra popup Congratulations (Upgrade promotion)
                         try:
-                            congrats = page.locator('text="Congratulations!"')
+                            congrats = page.locator('text=Congratulations')
                             if congrats.count() > 0 and congrats.first.is_visible():
                                 print("Đã gặp popup Congratulations! Đăng ký hoàn tất.")
                                 break
