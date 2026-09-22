@@ -1785,7 +1785,9 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
                     if agree_btn.is_visible(timeout=2000):
                         agree_btn.click(timeout=3000)
                         pg.wait_for_timeout(1000)
+                        return True
                 except: pass
+                return False
 
             def upload_and_select(pg, btn_aria_label, file_paths):
                 if not file_paths: return
@@ -1795,16 +1797,28 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
                     pg.wait_for_timeout(1500)
                     handle_media_upload_modal(pg)
                     
-                    # 2. Click nút Upload media và chọn file
-                    with pg.expect_file_chooser(timeout=8000) as fc_info:
-                        # Nút Upload media thường có div chữ Upload media hoặc text trực tiếp
-                        upload_btn = pg.locator('text="Upload media"').last
-                        if not upload_btn.is_visible():
-                            upload_btn = pg.locator('button:has-text("Upload media")').last
-                        upload_btn.click(timeout=5000)
-                        
-                    fc_info.value.set_files(file_paths)
+                    # 2. Click nút Upload media
+                    upload_btn = pg.locator('text="Upload media"').last
+                    if not upload_btn.is_visible():
+                        upload_btn = pg.locator('button:has-text("Upload media")').last
                     
+                    # Click thử, nếu ra modal thì đồng ý, rồi click lại
+                    upload_btn.click(timeout=5000, force=True)
+                    pg.wait_for_timeout(1000)
+                    if handle_media_upload_modal(pg):
+                        upload_btn.click(timeout=5000, force=True)
+                        pg.wait_for_timeout(1000)
+
+                    # Tìm thẻ input type=file ẩn và set files trực tiếp (phòng khi expect_file_chooser bị kẹt)
+                    input_file = pg.locator('input[type="file"]').first
+                    if input_file.is_visible(timeout=1000) or True: # input file thường bị ẩn
+                        input_file.set_input_files(file_paths)
+                    else:
+                        # Fallback nếu không có input file
+                        with pg.expect_file_chooser(timeout=8000) as fc_info:
+                            upload_btn.click(timeout=5000, force=True)
+                        fc_info.value.set_files(file_paths)
+                        
                     # 3. Chờ quá trình upload xong (Mất chữ Uploading...)
                     try:
                         uploading_indicator = pg.locator('text="Uploading..."')
@@ -1812,15 +1826,23 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
                     except: pass
                     pg.wait_for_timeout(2000) # Đợi thêm tí cho list update
                     
-                    # 4. Chọn các file vừa upload (các file ở đầu danh sách Recent)
-                    # Lấy tất cả các thumbnail trong danh sách (bỏ qua nút Upload media)
+                    # 4. Chọn các file vừa upload (Click như người thật)
                     items = pg.locator('div[data-assets-picker-content-panel="true"] div.relative.w-full')
                     count = items.count()
                     
                     # Click chọn N file đầu tiên tương ứng số file vừa up
                     for i in range(min(len(file_paths), count)):
                         try:
-                            items.nth(i).click(timeout=3000)
+                            # Phải rê chuột và click vật lý
+                            box = items.nth(i).bounding_box()
+                            if box:
+                                pg.mouse.move(box["x"] + box["width"]/2, box["y"] + box["height"]/2)
+                                pg.wait_for_timeout(200)
+                                pg.mouse.down()
+                                pg.wait_for_timeout(100)
+                                pg.mouse.up()
+                            else:
+                                items.nth(i).click(timeout=3000, force=True)
                             pg.wait_for_timeout(500)
                         except: pass
                         
@@ -1829,6 +1851,7 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
                         close_btn = pg.locator('button[aria-label="Close"], button svg.lucide-x').first
                         if close_btn.is_visible(timeout=1000):
                             close_btn.click()
+                            pg.wait_for_timeout(500)
                     except: pass
                     
                 except Exception as e:
@@ -1849,7 +1872,46 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
                 raise Exception("Tài khoản higgsfield bị văng (Logout) giữa chừng. Vui lòng tắt và CHẠY LẠI profile này!")
                 
             check_age_popup(page)
+            # ── BƯỚC 9: Bật công tắc Prompt và điền ──────────────
+            if prompt:
+                video_tasks[task_id] = {"status": "running", "message": "Đang nhập prompt..."}
+                try:
+                    # Bật công tắc "Prompt"
+                    prompt_toggle = page.locator('span[aria-label="Toggle prompt"]')
+                    if prompt_toggle.is_visible(timeout=3000):
+                        if prompt_toggle.get_attribute("aria-checked") == "false":
+                            prompt_toggle.click(timeout=3000)
+                            page.wait_for_timeout(1000)
+                    
+                    # Điền prompt
+                    prompt_input = page.locator('div[aria-label="Prompt"][contenteditable="true"]')
+                    if prompt_input.is_visible(timeout=3000):
+                        prompt_input.fill("")
+                        page.wait_for_timeout(500)
+                        # Dùng page.evaluate để bypass react 
+                        page.evaluate("(text) => { document.querySelector('div[aria-label=\"Prompt\"][contenteditable=\"true\"]').textContent = text; }", prompt)
+                        prompt_input.type(" ") # kích hoạt sự kiện input
+                        page.wait_for_timeout(500)
+                except Exception as e:
+                    print(f"Lỗi nhập prompt: {e}")
 
+            # ── BƯỚC 10: Bật công tắc "Use free gens" và nhấn Generate ──────────────
+            video_tasks[task_id] = {"status": "running", "message": "Đang nhấn nút Generate..."}
+            try:
+                # Bật công tắc Use free gens
+                free_gens = page.locator('button[aria-label="Use free gens"]')
+                if free_gens.is_visible(timeout=2000):
+                    if free_gens.get_attribute("aria-checked") == "false":
+                        free_gens.click(timeout=3000)
+                        page.wait_for_timeout(1000)
+                
+                # Nhấn nút Generate
+                generate_btn = page.locator('button:has-text("Generate")').last
+                if generate_btn.is_visible(timeout=3000):
+                    generate_btn.click(timeout=3000)
+                    page.wait_for_timeout(2000)
+            except Exception as e:
+                print(f"Lỗi nhấn Generate: {e}")
 
 
             video_tasks[task_id] = {"status": "running", "message": "✅ Đã gửi yêu cầu! Đang chờ higgsfield.ai tạo video..."}
