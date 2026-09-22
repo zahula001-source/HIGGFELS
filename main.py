@@ -885,6 +885,9 @@ def auto_signup_endpoint(profile_id: str):
         finally:
             try:
                 p.stop()
+            except: pass
+            try:
+                close_profile(profile.id)
                 print(f"Đã đóng Chrome cho profile {profile.name} sau khi hoàn tất kiểm tra.")
             except: pass
 
