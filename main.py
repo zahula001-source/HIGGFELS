@@ -1852,16 +1852,29 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                     video_tasks[task_id] = {"status": "running", "message": f"Đang tải {len(images_to_upload)} ảnh lên..."}
                     upload_and_select(page, "Add reference images", images_to_upload)
                     
-                if videos_to_upload:
+                    # Bấm ra ngoài (để đóng popup nếu có, giúp hiện nút tải video)
                     try:
-                        motion_tab = page.locator('button[role="tab"]:has-text("Motion transfer")').first
-                        if motion_tab.is_visible(timeout=2000):
-                            motion_tab.click(timeout=3000)
-                            page.wait_for_timeout(1000)
+                        page.mouse.click(10, 10)
+                        page.wait_for_timeout(1000)
                     except: pass
+                    
+                if videos_to_upload:
+                    if images_to_upload:
+                        # Nếu có ảnh, ta đang ở tab Objects swap -> nút upload video là "Add a reference video to edit"
+                        video_btn_label = "Add a reference video to edit"
+                    else:
+                        # Nếu không có ảnh, về tab Motion transfer -> nút upload video là "Add a reference video to extract motion"
+                        try:
+                            motion_tab = page.locator('button[role="tab"]:has-text("Motion transfer")').first
+                            if motion_tab.is_visible(timeout=2000):
+                                motion_tab.click(timeout=3000)
+                                page.wait_for_timeout(1000)
+                        except: pass
+                        video_btn_label = "Add a reference video to extract motion"
+                        
                     print(f"=== BẮT ĐẦU UPLOAD VIDEO ({len(videos_to_upload)} file) (Lần {attempt+1}) ===")
                     video_tasks[task_id] = {"status": "running", "message": f"Đang tải {len(videos_to_upload)} video lên..."}
-                    upload_and_select(page, "Add a reference video to extract motion", videos_to_upload)
+                    upload_and_select(page, video_btn_label, videos_to_upload)
                 break # Thành công thì thoát loop
             except Exception as e:
                 if "ReloadRequired" in str(e):
