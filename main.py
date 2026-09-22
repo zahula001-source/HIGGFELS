@@ -564,11 +564,12 @@ def auto_signup_endpoint(profile_id: str):
                                 # Microsoft dùng 6 ô input riêng biệt hoặc 1 ô nhập 6 số
                                 try:
                                     # Thử 6 ô riêng biệt trước
-                                    otp_inputs = page.locator('input[type="tel"], input[type="number"], input[data-testid]')
+                                    otp_inputs = page.locator('input[id^="codeEntry-"], input[id^="idTxtBx_SAOTCC_OTC_"], input[maxlength="1"]')
                                     if otp_inputs.count() >= 6:
                                         for i, digit in enumerate(otp_code):
-                                            otp_inputs.nth(i).fill(digit)
-                                            page.wait_for_timeout(100)
+                                            if i < otp_inputs.count():
+                                                otp_inputs.nth(i).fill(digit)
+                                                page.wait_for_timeout(100)
                                         print(f"Filled OTP in 6 separate inputs: {otp_code}")
                                     else:
                                         # 1 ô nhập dạng text/number
