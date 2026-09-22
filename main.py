@@ -523,7 +523,7 @@ def auto_signup_endpoint(profile_id: str):
                             # Trang "Thêm địa chỉ email" - điền email temp vào
                             try:
                                 # Đợi trang "Thêm địa chỉ email" load
-                                email_selector = 'input[type="email"], input[name="EmailAddress"], input#iProofEmail, input[name="Email"], input#Email, input[type="text"]'
+                                email_selector = 'input[type="email"], input[name="EmailAddress"], input#iProofEmail, input[name="Email"], input#Email, input.fui-Input__input, input[type="text"]'
                                 page.wait_for_selector(email_selector, timeout=10000)
                                 email_field = page.locator(email_selector).first
                                 email_field.wait_for(state="visible", timeout=5000)
