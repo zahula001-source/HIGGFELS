@@ -373,7 +373,8 @@ function renderProfiles(profiles){
     const proxyText = hasProxy ? `${p.proxy.host}:${p.proxy.port}` : "Khong proxy - IP that";
     const proxyBadge = hasProxy ? `🟢 ${p.proxy.host} 🇻🇳` : "IP that";
     return `
-    <div class="card ${running?'running':''}">
+    <div class="card ${running?'running':''}" style="position: relative; overflow: hidden;">
+      ${p.notes === 'free gen' ? `<div style="position:absolute;top:0;right:0;background:#10b981;color:#fff;font-size:10px;font-weight:bold;padding:4px 12px;border-bottom-left-radius:8px;z-index:10;box-shadow:-2px 2px 4px rgba(0,0,0,0.2);">free gen</div>` : (p.notes === 'không free' ? `<div style="position:absolute;top:0;right:0;background:#f59e0b;color:#fff;font-size:10px;font-weight:bold;padding:4px 12px;border-bottom-left-radius:8px;z-index:10;box-shadow:-2px 2px 4px rgba(0,0,0,0.2);">không free</div>` : '')}
       <div class="card-header" ondblclick="editProfileName('${p.id}', '${esc(p.name)}', this.querySelector('.card-title'))" title="Ấn đúp vào vùng này để đổi tên" style="cursor: pointer;">
         <div class="card-title" style="font-size: 18px; font-weight: bold;"><span class="dot ${running?'running':''}"></span>${esc(p.name)}</div>
         <div style="font-size:10px;color:#64748b;">#${p.id} ID:${p.fingerprint?.random_id||''}</div>
@@ -386,7 +387,7 @@ function renderProfiles(profiles){
         <span>📑 ${p.tabs_count||0} tabs</span>
         <span>🖥️ ${esc(p.fingerprint?.screen||'1920x1080')}</span>
         <span>🎲 ID: ${p.fingerprint?.random_id||''}</span>
-        ${p.notes === 'free gen' ? `<span><b style="color:#fff;background:#10b981;padding:2px 6px;border-radius:4px;font-size:11px;">🟢 ${esc(p.notes)}</b></span>` : (p.notes === 'không free' ? `<span><b style="color:#fff;background:#f59e0b;padding:2px 6px;border-radius:4px;font-size:11px;">🟡 ${esc(p.notes)}</b></span>` : (p.notes ? `<span>📝 ${esc(p.notes)}</span>` : ''))}
+        ${p.notes && p.notes !== 'free gen' && p.notes !== 'không free' ? `<span>📝 ${esc(p.notes)}</span>` : ''}
       </div>
       ${p.ms_email ? `<div style="padding:4px 8px; font-size:12px; color:#38bdf8; background:#0f172a; border-radius:4px; margin-bottom:8px; cursor:pointer; display:inline-block; border:1px solid #1e293b;" onclick="navigator.clipboard.writeText('${p.ms_email}'); const old=this.innerHTML; this.innerHTML='✅ Đã copy!'; setTimeout(()=>this.innerHTML=old, 1500);" title="Click để copy email">📧 ${esc(p.ms_email)}</div>` : ''}
       <div class="card-actions">
