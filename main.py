@@ -1457,52 +1457,43 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
                 except:
                     pass
                 
-                # ── BƯỚC 2: Kiểm tra đã login chưa (Kiểm tra Avatar -> Settings HOẶC có chữ 'Use free gens') ──
+                # ── BƯỚC 2: Kiểm tra đã login chưa (Chờ giao diện load xong chữ 'Use free gens' hoặc nút 'Log In') ──
                 is_logged_in = False
                 try:
-                    # Cách 1: Tìm chữ "Use free gens" (dấu hiệu chắc chắn đã login)
-                    try:
-                        # Dùng text=Use free gens (không ngoặc kép) để tìm chuỗi con, vì giao diện có chứa chữ +1
-                        has_free_gens = page.locator("text=Use free gens").first.is_visible(timeout=1500)
-                        if not has_free_gens:
-                            # Dự phòng kiểm tra bằng JS
+                    import re
+                    # Vòng lặp chờ thông minh (tối đa 15 giây) để React load xong dữ liệu
+                    for _ in range(30):
+                        # 1. Quét tìm chữ "Use free gens" (dấu hiệu chắc chắn đã login)
+                        try:
+                            # Dùng JS cho chắc vì text có thể nằm rải rác
                             has_free_gens = page.evaluate("() => document.body.innerText.toLowerCase().includes('use free gens')")
-                            
-                        if has_free_gens:
-                            is_logged_in = True
-                            print("--- Đã thấy 'Use free gens' -> Đã login!")
-                    except: pass
-                    
-                    # Cách 2: Tìm nút Avatar (nếu Cách 1 chưa ra)
-                    if not is_logged_in:
-                        import re
-                        # Tìm nút Avatar (Mở rộng selector để bao quát cả giao diện higgsfield mới)
-                        avatar_loc = page.locator('button[aria-label="Account menu"], button[aria-haspopup="menu"], button:has(.rounded-full), div[role="button"]:has(.rounded-full)').filter(has_not_text=re.compile(r"^(Đăng nhập|Log In|Sign In)$", re.IGNORECASE)).last
-                        
-                        if avatar_loc.is_visible(timeout=2000):
-                            avatar_loc.click(timeout=3000)
-                            page.wait_for_timeout(1000)
-                            
-                            # Kiểm tra xem có menu Settings/Cài đặt/Đăng xuất/Công việc xổ ra không
-                            has_settings = page.evaluate("""() => {
-                                const allBtns = Array.from(document.querySelectorAll('button, p, div, span, a'));
-                                return allBtns.some(b => b.innerText && (
-                                    b.innerText.trim() === 'Settings' || 
-                                    b.innerText.trim() === 'Cài đặt' || 
-                                    b.innerText.trim() === 'Đăng xuất' || 
-                                    b.innerText.trim() === 'Log out' ||
-                                    b.innerText.trim() === 'Sign Out' ||
-                                    b.innerText.trim() === 'Tài khoản' ||
-                                    b.innerText.trim() === 'Account'
-                                ));
-                            }""")
-                            
-                            if has_settings:
+                            if has_free_gens:
                                 is_logged_in = True
-                                page.mouse.click(0, 0) # Click ra ngoài để đóng menu
-                                page.wait_for_timeout(500)
+                                print("--- Đã thấy 'Use free gens' -> Đã login!")
+                                break
+                        except: pass
+                        
+                        # 2. Quét tìm nút Avatar đã đăng nhập
+                        try:
+                            avatar_loc = page.locator('button[aria-label="Account menu"], button[aria-haspopup="menu"], button:has(.rounded-full), div[role="button"]:has(.rounded-full)').filter(has_not_text=re.compile(r"^(Đăng nhập|Log In|Sign In)$", re.IGNORECASE))
+                            if avatar_loc.count() > 0 and avatar_loc.first.is_visible():
+                                is_logged_in = True
+                                print("--- Đã thấy nút Avatar -> Đã login!")
+                                break
+                        except: pass
+
+                        # 3. Quét tìm nút Log In (nếu thấy nút này nghĩa là chắc chắn CHƯA login)
+                        try:
+                            login_btn = page.locator("button, a").filter(has_text=re.compile(r"^(Đăng nhập|Log In|Login|Sign In)$", re.IGNORECASE))
+                            if login_btn.count() > 0 and login_btn.first.is_visible():
+                                print("--- Đã thấy nút Log In -> Chưa login!")
+                                break # Thoát vòng lặp, is_logged_in vẫn là False
+                        except: pass
+                        
+                        page.wait_for_timeout(500)
+                        
                 except Exception as inner_e:
-                    print(f"Lỗi soi avatar: {inner_e}")
+                    print(f"Lỗi soi trạng thái login: {inner_e}")
                     pass
                 
                 already_logged_in = is_logged_in
