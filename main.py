@@ -661,31 +661,29 @@ def auto_signup_endpoint(profile_id: str):
                                 }""")
                             except: pass
 
-                            # 2. Click các đáp án & Continue bằng JS (Rất mạnh và không sợ bị che hoặc lỗi Locator)
+                            # 2. Click các đáp án như người thật (tránh lỗi JS click không được React ghi nhận)
+                            for q_text in ["For personal use", "Viral content", "Beginner", "Canvas", "Video", "Visual editing"]:
+                                try:
+                                    # Tìm tất cả phần tử hiển thị có chứa text này
+                                    locs = page.locator(f'text="{q_text}"').locator("visible=true")
+                                    if locs.count() > 0:
+                                        # Dùng click() của Playwright (không dùng force) để tạo sự kiện chuột thật
+                                        locs.last.click(timeout=1500)
+                                        print(f"Quiz: Clicked option '{q_text}'")
+                                        page.wait_for_timeout(800)
+                                except Exception:
+                                    pass
+                                    
+                            # 3. Bấm Continue sau khi đã chọn xong
                             try:
-                                page.evaluate("""() => {
-                                    const targets = ["For personal use", "Viral content", "Beginner", "Canvas", "Video", "Continue"];
-                                    const allEls = document.querySelectorAll('button, div, span, p');
-                                    for (let el of allEls) {
-                                        // Chỉ lấy các thẻ con sâu nhất hoặc thẻ button
-                                        if (el.children.length === 0 || el.tagName === 'BUTTON') {
-                                            const t = (el.innerText || el.textContent || '').trim();
-                                            if (!t) continue;
-                                            
-                                            for (let tg of targets) {
-                                                if (t.includes(tg)) {
-                                                    el.click();
-                                                    if(el.parentElement) el.parentElement.click(); // Click bồi thêm vào thẻ cha cho chắc
-                                                    return; // Click 1 cái rồi thoát, nhường cho vòng lặp Python chạy lại để click bước tiếp theo
-                                                }
-                                            }
-                                        }
-                                    }
-                                }""")
-                                print("Quiz: Scanned and clicked options via JS")
-                            except Exception as e:
-                                print(f"Quiz JS error: {e}")
-                            
+                                cont_btn = page.locator('button:has-text("Continue")').locator("visible=true")
+                                if cont_btn.count() > 0 and not cont_btn.first.is_disabled():
+                                    cont_btn.first.click(timeout=1500)
+                                    print("Quiz: Clicked 'Continue'")
+                                    page.wait_for_timeout(1500)
+                            except Exception:
+                                pass
+                                
                             continue
                             
                         # 1. Nút "Trông rất được!" / "Looks good!"
