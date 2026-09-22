@@ -297,23 +297,48 @@ def auto_signup_endpoint(profile_id: str):
             with pw_lock:
                 p = sync_playwright().start()
             if True:
-                browser = p.chromium.connect_over_cdp(f"http://localhost:{port}")
-                context = browser.contexts[0]
+                browser = None
+                context = None
+                # Thử connect nhiều lần để chờ browser khởi động xong (nếu bị gọi đồng thời với /launch)
+                for attempt in range(10):
+                    try:
+                        port_file_latest = Path(profile.user_data_dir) / "cdp_port.txt"
+                        if port_file_latest.exists():
+                            latest_port = int(port_file_latest.read_text().strip())
+                            browser = p.chromium.connect_over_cdp(f"http://localhost:{latest_port}")
+                            context = browser.contexts[0]
+                            break
+                    except Exception as e:
+                        print(f"Waiting for CDP port to be ready... ({e})")
+                        import time
+                        time.sleep(2)
                 
+                if not browser:
+                    print("Auto signup: Không thể kết nối tới Chrome, vui lòng thử lại.")
+                    try: p.stop()
+                    except: pass
+                    return
+                    
                 # Tìm tab đang ở trang higgsfield, nếu không có thì mở mới
                 HIGGSFIELD_URL = "https://higgsfield.ai/ai/video?model=genjutsu"
                 page = None
-                for pg in context.pages:
-                    if "higgsfield.ai" in pg.url:
-                        page = pg
-                        break
-                if not page:
-                    page = context.new_page()
-                    page.goto(HIGGSFIELD_URL, timeout=30000)
-                    page.wait_for_load_state("domcontentloaded")
-                
-                page.bring_to_front()
-                page.wait_for_timeout(2000)
+                try:
+                    for pg in context.pages:
+                        if not pg.is_closed() and "higgsfield.ai" in pg.url:
+                            page = pg
+                            break
+                    if not page:
+                        page = context.new_page()
+                        page.goto(HIGGSFIELD_URL, timeout=30000)
+                        page.wait_for_load_state("domcontentloaded")
+                    
+                    page.bring_to_front()
+                    page.wait_for_timeout(2000)
+                except Exception as e:
+                    print(f"Lỗi khi lấy/tạo tab Higgsfield: {e}")
+                    try: p.stop()
+                    except: pass
+                    return
                 
                 # B1: Click nút Login hoặc Sign up (ấn 1 nút nào được)
                 clicked_auth_btn = False
