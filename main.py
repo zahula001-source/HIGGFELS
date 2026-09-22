@@ -1775,7 +1775,7 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
                     }}""", video_ratio)
                     page.wait_for_timeout(500)
             except Exception as e:
-                print(f"Lỗi khi chọn thông số video: {e}")
+                # Ẩn print lỗi để tránh làm người dùng hoang mang (do nút này là của web khác, trên higgsfield có thể không có)
                 pass # Bỏ qua nếu lỗi, web có thể dùng mặc định
 
             # ĐỀ PHÒNG WEB TỰ VĂNG (LOGOUT)
