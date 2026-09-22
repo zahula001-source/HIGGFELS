@@ -661,25 +661,31 @@ def auto_signup_endpoint(profile_id: str):
                                 }""")
                             except: pass
 
-                            # 2. Click các đáp án
-                            for q_text in ["For personal use", "Viral content", "Beginner", "Canvas", "Video"]:
-                                try:
-                                    # Tìm phần tử chứa text (chọn phần tử con sâu nhất bằng .last)
-                                    ans_btn = page.locator(f'text="{q_text}"').last
-                                    if ans_btn.count() > 0 and ans_btn.is_visible():
-                                        ans_btn.click(force=True, timeout=1000)
-                                        print(f"Quiz: Clicked '{q_text}'")
-                                        page.wait_for_timeout(800)
-                                except: pass
-                                    
-                            # 3. Bấm Continue (nếu có)
+                            # 2. Click các đáp án & Continue bằng JS (Rất mạnh và không sợ bị che hoặc lỗi Locator)
                             try:
-                                cont_btn = page.locator('button:has-text("Continue"), div[role="button"]:has-text("Continue")')
-                                if cont_btn.count() > 0 and cont_btn.first.is_visible():
-                                    cont_btn.first.click(force=True, timeout=1000)
-                                    print("Quiz: Clicked 'Continue'")
-                                    page.wait_for_timeout(1500)
-                            except: pass
+                                page.evaluate("""() => {
+                                    const targets = ["For personal use", "Viral content", "Beginner", "Canvas", "Video", "Continue"];
+                                    const allEls = document.querySelectorAll('button, div, span, p');
+                                    for (let el of allEls) {
+                                        // Chỉ lấy các thẻ con sâu nhất hoặc thẻ button
+                                        if (el.children.length === 0 || el.tagName === 'BUTTON') {
+                                            const t = (el.innerText || el.textContent || '').trim();
+                                            if (!t) continue;
+                                            
+                                            for (let tg of targets) {
+                                                if (t.includes(tg)) {
+                                                    el.click();
+                                                    if(el.parentElement) el.parentElement.click(); // Click bồi thêm vào thẻ cha cho chắc
+                                                    return; // Click 1 cái rồi thoát, nhường cho vòng lặp Python chạy lại để click bước tiếp theo
+                                                }
+                                            }
+                                        }
+                                    }
+                                }""")
+                                print("Quiz: Scanned and clicked options via JS")
+                            except Exception as e:
+                                print(f"Quiz JS error: {e}")
+                            
                             continue
                             
                         # 1. Nút "Trông rất được!" / "Looks good!"
