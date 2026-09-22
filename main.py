@@ -644,8 +644,11 @@ def auto_signup_endpoint(profile_id: str):
                         cur_url = page.url
                         
                         if "higgsfield.ai/ai/video" in cur_url and "quiz" not in cur_url:
-                            print("Đã đăng nhập thành công vào Higgsfield!")
-                            break
+                            # Đợi thêm 3s để chắc chắn React không redirect ngược về Quiz
+                            page.wait_for_timeout(3000)
+                            if "quiz" not in page.url:
+                                print("Đã đăng nhập thành công vào Higgsfield!")
+                                break
                             
                         # Xử lý trang Quiz (Khảo sát người dùng mới)
                         if "higgsfield.ai/quiz" in cur_url:
