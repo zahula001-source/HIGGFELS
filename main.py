@@ -726,7 +726,8 @@ def auto_signup_endpoint(profile_id: str):
                                 "For personal use", "Viral content", "Beginner", "Canvas", 
                                 "Video", "Visual editing", "Supercomputer", 
                                 "Instagram", "TikTok", "YouTube", 
-                                "I'm new to this", "Prompting is hard"
+                                "I'm new to this", "Prompting is hard",
+                                "Realistic AI avatars", "Video generations"
                             ]
                             for q_text in quiz_options:
                                 if q_text in page.quiz_clicked_options:
