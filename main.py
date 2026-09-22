@@ -1828,7 +1828,8 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
                     pg.wait_for_timeout(2000) # Đợi thêm tí cho list update
                     
                     # 4. Chọn các file vừa upload (Click như người thật)
-                    items = pg.locator('div[data-assets-picker-content-panel="true"] div.relative.w-full')
+                    print(f"  -> Đang chọn {len(file_paths)} file vừa upload...")
+                    items = pg.locator('div[data-assets-picker-selectable-card="true"]')
                     count = items.count()
                     
                     # Click chọn N file đầu tiên tương ứng số file vừa up
