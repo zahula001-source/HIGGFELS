@@ -668,20 +668,27 @@ def auto_signup_endpoint(profile_id: str):
                                 }""")
                             except: pass
 
-                            # 2. Click các đáp án
-                            for q_text in ["For personal use", "Viral content", "Beginner", "Canvas", "Video", "Visual editing"]:
+                            # 2. Click các đáp án bằng Tọa độ chuột vật lý (vượt qua mọi giới hạn của React)
+                            for q_text in ["For personal use", "Viral content", "Beginner", "Canvas", "Video", "Visual editing", "Supercomputer"]:
                                 if q_text in page.quiz_clicked_options:
                                     continue
                                 try:
                                     locs = page.get_by_text(q_text)
                                     if locs.count() > 0 and locs.last.is_visible():
-                                        try:
-                                            locs.last.click(timeout=1000)
-                                        except:
-                                            locs.last.click(force=True, timeout=1000)
-                                        print(f"Quiz: Clicked option '{q_text}'")
-                                        page.quiz_clicked_options.add(q_text)
-                                        page.wait_for_timeout(800)
+                                        locs.last.scroll_into_view_if_needed()
+                                        page.wait_for_timeout(200)
+                                        box = locs.last.bounding_box()
+                                        if box:
+                                            # Di chuyển và click chuột thật vào chính giữa phần tử
+                                            page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+                                            print(f"Quiz: Mouse clicked option '{q_text}'")
+                                            page.quiz_clicked_options.add(q_text)
+                                            page.wait_for_timeout(800)
+                                            
+                                            # Kiểm tra xem nút Continue đã sáng lên chưa (nếu sáng rồi thì nghỉ click các đáp án khác)
+                                            cont_btn = page.locator('button:has-text("Continue")').locator("visible=true")
+                                            if cont_btn.count() > 0 and not cont_btn.first.is_disabled():
+                                                break
                                 except Exception as e:
                                     pass
                                     
@@ -689,12 +696,13 @@ def auto_signup_endpoint(profile_id: str):
                             try:
                                 cont_btn = page.locator('button:has-text("Continue")').locator("visible=true")
                                 if cont_btn.count() > 0 and not cont_btn.first.is_disabled():
-                                    try:
-                                        cont_btn.first.click(timeout=1000)
-                                    except:
-                                        cont_btn.first.click(force=True, timeout=1000)
-                                    print("Quiz: Clicked 'Continue'")
-                                    page.wait_for_timeout(1500)
+                                    cont_btn.first.scroll_into_view_if_needed()
+                                    page.wait_for_timeout(200)
+                                    box = cont_btn.first.bounding_box()
+                                    if box:
+                                        page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+                                        print("Quiz: Mouse clicked 'Continue'")
+                                        page.wait_for_timeout(1500)
                             except Exception:
                                 pass
                                 
