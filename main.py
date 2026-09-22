@@ -1299,7 +1299,7 @@ def _send_video_to_telegram(video_path, token, chat_id):
     except Exception as e:
         print(f"Lỗi gửi Telegram: {e}")
 
-def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save_path, is_headless=False, enable_ext=False, enable_ext_btn2=False, tg_enabled=False, tg_token="", tg_chat_id=""):
+def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is_headless=False, enable_ext=False, enable_ext_btn2=False, tg_enabled=False, tg_token="", tg_chat_id=""):
     """Background thread: mở higgsfield.ai, đăng nhập Microsoft, upload ảnh, nhập prompt và tạo video."""
     from playwright.sync_api import sync_playwright
     import urllib.parse
@@ -1771,12 +1771,13 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
             images_to_upload = []
             videos_to_upload = []
             
-            for path in [img1_path, img2_path]:
-                if path and Path(path).exists():
-                    if path.lower().endswith(('.mp4', '.mov', '.avi', '.webm', '.mkv')):
-                        videos_to_upload.append(path)
-                    else:
-                        images_to_upload.append(path)
+            if media_paths:
+                for path in media_paths:
+                    if path and Path(path).exists():
+                        if path.lower().endswith(('.mp4', '.mov', '.avi', '.webm', '.mkv')):
+                            videos_to_upload.append(path)
+                        else:
+                            images_to_upload.append(path)
 
             def handle_media_upload_modal(pg):
                 # Xử lý modal "Media upload agreement" nếu hiện ra
@@ -1803,19 +1804,15 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
                     if not upload_btn.is_visible():
                         upload_btn = pg.locator('button[aria-label="Upload media"]').last
                     
-                    # Click thử, nếu ra modal thì đồng ý, rồi click lại
-                    upload_btn.click(timeout=5000, force=True)
-                    pg.wait_for_timeout(1000)
-                    if handle_media_upload_modal(pg):
-                        upload_btn.click(timeout=5000, force=True)
-                        pg.wait_for_timeout(1000)
-
-                    # Tìm thẻ input type=file ẩn và set files trực tiếp (phòng khi expect_file_chooser bị kẹt)
-                    input_file = pg.locator('input[type="file"]').first
-                    if input_file.is_visible(timeout=1000) or True: # input file thường bị ẩn
-                        input_file.set_input_files(file_paths)
-                    else:
-                        # Fallback nếu không có input file
+                    try:
+                        with pg.expect_file_chooser(timeout=3000) as fc_info:
+                            upload_btn.click(timeout=5000, force=True)
+                        fc_info.value.set_files(file_paths)
+                    except:
+                        # Có thể do modal "I agree" hiện ra thay vì file dialog, thử xử lý
+                        print("  -> Intercept file chooser failed. Handling modal...")
+                        handle_media_upload_modal(pg)
+                        # Thử lại
                         with pg.expect_file_chooser(timeout=8000) as fc_info:
                             upload_btn.click(timeout=5000, force=True)
                         fc_info.value.set_files(file_paths)
@@ -2395,7 +2392,8 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
         # Tự động xóa ảnh upload sau khi task xong để tiết kiệm dung lượng
         # Nếu đang báo frontend retry thì KHÔNG xóa ảnh
         if video_tasks.get(task_id, {}).get("status") != "higgsfield_logout":
-            for img_path in [img1_path, img2_path]:
+            media_paths_cleanup = media_paths if 'media_paths' in locals() else []
+            for img_path in media_paths_cleanup:
                 if img_path:
                     try:
                         p = Path(img_path)
