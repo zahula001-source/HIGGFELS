@@ -4,7 +4,7 @@ Antidetect Unlimited V4 - Hỗ trợ Cookie BitBrowser + Random Fingerprint + Ta
 import asyncio
 import threading
 pw_lock = threading.Lock()
-from fastapi import FastAPI, HTTPException, Body
+from fastapi import FastAPI, HTTPException, Body, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -2442,21 +2442,32 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
 from typing import List, Optional
 
 @app.post("/api/video/create")
-async def create_video(
-    prompt: str = Form(...),
-    profile_id: str = Form(""),
-    images: Optional[List[UploadFile]] = File(None),
-    upload_video: Optional[UploadFile] = File(None),
-    video_duration: str = Form(""),
-    video_ratio: str = Form(""),
-    save_path: str = Form(None),
-    is_headless: str = Form("false"),
-    enable_ext: str = Form("false"),
-    enable_ext_btn2: str = Form("false"),
-    telegram_enabled: str = Form("false"),
-    telegram_token: str = Form(""),
-    telegram_chat_id: str = Form("")
-):
+async def create_video(request: Request):
+    try:
+        form = await request.form()
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"message": f"Lỗi xử lý file upload: {e}", "detail": str(e)})
+
+    prompt = form.get("prompt")
+    if not prompt:
+        return JSONResponse(status_code=400, content={"message": "Thiếu prompt!"})
+
+    profile_id = form.get("profile_id", "")
+    images = form.getlist("images") if "images" in form else []
+    
+    upload_video = form.get("upload_video")
+    if isinstance(upload_video, str): upload_video = None
+    
+    video_duration = form.get("video_duration", "")
+    video_ratio = form.get("video_ratio", "")
+    save_path = form.get("save_path", "")
+    is_headless = form.get("is_headless", "false")
+    enable_ext = form.get("enable_ext", "false")
+    enable_ext_btn2 = form.get("enable_ext_btn2", "false")
+    telegram_enabled = form.get("telegram_enabled", "false")
+    telegram_token = form.get("telegram_token", "")
+    telegram_chat_id = form.get("telegram_chat_id", "")
+
     # Lấy danh sách các profile đang bận
     used_profiles = set()
     for task in video_tasks.values():
