@@ -587,6 +587,54 @@ def auto_signup_endpoint(profile_id: str):
                                         page.keyboard.press("Enter")
                                     print("Submitted OTP code!")
                                     page.wait_for_timeout(3000)
+                                    
+                                    # Xử lý chuỗi trang sau khi nhập mã OTP
+                                    print("Handling post-OTP popups...")
+                                    for _ in range(25):
+                                        page.wait_for_timeout(2000)
+                                        cur_url = page.url
+                                        
+                                        if "higgsfield.ai/ai/video" in cur_url:
+                                            print("Đã đăng nhập thành công vào Higgsfield!")
+                                            break
+                                            
+                                        # 1. Nút "Trông rất được!" / "Looks good!"
+                                        looks_good_btn = page.locator('#iLooksGood, input[value*="Trông rất được"], input[value*="Looks good"]')
+                                        if looks_good_btn.count() > 0 and looks_good_btn.first.is_visible():
+                                            looks_good_btn.first.click()
+                                            print("Clicked 'Trông rất được!' (Looks good)")
+                                            continue
+                                            
+                                        # 2. Trang chủ Higgsfield bắt đăng nhập lại
+                                        if "higgsfield.ai/auth/sign-in" in cur_url or ("higgsfield.ai" in cur_url and "login.microsoftonline" not in cur_url):
+                                            ms_btn = page.locator('button:has-text("Continue with Microsoft"), div:has-text("Continue with Microsoft")')
+                                            if ms_btn.count() > 0 and ms_btn.first.is_visible():
+                                                ms_btn.first.click()
+                                                print("Clicked 'Continue with Microsoft' again after redirect")
+                                                continue
+                                                
+                                        # 3. Form nhập email lại (nếu có)
+                                        email_input = page.locator('input[type="email"], input[name="loginfmt"]')
+                                        if email_input.count() > 0 and email_input.first.is_visible():
+                                            email_input.first.fill(ms_email)
+                                            page.keyboard.press("Enter")
+                                            print("Filled email again")
+                                            continue
+                                            
+                                        # 4. Form nhập password lại (nếu có)
+                                        pwd_input = page.locator('input[type="password"], input[name="passwd"]')
+                                        if pwd_input.count() > 0 and pwd_input.first.is_visible():
+                                            pwd_input.first.fill(ms_password)
+                                            page.keyboard.press("Enter")
+                                            print("Filled password again")
+                                            continue
+                                            
+                                        # 5. Nút Có (Yes) / Chấp nhận (Accept) - Duy trì đăng nhập / Cho phép ứng dụng
+                                        yes_btn = page.locator('input#idSIButton9, button#idSIButton9, input[value="Có"], input[value="Yes"], input[value="Chấp nhận"], input[value="Accept"], button:has-text("Chấp nhận")')
+                                        if yes_btn.count() > 0 and yes_btn.first.is_visible():
+                                            yes_btn.first.click()
+                                            print("Clicked Yes / Accept")
+                                            continue
                                 except Exception as e:
                                     print(f"Error filling OTP: {e}")
                             else:
