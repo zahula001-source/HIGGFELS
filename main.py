@@ -1462,7 +1462,12 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
                 try:
                     # Cách 1: Tìm chữ "Use free gens" (dấu hiệu chắc chắn đã login)
                     try:
-                        has_free_gens = page.locator('text="Use free gens"').is_visible(timeout=1000)
+                        # Dùng text=Use free gens (không ngoặc kép) để tìm chuỗi con, vì giao diện có chứa chữ +1
+                        has_free_gens = page.locator("text=Use free gens").first.is_visible(timeout=1500)
+                        if not has_free_gens:
+                            # Dự phòng kiểm tra bằng JS
+                            has_free_gens = page.evaluate("() => document.body.innerText.toLowerCase().includes('use free gens')")
+                            
                         if has_free_gens:
                             is_logged_in = True
                             print("--- Đã thấy 'Use free gens' -> Đã login!")
