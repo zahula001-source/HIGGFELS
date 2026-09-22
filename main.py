@@ -649,20 +649,37 @@ def auto_signup_endpoint(profile_id: str):
                             
                         # Xử lý trang Quiz (Khảo sát người dùng mới)
                         if "higgsfield.ai/quiz" in cur_url:
-                            # Thử click các câu trả lời và bảng Cookie
-                            for q_text in ["Chấp nhận tất cả Cookies", "Accept all cookies", "For personal use", "Viral content & UGC videos", "Beginner", "Canvas", "Video", "Visual editing workspace"]:
-                                ans_btn = page.locator(f'text="{q_text}"')
-                                if ans_btn.count() > 0 and ans_btn.first.is_visible():
-                                    ans_btn.first.click(force=True)
-                                    print(f"Quiz: Clicked '{q_text}'")
-                                    page.wait_for_timeout(800)
+                            # 1. Bấm nút Chấp nhận Cookie nếu có
+                            try:
+                                page.evaluate("""() => {
+                                    const btns = document.querySelectorAll('button');
+                                    for(let b of btns) {
+                                        if (b.innerText.includes('Chấp nhận tất cả') || b.innerText.includes('Accept all')) {
+                                            b.click();
+                                        }
+                                    }
+                                }""")
+                            except: pass
+
+                            # 2. Click các đáp án
+                            for q_text in ["For personal use", "Viral content", "Beginner", "Canvas", "Video"]:
+                                try:
+                                    # Tìm phần tử chứa text (chọn phần tử con sâu nhất bằng .last)
+                                    ans_btn = page.locator(f'text="{q_text}"').last
+                                    if ans_btn.count() > 0 and ans_btn.is_visible():
+                                        ans_btn.click(force=True, timeout=1000)
+                                        print(f"Quiz: Clicked '{q_text}'")
+                                        page.wait_for_timeout(800)
+                                except: pass
                                     
-                            # Bấm Continue (nếu có ở màn hình cuối)
-                            cont_btn = page.locator('button:has-text("Continue")')
-                            if cont_btn.count() > 0 and cont_btn.first.is_visible():
-                                cont_btn.first.click(force=True)
-                                print("Quiz: Clicked 'Continue'")
-                                page.wait_for_timeout(1500)
+                            # 3. Bấm Continue (nếu có)
+                            try:
+                                cont_btn = page.locator('button:has-text("Continue"), div[role="button"]:has-text("Continue")')
+                                if cont_btn.count() > 0 and cont_btn.first.is_visible():
+                                    cont_btn.first.click(force=True, timeout=1000)
+                                    print("Quiz: Clicked 'Continue'")
+                                    page.wait_for_timeout(1500)
+                            except: pass
                             continue
                             
                         # 1. Nút "Trông rất được!" / "Looks good!"
