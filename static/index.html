@@ -103,7 +103,7 @@ body{background:#0b0e14;color:#e5e7eb;min-height:100vh;}
     <div class="logo-icon">C</div>
     <div>
       <h1>Antidetect <span>V11 - Chrome Moi</span></h1>
-      <div style="font-size:11px;color:#6b7280;margin-top:2px;">Moi Chrome 1 IP rieng • Fingerprint moi hoan toan • Extension auto</div>
+      <div id="browserEngineInfo" style="font-size:11px;color:#6b7280;margin-top:2px;">Moi Chrome 1 IP rieng • Fingerprint moi hoan toan • Extension auto</div>
     </div>
   </div>
   <div class="header-stats">
@@ -128,6 +128,8 @@ body{background:#0b0e14;color:#e5e7eb;min-height:100vh;}
       <button class="tab-btn" id="tabBtnVideo" onclick="switchTab('video')">🎬 Tạo Video (BFL.AI)</button>
       <button id="addVideoBtn" onclick="addVideoForm()" style="display:none; align-items:center; justify-content:center; background:none; border:1px solid #10b981; color:#10b981; border-radius:6px; cursor:pointer; font-size:18px; line-height:1; width:28px; height:28px; transition:0.2s; padding:0;" onmouseover="this.style.background='#10b981';this.style.color='#fff'" onmouseout="this.style.background='none';this.style.color='#10b981'" title="Mở thẻ trống mới để điền">+</button>
       <button id="loadSessionBtn" onclick="loadUnfinishedUIState()" style="display:none; align-items:center; justify-content:center; background:none; border:1px solid #f59e0b; color:#f59e0b; border-radius:6px; cursor:pointer; font-size:12px; padding:0 8px; height:28px; transition:0.2s; margin-left:6px;" onmouseover="this.style.background='#f59e0b';this.style.color='#fff'" onmouseout="this.style.background='none';this.style.color='#f59e0b'" title="Khôi phục lại các thẻ bị lỗi hoặc đang chạy dở">Khôi phục Thẻ Lỗi/Chưa Xong</button>
+      <button id="checkVideoBtn" onclick="openCheckVideoModal()" style="display:none; align-items:center; justify-content:center; background:none; border:1px solid #3b82f6; color:#3b82f6; border-radius:6px; cursor:pointer; font-size:12px; padding:0 8px; height:28px; transition:0.2s; margin-left:6px;" onmouseover="this.style.background='#3b82f6';this.style.color='#fff'" onmouseout="this.style.background='none';this.style.color='#3b82f6'" title="Kiểm tra trạng thái video của nhiều Profile">🔍 Check Video</button>
+      <button id="stopCheckVideoBtn" onclick="stopAllCheckVideo()" style="display:none; align-items:center; justify-content:center; background:none; border:1px solid #ef4444; color:#ef4444; border-radius:6px; cursor:pointer; font-size:12px; padding:0 8px; height:28px; transition:0.2s; margin-left:4px;" onmouseover="this.style.background='#ef4444';this.style.color='#fff'" onmouseout="this.style.background='none';this.style.color='#ef4444'" title="Dừng tất cả tiến trình đang kiểm tra video">🛑 Dừng Check</button>
     </div>
     
     <div style="display:inline-flex; align-items:center; gap: 6px;">
@@ -157,16 +159,19 @@ body{background:#0b0e14;color:#e5e7eb;min-height:100vh;}
     <div style="display:flex;gap:10px;align-items:center;">
       <button class="btn btn-primary" onclick="openModal()">+ Tao Profile Moi (Chrome moi hoan toan)</button>
       <button class="btn btn-ghost" onclick="loadProfiles()">↻ Lam moi</button>
+      <button class="btn btn-ghost" onclick="exportAllCookies(this)">🍪 Xuất All Cookie</button>
+      <button class="btn btn-ghost" onclick="manageExtensions(null)" style="background:#0f172a; border: 1px solid #475569;">🧩 Tiện Ích</button>
 
       <div style="display:flex; align-items:center; gap:8px; margin-left: 20px; border: 1px solid #334155; padding: 6px 12px; border-radius: 8px; background: #1e293b; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
+        <input type="checkbox" id="globalEnableExt" onchange="localStorage.setItem('globalEnableExt', this.checked)">
+        <label for="globalEnableExt" style="font-size:13px; cursor:pointer; color:#f8fafc; font-weight:bold; margin:0;" title="Bật: Sẽ tự động nạp các tiện ích mở rộng vào Chrome khi khởi chạy">Bật Tiện Ích</label>
+      </div>
+
+      <div style="display:flex; align-items:center; gap:8px; margin-left: 8px; border: 1px solid #334155; padding: 6px 12px; border-radius: 8px; background: #1e293b; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
         <input type="checkbox" id="globalAutoFp" onchange="localStorage.setItem('globalAutoFp', this.checked)">
         <label for="globalAutoFp" style="font-size:13px; cursor:pointer; color:#46c8ff; font-weight:bold; margin:0;" title="Bật cái này: Mỗi lần bấm Mở Chrome của bất kỳ Profile nào sẽ TỰ ĐỘNG random lại vân tay mới toanh (như ấn nút Random FP)">Auto Random FP khi mở Chrome</label>
       </div>
 
-      <div style="display:flex; align-items:center; gap:8px; margin-left: 8px; border: 1px solid #7c3aed; padding: 6px 12px; border-radius: 8px; background: #2e1065; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
-        <input type="checkbox" id="globalExtBtn2" onchange="localStorage.setItem('globalExtBtn2', this.checked)">
-        <label for="globalExtBtn2" style="font-size:13px; cursor:pointer; color:#a78bfa; font-weight:bold; margin:0;" title="Nút 2 của Extension (Spoof Canvas). Tắt = không bao giờ bật Canvas. Bật = có thể ngẫu nhiên bật">Nút 2 EX</label>
-      </div>
 
       <div style="display:flex; align-items:center; gap:8px; margin-left: 8px; border: 1px solid #065f46; padding: 6px 12px; border-radius: 8px; background: #052e16; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
         <input type="checkbox" id="globalAutoSignup" onchange="localStorage.setItem('globalAutoSignup', this.checked)">
@@ -188,7 +193,7 @@ body{background:#0b0e14;color:#e5e7eb;min-height:100vh;}
   <!-- ======= TAB: TAO VIDEO ======= -->
   <div id="tab-video" class="tab-content">
 
-    <div id="videoFormsContainer" style="display:flex;flex-direction:column;gap:16px;">
+    <div id="videoFormsContainer" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(400px, 1fr));gap:16px;">
       <!-- Dynamic forms will be appended here -->
     </div>
 
@@ -342,6 +347,10 @@ async function loadProfiles(){
   try{
     const res = await fetch("/api/profiles");
     allProfiles = await res.json();
+    document.getElementById("browserEngineInfo").textContent =
+      allProfiles[0]?.browser_engine === "cloakbrowser"
+        ? "CloakBrowser v146 Free: nhieu profile dong thoi - fingerprint rieng"
+        : "Chrome thuong: nhieu profile dong thoi - khong gia lap fingerprint CloakBrowser";
     renderProfiles(allProfiles);
     document.getElementById("totalProfiles").textContent = allProfiles.length;
   }catch(e){console.error(e);}
@@ -365,15 +374,11 @@ function renderProfiles(profiles){
     const proxyBadge = hasProxy ? `🟢 ${p.proxy.host} 🇻🇳` : "IP that";
     return `
     <div class="card ${running?'running':''}">
-      <div class="card-header">
-        <div class="card-title"><span class="dot ${running?'running':''}"></span>${esc(p.name)}</div>
+      <div class="card-header" ondblclick="editProfileName('${p.id}', '${esc(p.name)}', this.querySelector('.card-title'))" title="Ấn đúp vào vùng này để đổi tên" style="cursor: pointer;">
+        <div class="card-title" style="font-size: 18px; font-weight: bold;"><span class="dot ${running?'running':''}"></span>${esc(p.name)}</div>
         <div style="font-size:10px;color:#64748b;">#${p.id} ID:${p.fingerprint?.random_id||''}</div>
       </div>
       <div class="card-meta">
-        <span class="badge ${p.os}">${p.os.toUpperCase()}</span>
-        <span class="badge ${p.browser}">${p.browser==='chromium'?'CHROME':'CAMOUFOX (FireFox)'}</span>
-        <span class="badge">${running?'🟢 Dang chay':'⚪ Idle'}</span>
-        ${p.browser==='camoufox'?'<span class="badge" style="color:#fb923c">KHONG dung duoc extension Chrome</span>':`<span class="badge" style="color:#10b981">Extension auto</span>`}
       </div>
       <div class="card-proxy ${hasProxy?'has-proxy':''}">🌐 ${hasProxy?`<b>${esc(proxyText)}</b> - Moi Chrome 1 IP rieng`:esc(proxyText)}</div>
       <div class="card-infos">
@@ -390,8 +395,7 @@ function renderProfiles(profiles){
         }
         <button class="btn btn-sm btn-purple" onclick="randomFingerprint('${p.id}')" title="Doi thanh may moi hoan toan nhu BitBrowser Random Fingerprint">🎲 Random FP</button>
         <button class="btn btn-sm btn-success" onclick="autoSignup('${p.id}')">🤖 Tạo acc + login</button>
-        <button class="btn btn-sm btn-blue" onclick="openCookieModal('${p.id}')">📥 Nhập Cookie</button>
-        <button class="btn btn-sm btn-ghost" onclick="exportCookie('${p.id}', this)">📤 Xuất Cookie</button>
+        <button class="btn btn-sm" style="background:#0369a1;color:#fff;" onclick="openPasteMailModal('${p.id}')">📧 Dán mail</button>
         <button class="btn btn-sm btn-ghost" onclick="duplicateProfile('${p.id}')">📋 Clone</button>
         <button class="btn btn-sm btn-danger" onclick="deleteProfile('${p.id}')">🗑</button>
       </div>
@@ -402,6 +406,56 @@ function renderProfiles(profiles){
     </div>`;
   }).join("");
 }
+
+function editProfileName(id, currentName, element) {
+  const input = document.createElement("input");
+  input.type = "text";
+  input.value = currentName;
+  input.className = "";
+  input.style.width = "80%";
+  input.style.display = "inline-block";
+  input.style.background = "transparent";
+  input.style.color = "#fff";
+  input.style.border = "none";
+  input.style.outline = "none";
+  input.style.fontSize = "18px";
+  input.style.fontWeight = "bold";
+  input.style.padding = "0";
+  input.style.margin = "0";
+  input.style.boxShadow = "none";
+  
+  const save = async () => {
+    const newName = input.value.trim();
+    if (newName && newName !== currentName) {
+      try {
+        const res = await fetch(`/api/profiles/${id}/name`, {
+          method: 'PUT',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ name: newName })
+        });
+        if (res.ok) {
+          loadProfiles();
+          return;
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    loadProfiles();
+  };
+  
+  input.onblur = save;
+  input.onkeydown = (e) => {
+    if (e.key === 'Enter') save();
+    if (e.key === 'Escape') loadProfiles();
+  };
+  
+  element.innerHTML = '';
+  element.appendChild(input);
+  input.focus();
+  input.select();
+}
+
 function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}
 function openModal(){document.getElementById("modalOverlay").classList.add("active");}
 function closeModal(){document.getElementById("modalOverlay").classList.remove("active");}
@@ -458,9 +512,10 @@ async function createProfile(){
 }
 
 async function launchProfile(id){
-  const autoFp = document.getElementById("globalAutoFp").checked;
-  const autoSignup = document.getElementById("globalAutoSignup").checked;
-  const enableExtBtn2 = document.getElementById("globalExtBtn2").checked;
+  const autoFp = document.getElementById("globalAutoFp") ? document.getElementById("globalAutoFp").checked : false;
+  const autoSignup = document.getElementById("globalAutoSignup") ? document.getElementById("globalAutoSignup").checked : false;
+  const enableExt = document.getElementById("globalEnableExt") ? document.getElementById("globalEnableExt").checked : false;
+  const enableExtBtn2 = false; // removed from UI
   const startupUrls = localStorage.getItem("globalStartupUrls") || "";
   const startupMode = localStorage.getItem("globalStartupMode") || "once";
   
@@ -472,7 +527,8 @@ async function launchProfile(id){
         auto_random_fp: autoFp,
         startup_urls: startupUrls,
         startup_mode: startupMode,
-        enable_ext_btn2: enableExtBtn2
+        enable_ext_btn2: enableExtBtn2,
+        enable_ext: enableExt
     })
   });
   const data = await res.json();
@@ -523,29 +579,121 @@ async function doImportCookie(){
   }
 }
 
-async function exportCookie(id, btn){
+async function exportAllCookies(btn){
   const oldText = btn.textContent;
   btn.textContent = "⏳ Đang xuất...";
   btn.disabled = true;
   try {
-    const res = await fetch(`/api/profiles/${id}/export-cookies`);
-    const data = await res.json();
-    if(!res.ok) throw new Error(data.detail || JSON.stringify(data));
-    
-    const str = JSON.stringify(data.cookies);
-    try {
-      await navigator.clipboard.writeText(str);
-      alert(`✅ Đã copy ${data.cookies.length} cookies vào Clipboard! Bạn có thể dán (Ctrl+V) vào bất cứ đâu.`);
-    } catch(err) {
-      alert("Trình duyệt không hỗ trợ tự copy. Dữ liệu đã được in ra cửa sổ Console (F12).");
-      console.log(str);
+    const resFolder = await fetch(`/api/select-folder`);
+    const dataFolder = await resFolder.json();
+    if (!dataFolder.path) {
+      alert("Bạn chưa chọn thư mục lưu!");
+      return;
     }
+    const targetDir = dataFolder.path;
+    const res = await fetch(`/api/export-all-cookies`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({target_dir: targetDir})
+    });
+    const data = await res.json();
+    if(!data.ok) throw new Error(data.message || JSON.stringify(data));
+    
+    alert(`✅ Đã xuất thành công ${data.count} profiles ra thư mục:\n${data.files[2]}`);
   } catch(e) {
     alert("❌ Lỗi xuất cookie: " + e.message);
   } finally {
     btn.textContent = oldText;
     btn.disabled = false;
   }
+}
+
+async function manageExtensions(id) {
+  let targetId = id;
+  if (!id) {
+    if (!confirm("Chưa chọn profile. Áp dụng tiện ích cho TOÀN BỘ profile?")) {
+      return;
+    }
+    targetId = "ALL";
+  }
+  document.getElementById("extModalProfileId").value = targetId;
+  document.getElementById("extModalTextarea").value = "";
+  if (targetId !== "ALL") {
+    const p = allProfiles.find(x => x.id === targetId);
+    if (p) {
+        document.getElementById("extModalTitle").textContent = "Đang cài cho profile: " + p.name;
+        if (p.extensions) {
+          document.getElementById("extModalTextarea").value = p.extensions.replace(/;/g, "\n");
+        }
+    }
+  } else {
+    document.getElementById("extModalTitle").textContent = "Đang cài cho TOÀN BỘ profile";
+    if (allProfiles.length > 0 && allProfiles[0].extensions) {
+        document.getElementById("extModalTextarea").value = allProfiles[0].extensions.replace(/;/g, "\n");
+    }
+  }
+  document.getElementById("extModalOverlay").classList.add("active");
+}
+
+function closeExtModal() {
+  document.getElementById("extModalOverlay").classList.remove("active");
+}
+
+async function saveExtensions() {
+  const targetId = document.getElementById("extModalProfileId").value;
+  const exts = document.getElementById("extModalTextarea").value.trim();
+  const btn = document.getElementById("extSaveBtn");
+  btn.disabled = true;
+  btn.textContent = "Đang lưu...";
+  try {
+    const res = await fetch('/api/extensions/apply', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        profile_id: targetId === "ALL" ? null : targetId,
+        extensions: exts
+      })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      alert("✅ " + data.message);
+      closeExtModal();
+      loadProfiles();
+    } else {
+      alert("❌ Lỗi: " + data.message);
+    }
+  } catch(e) {
+    alert("❌ Lỗi mạng: " + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Áp dụng";
+  }
+}
+
+async function appendExtensionFile() {
+    try {
+        const res = await fetch("/api/select-file");
+        const data = await res.json();
+        if (data.path) {
+            const el = document.getElementById("extModalTextarea");
+            el.value = el.value ? el.value + "\n" + data.path : data.path;
+        }
+    } catch(e) { console.error(e); }
+}
+
+async function appendExtensionFolder() {
+    try {
+        const res = await fetch("/api/select-folder");
+        const data = await res.json();
+        if (data.path) {
+            const el = document.getElementById("extModalTextarea");
+            el.value = el.value ? el.value + "\n" + data.path : data.path;
+        }
+    } catch(e) { console.error(e); }
+}
+
+function clearExtensions() {
+    document.getElementById("extModalTextarea").value = "";
 }
 
 async function autoSignup(id) {
@@ -556,6 +704,45 @@ async function autoSignup(id) {
         alert("✅ Đã gửi lệnh Tạo acc + login! Hãy mở Chrome lên để xem tiến trình tự động.");
     } catch(e) {
         alert("❌ Lỗi: " + e.message);
+    }
+}
+
+let pasteMailProfileId = null;
+function openPasteMailModal(id) {
+    pasteMailProfileId = id;
+    const p = allProfiles.find(x => x.id === id);
+    document.getElementById("pasteMailTitle").textContent = "Dán thông tin tài khoản" + (p ? " - " + p.name : "");
+    document.getElementById("pasteMailInput").value = "";
+    document.getElementById("pasteMailStatus").textContent = "";
+    document.getElementById("pasteMailModal").classList.add("active");
+    setTimeout(() => document.getElementById("pasteMailInput").focus(), 100);
+}
+function closePasteMailModal() {
+    document.getElementById("pasteMailModal").classList.remove("active");
+    pasteMailProfileId = null;
+}
+async function saveMsAccount() {
+    const raw = document.getElementById("pasteMailInput").value.trim();
+    if (!raw) { alert("Vui lòng dán thông tin tài khoản vào!"); return; }
+    const parts = raw.split("|");
+    if (parts.length < 2) { alert("Sai định dạng! Cần ít nhất: email|password"); return; }
+    const statusEl = document.getElementById("pasteMailStatus");
+    statusEl.style.color = "#f59e0b";
+    statusEl.textContent = "⏳ Đang lưu...";
+    try {
+        const res = await fetch(`/api/profiles/${pasteMailProfileId}/set-ms-account`, {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({raw})
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || data.message);
+        statusEl.style.color = "#10b981";
+        statusEl.textContent = "✅ Đã lưu! Email: " + data.email;
+        setTimeout(closePasteMailModal, 1500);
+    } catch(e) {
+        statusEl.style.color = "#ef4444";
+        statusEl.textContent = "❌ Lỗi: " + e.message;
     }
 }
 
@@ -572,6 +759,10 @@ function switchTab(tab) {
   if (addBtn) addBtn.style.display = (tab === "video") ? "flex" : "none";
   const loadBtn = document.getElementById("loadSessionBtn");
   if (loadBtn) loadBtn.style.display = (tab === "video") ? "flex" : "none";
+  const checkBtn = document.getElementById("checkVideoBtn");
+  if (checkBtn) checkBtn.style.display = (tab === "video") ? "flex" : "none";
+  const stopCheckBtn = document.getElementById("stopCheckVideoBtn");
+  if (stopCheckBtn) stopCheckBtn.style.display = (tab === "video" && activeCheckVideoCount > 0) ? "flex" : "none";
   
   if (tab === "video") {
     if (document.getElementById("videoFormsContainer").children.length === 0) {
@@ -617,51 +808,111 @@ async function addVideoForm(force_fId = null) {
         <div style="font-size:13px; font-weight:bold; color:#46c8ff; position:absolute; top:12px; left:16px;"># Thẻ ${fId}</div>
         <button class="btn btn-ghost" style="position:absolute;top:8px;right:8px;padding:4px 8px;color:#ef4444;height:auto;" onclick="document.getElementById('vform_${fId}').remove()" title="Đóng thẻ này">✕</button>
         
-        <div class="video-form-grid" style="display:grid;grid-template-columns:1fr 1fr 200px 120px 120px;gap:12px;align-items:end;margin-top:24px;">
+        <div class="video-form-grid" style="display:flex;flex-direction:column;gap:12px;margin-top:24px;">
+          <!-- Profile & Buttons (Đưa lên đầu) -->
+          <div class="form-group" style="margin:0;">
+            <label>👤 Profile Chrome</label>
+            <div style="display:flex; gap:6px;">
+              <select id="videoProfileId_${fId}" class="select" style="height:40px;flex:1;">
+                <option value="">-- Chọn profile --</option>
+              </select>
+              <button class="btn btn-ghost" style="height:40px;padding:0 8px;font-size:11px;font-weight:bold;border:1px solid #46c8ff;color:#46c8ff;" onclick="openChatModal(${fId})" title="Xem lịch sử chat">
+                💬 Xem Log
+              </button>
+              <button class="btn btn-ghost" style="height:40px;padding:0 8px;font-size:11px;font-weight:bold;border:1px solid #10b981;color:#10b981;" onclick="let p = document.getElementById('videoProfileId_'+${fId}).value; if(p) launchProfile(p); else alert('Chọn Profile trước!');" title="Mở Chrome thủ công">
+                🌐 Mở Chrome
+              </button>
+            </div>
+          </div>
+
           <!-- Prompt -->
           <div class="form-group" style="margin:0;">
             <label>📝 Prompt mô tả video</label>
             <textarea id="videoPrompt_${fId}" class="textarea" rows="2" style="min-height:52px;resize:none;" placeholder="VD: video mèo cute..."></textarea>
           </div>
 
-          <!-- Upload ảnh -->
+          <!-- Setting (Model, Duration, Ratio) - Ẩn đi theo yêu cầu -->
+          <div style="display:none;gap:8px;flex-wrap:wrap;">
+            <div class="form-group" style="margin:0;flex:2;min-width:140px;">
+              <label>🤖 Model</label>
+            <select id="videoModel_${fId}" class="select" style="height:36px;font-size:12px;padding:4px 8px;">
+              <option value="Dreamina Seedance 2.5" selected>Dreamina Seedance 2.5</option>
+              <option value="Dreamina Seedance 2.0 Fast">Dreamina Seedance 2.0 Fast</option>
+              <option value="Dreamina Seedance 1.0">Dreamina Seedance 1.0</option>
+            </select>
+            </div>
+            <div class="form-group" style="margin:0;flex:1;min-width:80px;">
+              <label>⏱️ Thời gian</label>
+            <select id="videoDuration_${fId}" class="select" style="height:36px;font-size:12px;padding:4px 8px;">
+              <option value="5s">5s</option>
+              <option value="10s" selected>10s</option>
+              <option value="30s">30s</option>
+            </select>
+            </div>
+            <div class="form-group" style="margin:0;flex:1;min-width:80px;">
+              <label>📐 Tỷ lệ</label>
+            <select id="videoRatio_${fId}" class="select" style="height:36px;font-size:12px;padding:4px 8px;">
+              <option value="1:1">1:1</option>
+              <option value="3:4">3:4</option>
+              <option value="4:3">4:3</option>
+              <option value="9:16" selected>9:16</option>
+              <option value="16:9">16:9</option>
+              <option value="21:9">21:9</option>
+            </select>
+            </div>
+          </div>
+
+
+          <!-- Upload ảnh nhiều + video -->
           <div class="form-group" style="margin:0;">
             <label>🖼️ Ảnh khung đầu → khung cuối</label>
-            <div style="display:flex;gap:8px;align-items:center;">
-              <div class="img-drop-zone" style="height:52px;flex:1;" onclick="document.getElementById('imgInput1_${fId}').click()" oncontextmenu="showImgContextMenu(event, '${fId}')">
-                <img id="imgPreview1_${fId}" src="" style="display:none;width:100%;height:100%;object-fit:cover;border-radius:8px;" alt="">
-                <div class="dz-label" id="dzLabel1_${fId}" style="font-size:10px;"><div>➕ Ảnh 1</div><div style="font-size:9px;">(Start)</div></div>
+            <div style="display:flex;gap:8px;align-items:stretch;">
+              
+              <!-- NÚT TRÁI: Tải nhiều ảnh (max 10) -->
+              <div style="flex:1;">
+                <div class="img-drop-zone" style="height:64px;cursor:pointer;position:relative;" onclick="document.getElementById('imgInputMulti_${fId}').click()">
+                  <div id="imgMultiGallery_${fId}" style="display:flex;gap:4px;width:100%;height:100%;overflow-x:auto;align-items:center;padding:4px;flex-wrap:nowrap;">
+                    <div id="imgMultiEmpty_${fId}" class="dz-label" style="font-size:10px;flex-shrink:0;text-align:center;min-width:60px;">
+                      <div style="font-size:18px;">🖼️</div>
+                      <div>Tải Ảnh Lên</div>
+                      <div style="font-size:9px;color:#6b7280;">(Tối đa 10 ảnh)</div>
+                    </div>
+                  </div>
+                  <div id="imgMultiCount_${fId}" style="display:none;position:absolute;top:4px;right:6px;background:#6d5dfc;color:#fff;font-size:10px;font-weight:700;border-radius:10px;padding:2px 6px;">0</div>
+                </div>
+                <input type="file" id="imgInputMulti_${fId}" accept="image/*" multiple style="display:none" onchange="previewImgMulti(event, '${fId}')">
               </div>
-              <span style="color:#4b5563;">→</span>
-              <div class="img-drop-zone" style="height:52px;flex:1;" onclick="document.getElementById('imgInput2_${fId}').click()">
-                <img id="imgPreview2_${fId}" src="" style="display:none;width:100%;height:100%;object-fit:cover;border-radius:8px;" alt="">
-                <div class="dz-label" id="dzLabel2_${fId}" style="font-size:10px;"><div>➕ Ảnh 2</div><div style="font-size:9px;">(End)</div></div>
+
+              <!-- NÚT PHẢI: Tải video lên -->
+              <div style="flex:1;">
+                <div class="img-drop-zone" style="height:64px;cursor:pointer;position:relative;" onclick="document.getElementById('videoInputUpload_${fId}').click()">
+                  <div id="videoUploadPreview_${fId}" style="display:none;width:100%;height:100%;padding:4px;">
+                    <video id="videoPreviewEl_${fId}" style="width:100%;height:100%;object-fit:contain;border-radius:6px;" muted></video>
+                  </div>
+                  <div id="videoUploadEmpty_${fId}" class="dz-label" style="font-size:10px;text-align:center;">
+                    <div style="font-size:18px;">🎬</div>
+                    <div>Tải Video Lên</div>
+                    <div style="font-size:9px;color:#6b7280;">(>30s tự cắt còn 30s)</div>
+                  </div>
+                  <div id="videoUploadName_${fId}" style="display:none;position:absolute;bottom:4px;left:0;right:0;text-align:center;font-size:9px;color:#46c8ff;background:rgba(0,0,0,0.7);padding:2px;"></div>
+                </div>
+                <input type="file" id="videoInputUpload_${fId}" accept="video/*" style="display:none" onchange="previewVideoUpload(event, '${fId}')">
               </div>
             </div>
-            <input type="file" id="imgInput1_${fId}" accept="image/*" style="display:none" onchange="previewImgDynamic(event, '1_${fId}')">
-            <input type="file" id="imgInput2_${fId}" accept="image/*" style="display:none" onchange="previewImgDynamic(event, '2_${fId}')">
           </div>
 
-          <!-- Profile -->
-          <div class="form-group" style="margin:0;">
-            <label>👤 Profile Chrome</label>
-            <select id="videoProfileId_${fId}" class="select" style="height:52px;">
-              <option value="">-- Chọn profile --</option>
-            </select>
-          </div>
-
-          <!-- Nút Tạo -->
-          <div style="display:flex;flex-direction:column;gap:6px;width:120px;">
-            <button class="btn btn-primary" style="height:52px;font-size:14px;justify-content:center;background:linear-gradient(135deg,#7c3aed,#db2777);white-space:nowrap;padding:0;" onclick="startVideoCreationDynamic(${fId})" id="createVideoBtn_${fId}">
+          <!-- Nút Tạo & Dừng -->
+          <div style="display:flex;flex-direction:row;gap:6px;margin-top:4px;">
+            <button class="btn btn-primary" style="height:40px;flex:1;font-size:14px;justify-content:center;background:linear-gradient(135deg,#7c3aed,#db2777);white-space:nowrap;padding:0;" onclick="startVideoCreationDynamic(${fId})" id="createVideoBtn_${fId}">
               ▶️ Tạo Video
             </button>
           </div>
           
           <!-- Kết quả Video nằm chung luôn -->
-          <div id="vtask_video_container_${fId}" style="display:flex;flex-direction:column;gap:8px;align-items:center;justify-content:flex-start;height:100%; overflow-y:auto; padding:4px;">
+          <div id="vtask_video_container_${fId}" style="display:flex;flex-direction:column;gap:8px;align-items:center;justify-content:flex-start;width:100%;">
              <video id="vtask_video_${fId}" controls style="display:none;width:120px;height:52px;border-radius:8px;object-fit:contain;background-color:#000;"></video>
              <a id="vtask_dl_${fId}" href="#" download style="display:none;"><button class="btn btn-success btn-sm" style="width:120px;justify-content:center;height:24px;font-size:11px;">⬇️ Tải về</button></a>
-             <div id="vtask_empty_${fId}" style="color:#4b5563;font-size:11px;text-align:center;border:1px dashed #374151;width:100%;min-height:52px;display:flex;align-items:center;justify-content:center;border-radius:8px;">Chưa có video</div>
+             <div id="vtask_empty_${fId}" style="color:#4b5563;font-size:11px;text-align:center;border:1px dashed #374151;width:100%;height:28px;display:flex;align-items:center;justify-content:center;border-radius:6px;margin-top:4px;">Chưa có video</div>
           </div>
         </div>
         
@@ -704,16 +955,89 @@ function populateVideoProfiles() {
   });
 }
 
-// ===== IMAGE UPLOAD =====
+// ===== IMAGE UPLOAD (nhiều ảnh) =====
+function previewImgMulti(event, fId) {
+  const files = Array.from(event.target.files);
+  if (!files.length) return;
+  
+  const gallery = document.getElementById(`imgMultiGallery_${fId}`);
+  const emptyLabel = document.getElementById(`imgMultiEmpty_${fId}`);
+  const countBadge = document.getElementById(`imgMultiCount_${fId}`);
+  
+  // Lấy ảnh đã có trước đó (nếu có)
+  const existing = gallery.querySelectorAll('.multi-img-thumb');
+  let currentCount = existing.length;
+  const maxImgs = 10;
+  
+  files.forEach(file => {
+    if (currentCount >= maxImgs) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'multi-img-thumb';
+      wrapper.style.cssText = 'position:relative;flex-shrink:0;width:50px;height:50px;border-radius:6px;overflow:hidden;border:1px solid #374151;';
+      const img = document.createElement('img');
+      img.src = e.target.result;
+      img.style.cssText = 'width:100%;height:100%;object-fit:cover;';
+      const delBtn = document.createElement('button');
+      delBtn.textContent = '✕';
+      delBtn.style.cssText = 'position:absolute;top:1px;right:1px;background:rgba(239,68,68,0.9);color:#fff;border:none;border-radius:3px;font-size:9px;width:14px;height:14px;cursor:pointer;padding:0;line-height:1;display:flex;align-items:center;justify-content:center;';
+      delBtn.onclick = (ev) => { ev.stopPropagation(); wrapper.remove(); updateImgMultiCount(fId); };
+      wrapper.appendChild(img);
+      wrapper.appendChild(delBtn);
+      wrapper.dataset.dataUrl = e.target.result;
+      gallery.appendChild(wrapper);
+      updateImgMultiCount(fId);
+    };
+    reader.readAsDataURL(file);
+    currentCount++;
+  });
+  
+  // Reset input để có thể chọn lại cùng file
+  event.target.value = '';
+}
+
+function updateImgMultiCount(fId) {
+  const gallery = document.getElementById(`imgMultiGallery_${fId}`);
+  const emptyLabel = document.getElementById(`imgMultiEmpty_${fId}`);
+  const countBadge = document.getElementById(`imgMultiCount_${fId}`);
+  const thumbs = gallery.querySelectorAll('.multi-img-thumb');
+  if (thumbs.length > 0) {
+    emptyLabel.style.display = 'none';
+    countBadge.style.display = 'block';
+    countBadge.textContent = thumbs.length;
+  } else {
+    emptyLabel.style.display = '';
+    countBadge.style.display = 'none';
+  }
+}
+
+// ===== VIDEO UPLOAD =====
+function previewVideoUpload(event, fId) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const url = URL.createObjectURL(file);
+  const previewDiv = document.getElementById(`videoUploadPreview_${fId}`);
+  const emptyDiv = document.getElementById(`videoUploadEmpty_${fId}`);
+  const nameDiv = document.getElementById(`videoUploadName_${fId}`);
+  const videoEl = document.getElementById(`videoPreviewEl_${fId}`);
+  videoEl.src = url;
+  previewDiv.style.display = 'block';
+  emptyDiv.style.display = 'none';
+  nameDiv.style.display = 'block';
+  nameDiv.textContent = file.name.length > 22 ? file.name.substring(0,20)+'...' : file.name;
+}
+
+// ===== IMAGE UPLOAD (cũ, giữ để tương thích nếu có) =====
 function previewImgDynamic(event, suffix) {
   const file = event.target.files[0];
   if (!file) return;
   const reader = new FileReader();
   reader.onload = e => {
-    document.getElementById(`imgPreview${suffix}`).src = e.target.result;
-    document.getElementById(`imgPreview${suffix}`).style.display = "block";
-    document.getElementById(`dzLabel${suffix}`).style.display = "none";
-    saveUIState();
+    const prev = document.getElementById(`imgPreview${suffix}`);
+    const lbl = document.getElementById(`dzLabel${suffix}`);
+    if (prev) { prev.src = e.target.result; prev.style.display = "block"; }
+    if (lbl) lbl.style.display = "none";
   };
   reader.readAsDataURL(file);
 }
@@ -738,7 +1062,6 @@ const fIdToTaskId = {}; // map fId to actual task_id
 async function startVideoCreationDynamic(fId) {
   const prompt = document.getElementById(`videoPrompt_${fId}`).value.trim();
   const profileId = document.getElementById(`videoProfileId_${fId}`).value;
-  const img1File = document.getElementById(`imgInput1_${fId}`).files[0];
 
   if (!prompt) { alert("Vui lòng nhập prompt mô tả video!"); return; }
 
@@ -749,6 +1072,9 @@ async function startVideoCreationDynamic(fId) {
   const formData = new FormData();
   formData.append("prompt", prompt);
   formData.append("profile_id", profileId);
+  formData.append("video_model", document.getElementById(`videoModel_${fId}`).value);
+  formData.append("video_duration", document.getElementById(`videoDuration_${fId}`).value);
+  formData.append("video_ratio", document.getElementById(`videoRatio_${fId}`).value);
   
   const savePath = document.getElementById("globalVideoSavePath") ? document.getElementById("globalVideoSavePath").value.trim() : "";
   formData.append("save_path", savePath);
@@ -761,15 +1087,28 @@ async function startVideoCreationDynamic(fId) {
   formData.append('telegram_enabled', localStorage.getItem('tgEnable') === "true" ? "true" : "false");
   formData.append('telegram_token', localStorage.getItem('tgToken') || "");
   formData.append('telegram_chat_id', localStorage.getItem('tgChatId') || "");
-
-  const img1Src = document.getElementById(`imgPreview1_${fId}`)?.src || "";
-  if (img1File) formData.append("img1", img1File);
-  else if (img1Src && img1Src.startsWith("data:")) formData.append("img1", dataURLtoBlob(img1Src), "image1.png");
   
-  const img2File = document.getElementById(`imgInput2_${fId}`).files[0];
-  const img2Src = document.getElementById(`imgPreview2_${fId}`)?.src || "";
-  if (img2File) formData.append("img2", img2File);
-  else if (img2Src && img2Src.startsWith("data:")) formData.append("img2", dataURLtoBlob(img2Src), "image2.png");
+  const enableExt = document.getElementById(`enableExt_${fId}`) ? document.getElementById(`enableExt_${fId}`).checked : false;
+  formData.append("enable_ext", enableExt);
+
+  // Append nhiều ảnh (từ gallery multi-upload)
+  const gallery = document.getElementById(`imgMultiGallery_${fId}`);
+  if (gallery) {
+    const thumbs = gallery.querySelectorAll('.multi-img-thumb');
+    thumbs.forEach((thumb, idx) => {
+      const dataUrl = thumb.dataset.dataUrl;
+      if (dataUrl) {
+        const blob = dataURLtoBlob(dataUrl);
+        if (blob) formData.append("images", blob, `image_${idx+1}.png`);
+      }
+    });
+  }
+
+  // Append video upload (nếu có)
+  const videoInput = document.getElementById(`videoInputUpload_${fId}`);
+  if (videoInput && videoInput.files[0]) {
+    formData.append("upload_video", videoInput.files[0]);
+  }
 
   try {
     const res = await fetch("/api/video/create", { method: "POST", body: formData });
@@ -791,6 +1130,12 @@ async function startVideoCreationDynamic(fId) {
     
     document.getElementById(`vtask_retry_${fId}`).style.display = "none";
     
+    const stopBtn = document.getElementById(`vtask_stop_${fId}`);
+    if (stopBtn) {
+        stopBtn.disabled = false;
+        stopBtn.textContent = "🗑️ XÓA ACC";
+    }
+    
     // Bắt đầu poll status
     if(videoTaskPolls[fId]) clearInterval(videoTaskPolls[fId]);
     videoTaskPolls[fId] = setInterval(() => pollTaskStatusDynamic(fId, taskId), 2000);
@@ -810,40 +1155,69 @@ async function pollTaskStatusDynamic(fId, taskId) {
     const bar = document.getElementById(`vtask_status_${fId}`);
     if (!bar) { clearInterval(videoTaskPolls[fId]); return; }
     
-    const icon = data.status === "running" ? '<div class="spinner" style="flex-shrink:0;"></div>' : data.status === "done" ? '<span style="flex-shrink:0;">✅</span>' : '<span style="flex-shrink:0;">❌</span>';
-    bar.className = "status-bar " + (data.status || "");
+    const icon = (data.status === "running" || data.status === "pending") ? '<div class="spinner" style="flex-shrink:0;"></div>' : (data.status === "done" || data.status === "success") ? '<span style="flex-shrink:0;">✅</span>' : '<span style="flex-shrink:0;">❌</span>';
+    const cssClass = (data.status === "success") ? "done" : (data.status || "");
+    bar.className = "status-bar " + cssClass;
+    bar.style.display = "flex";
     bar.innerHTML = `${icon} <div style="font-size:11px;flex:1;word-break:break-word;max-height:80px;overflow-y:auto;white-space:pre-wrap;">${data.message || ""}</div>`;
-    
-    if (data.status === "done") {
+
+    const vform = document.getElementById(`vform_${fId}`);
+    if (vform) {
+        if (data.status === "running" || data.status === "pending") {
+            vform.style.borderColor = "#eab308";
+            vform.style.boxShadow = "0 0 0 1px rgba(234,179,8,0.2)";
+        } else if (data.status === "done" || data.status === "success") {
+            vform.style.borderColor = "#10b981";
+            vform.style.boxShadow = "0 0 0 1px rgba(16,185,129,0.2)";
+        } else if (data.status === "error") {
+            vform.style.borderColor = "#ef4444";
+            vform.style.boxShadow = "0 0 0 1px rgba(239,68,68,0.2)";
+        }
+    }
+
+
+    if (data.status === "done" || data.status === "success") {
       clearInterval(videoTaskPolls[fId]);
+      delete fIdToTaskId[fId];
       const btn = document.getElementById(`createVideoBtn_${fId}`);
       if(btn) {
         btn.disabled = false;
         btn.textContent = "▶️ Tạo Video";
       }
-      let urlsToRender = [];
-      if (data.result_urls && data.result_urls.length > 0) {
-          urlsToRender = data.result_urls;
-      } else if (data.result_url) {
-          urlsToRender = [data.result_url];
+      const stopBtn = document.getElementById(`vtask_stop_${fId}`);
+      if(stopBtn) {
+        stopBtn.disabled = false;
+        stopBtn.textContent = "🗑️ XÓA ACC";
       }
-      
-      if (urlsToRender.length > 0) {
-        document.getElementById(`vtask_empty_${fId}`).style.display = "none";
+    }
+    
+    // Luôn thử render video nếu có data.result_urls (bất kể status là gì)
+    let urlsToRender = [];
+    if (data.result_urls && data.result_urls.length > 0) {
+        urlsToRender = data.result_urls;
+    } else if (data.result_url) {
+        urlsToRender = [data.result_url];
+    }
+    
+    if (urlsToRender.length > 0) {
+        // Lọc bỏ các URL blob vì UI không đọc được trực tiếp từ localhost
+        urlsToRender = urlsToRender.filter(url => !url.startsWith('blob:'));
         
         let videosHtml = '';
         urlsToRender.forEach((url, idx) => {
             videosHtml += `
-            <div style="display:flex; flex-direction:column; align-items:center; gap:4px; margin-bottom:12px; border:1px solid #374151; padding:4px; border-radius:8px; background:#1e293b;">
-                <video src="${url}" controls style="width:120px;height:52px;border-radius:4px;object-fit:contain;background-color:#000;cursor:pointer;" onclick="if(this.paused){this.play();} else {this.pause();}" title="Click để xem/dừng"></video>
-                <a href="${url}" download><button class="btn btn-success btn-sm" style="width:120px;justify-content:center;height:24px;font-size:11px;">⬇️ Tải Video</button></a>
-                <button class="btn btn-primary btn-sm" onclick="let v = this.parentElement.querySelector('video'); if(v.requestFullscreen) v.requestFullscreen(); v.play();" style="width:120px;justify-content:center;height:24px;font-size:11px;">▶️ Xem Video</button>
+            <div style="display:flex; flex-direction:row; align-items:center; gap:6px; margin-bottom:8px; border:1px solid #374151; padding:4px 6px; border-radius:8px; background:#1e293b;">
+                <video src="${url}" controls style="width:110px;height:62px;border-radius:4px;object-fit:contain;background-color:#000;cursor:pointer;flex-shrink:0;" onclick="if(this.paused){this.play();} else {this.pause();}" title="Click để xem/dừng"></video>
+                <div style="display:flex;flex-direction:row;gap:6px;flex-shrink:0;align-items:center;">
+                    <a href="${url}" download><button class="btn btn-success btn-sm" style="width:85px;justify-content:center;height:24px;font-size:11px;">⬇️ Tải Video</button></a>
+                    <button class="btn btn-primary btn-sm" onclick="openVideoModal('${url}')" style="width:85px;justify-content:center;height:24px;font-size:11px;">▶️ Xem Video</button>
+                </div>
             </div>
             `;
         });
         
         let container = document.getElementById(`vtask_video_container_${fId}`);
-        if(container) {
+        if(container && urlsToRender.length > 0) {
             // Xóa nội dung "chưa có video" cũ
             const emptyEl = document.getElementById(`vtask_empty_${fId}`);
             if(emptyEl) emptyEl.style.display = "none";
@@ -854,8 +1228,7 @@ async function pollTaskStatusDynamic(fId, taskId) {
             const oldDl = document.getElementById(`vtask_dl_${fId}`);
             if(oldDl) oldDl.style.display = "none";
             
-            // Chèn danh sách video mới vào container (nhưng không ghi đè mất id container)
-            // Thay vì dùng div mới, ta tạo 1 div chứa video list nếu chưa có
+            // Chèn danh sách video mới vào container
             let listDiv = document.getElementById(`vtask_video_list_${fId}`);
             if(!listDiv) {
                 listDiv = document.createElement("div");
@@ -865,18 +1238,46 @@ async function pollTaskStatusDynamic(fId, taskId) {
                 listDiv.style.flexDirection = "column";
                 container.appendChild(listDiv);
             }
-            listDiv.innerHTML = videosHtml;
+            
+            const currentUrls = urlsToRender.join(',');
+            if (listDiv.dataset.renderedUrls !== currentUrls) {
+                listDiv.innerHTML = videosHtml;
+                listDiv.dataset.renderedUrls = currentUrls;
+            }
         }
-      }
-    } else if (data.status === "error" || data.status === "not_found") {
+    }
+
+    if (data.status === "error" || data.status === "not_found" || data.status === "limit" || data.status === "dola_logout") {
       clearInterval(videoTaskPolls[fId]);
       const btn = document.getElementById(`createVideoBtn_${fId}`);
       if(btn) {
         btn.disabled = false;
         btn.textContent = "▶️ Tạo Video";
       }
-      if (data.status === "error") {
-          document.getElementById(`vtask_retry_${fId}`).style.display = "block";
+      const stopBtn = document.getElementById(`vtask_stop_${fId}`);
+      if(stopBtn) { stopBtn.disabled = false; stopBtn.textContent = "🗑️ XÓA ACC"; }
+      
+      if (data.status === "error" || data.status === "dola_logout") {
+          // Nếu là check video task → nút "🔍 Check lại", ngược lại "🔄 Thử lại ngay"
+          const retryBtn = document.getElementById(`vtask_retry_${fId}`);
+          if (retryBtn) {
+              const isCheckTask = data.message && (data.message.includes('Dừng') || data.message.includes('dừng') || data.message.includes('kiểm tra'));
+              if (isCheckTask) {
+                  retryBtn.textContent = '🔍 Check lại';
+                  retryBtn.onclick = function() { submitCheckVideoForFid(fId); };
+              } else {
+                  retryBtn.textContent = '🔄 Thử lại ngay';
+                  retryBtn.onclick = function() { retryTaskDynamic(fId); };
+              }
+              retryBtn.style.display = 'block';
+          }
+      } else if (data.status === "limit") {
+          const card = document.getElementById(`videoCard_${fId}`);
+          if (card) {
+              card.style.border = "2px solid #ff3333";
+              card.style.boxShadow = "0 0 15px rgba(255, 51, 51, 0.6)";
+              card.style.backgroundColor = "rgba(255, 51, 51, 0.05)";
+          }
       }
     }
   } catch(e) {
@@ -884,9 +1285,63 @@ async function pollTaskStatusDynamic(fId, taskId) {
   }
 }
 
+async function stopTaskDynamic(fId) {
+  const profileId = document.getElementById(`videoProfileId_${fId}`).value;
+  let taskId = fIdToTaskId[fId];
+  
+  if(!taskId && !profileId) {
+      alert("Vui lòng chọn Profile Chrome trước khi thao tác Xóa acc!");
+      return;
+  }
+  
+  // Tự động kích hoạt hành động không cần hỏi lại
+  
+  const btn = document.getElementById(`vtask_stop_${fId}`);
+  if(btn) {
+      btn.disabled = true;
+      btn.textContent = "⏳ Đang xóa...";
+  }
+  
+  try {
+      if (taskId) {
+          await fetch(`/api/video/stop/${taskId}`, { method: 'POST' });
+      } else {
+          // Xóa account độc lập (chưa có tiến trình nào)
+          const res = await fetch(`/api/video/delete_account_direct`, { 
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ profile_id: profileId })
+          });
+          const data = await res.json();
+          if (data.ok && data.task_id) {
+              fIdToTaskId[fId] = data.task_id;
+              taskId = data.task_id;
+              pollTaskStatusDynamic(fId, taskId); // Bắt đầu poll
+              if (videoTaskPolls[fId]) clearInterval(videoTaskPolls[fId]);
+              videoTaskPolls[fId] = setInterval(() => pollTaskStatusDynamic(fId, taskId), 2000);
+          } else {
+              alert("Lỗi: " + (data.message || "Không thể tạo tác vụ xóa"));
+              if(btn) {
+                  btn.disabled = false;
+                  btn.textContent = "🗑️ XÓA ACC";
+              }
+              return;
+          }
+      }
+  } catch(e) {
+      alert("Lỗi khi gọi API Stop: " + e.message);
+  }
+}
+
 async function retryTaskDynamic(fId) {
   const taskId = fIdToTaskId[fId];
   if(!taskId) return;
+  
+  const stopBtn = document.getElementById(`vtask_stop_${fId}`);
+  if(stopBtn) {
+      stopBtn.disabled = false;
+      stopBtn.textContent = "🗑️ XÓA ACC";
+  }
   
   try {
     const bar = document.getElementById(`vtask_status_${fId}`);
@@ -909,7 +1364,16 @@ async function retryTaskDynamic(fId) {
       btn.textContent = "⏳...";
     }
   } catch(e) {
-    alert("❌ Lỗi khi thử lại: " + e.message);
+    if (e.message && e.message.includes("Task not found")) {
+        alert("Tiến trình này đã hết hạn (do phần mềm vừa khởi động lại).\nVui lòng tự ấn nút 'Tạo Video' để bắt đầu tiến trình mới!");
+        const createBtn = document.getElementById(`createVideoBtn_${fId}`);
+        if(createBtn) {
+          createBtn.disabled = false;
+          createBtn.textContent = "▶️ Tạo Video";
+        }
+    } else {
+        alert("❌ Lỗi khi thử lại: " + e.message);
+    }
     const btn = document.getElementById(`vtask_retry_${taskId}`);
     if (btn) btn.style.display = "flex";
   }
@@ -939,8 +1403,9 @@ function saveUIState() {
     const img2Src = document.getElementById(`imgPreview2_${fId}`)?.src || "";
     const taskId = fIdToTaskId[fId] || "";
     const isDone = document.getElementById(`vtask_empty_${fId}`)?.style.display === "none";
+    const enableExt = document.getElementById(`enableExt_${fId}`) ? document.getElementById(`enableExt_${fId}`).checked : false;
     
-    state.cards.push({ fId, prompt, profileId, taskId, img1Src: img1Src.startsWith("data:") ? img1Src : "", img2Src: img2Src.startsWith("data:") ? img2Src : "", isDone });
+    state.cards.push({ fId, prompt, profileId, taskId, img1Src: img1Src.startsWith("data:") ? img1Src : "", img2Src: img2Src.startsWith("data:") ? img2Src : "", isDone, enableExt });
   });
   
   const stateStr = JSON.stringify(state);
@@ -1021,6 +1486,10 @@ function restoreStateStr(saved) {
                       document.getElementById(`imgPreview2_${c.fId}`).src = c.img2Src;
                       document.getElementById(`imgPreview2_${c.fId}`).style.display = "block";
                       document.getElementById(`dzLabel2_${c.fId}`).style.display = "none";
+                  }
+                  if (c.hasOwnProperty('enableExt')) {
+                    const extEl = document.getElementById(`enableExt_${c.fId}`);
+                    if(extEl) extEl.checked = c.enableExt;
                   }
                   if (c.taskId) {
                       fIdToTaskId[c.fId] = c.taskId;
@@ -1137,10 +1606,12 @@ function saveStartupConfig() {
 }
 
 let contextMenuTargetFid = null;
+let contextMenuTargetImgIndex = 1;
 
-function showImgContextMenu(e, fId) {
+function showImgContextMenu(e, fId, imgIndex = 1) {
     e.preventDefault();
     contextMenuTargetFid = fId;
+    contextMenuTargetImgIndex = imgIndex;
     const menu = document.getElementById("imgContextMenu");
     menu.style.display = "block";
     menu.style.left = e.pageX + "px";
@@ -1154,7 +1625,7 @@ document.addEventListener("click", function(e) {
 
 function applyImageToAll() {
     if(!contextMenuTargetFid) return;
-    const imgSrc = document.getElementById(`imgPreview1_${contextMenuTargetFid}`).src;
+    const imgSrc = document.getElementById(`imgPreview${contextMenuTargetImgIndex}_${contextMenuTargetFid}`).src;
     if(!imgSrc || !imgSrc.startsWith("data:")) {
         alert("Thẻ này chưa có ảnh hợp lệ!");
         return;
@@ -1164,11 +1635,36 @@ function applyImageToAll() {
     forms.forEach(form => {
         const id = form.id.replace("vform_", "");
         if(id !== contextMenuTargetFid) {
-            document.getElementById(`imgPreview1_${id}`).src = imgSrc;
-            document.getElementById(`imgPreview1_${id}`).style.display = "block";
-            document.getElementById(`dzLabel1_${id}`).style.display = "none";
+            const preview = document.getElementById(`imgPreview${contextMenuTargetImgIndex}_${id}`);
+            const dzLabel = document.getElementById(`dzLabel${contextMenuTargetImgIndex}_${id}`);
+            if (preview && dzLabel) {
+                preview.src = imgSrc;
+                preview.style.display = "block";
+                dzLabel.style.display = "none";
+            }
         }
     });
+    saveUIState();
+}
+
+function removeCurrentImage() {
+    if(!contextMenuTargetFid || !contextMenuTargetImgIndex) return;
+    const fId = contextMenuTargetFid;
+    const idx = contextMenuTargetImgIndex;
+    
+    const imgPreview = document.getElementById(`imgPreview${idx}_${fId}`);
+    if(imgPreview) {
+        imgPreview.src = "";
+        imgPreview.style.display = "none";
+    }
+    const dzLabel = document.getElementById(`dzLabel${idx}_${fId}`);
+    if(dzLabel) {
+        dzLabel.style.display = ""; // Khôi phục lại display ban đầu
+    }
+    const imgInput = document.getElementById(`imgInput${idx}_${fId}`);
+    if(imgInput) {
+        imgInput.value = "";
+    }
     saveUIState();
 }
 
@@ -1219,9 +1715,18 @@ setInterval(loadProfiles, 4000);
 
 // Restore toggle states from localStorage
 document.addEventListener('DOMContentLoaded', () => {
-  if(localStorage.getItem('globalAutoFp') === 'true') document.getElementById('globalAutoFp').checked = true;
-  if(localStorage.getItem('globalAutoSignup') === 'true') document.getElementById('globalAutoSignup').checked = true;
-  if(localStorage.getItem('globalExtBtn2') === 'true') document.getElementById('globalExtBtn2').checked = true;
+  if(localStorage.getItem('globalAutoFp') === 'true') {
+      const el = document.getElementById('globalAutoFp');
+      if (el) el.checked = true;
+  }
+  if(localStorage.getItem('globalAutoSignup') === 'true') {
+      const el = document.getElementById('globalAutoSignup');
+      if (el) el.checked = true;
+  }
+  if(localStorage.getItem('globalEnableExt') === 'true') {
+      const el = document.getElementById('globalEnableExt');
+      if (el) el.checked = true;
+  }
   
   // Also push max retries to backend on load if valid
   setTimeout(() => updateMaxRetries(), 1000);
@@ -1251,7 +1756,514 @@ document.addEventListener("fullscreenchange", function() {
 <!-- Custom Context Menu for Image -->
 <div id="imgContextMenu" style="display:none; position:fixed; z-index:9999; background:#1e293b; border:1px solid #334155; border-radius:8px; padding:4px; box-shadow: 0 4px 12px rgba(0,0,0,0.5);">
     <div class="menu-item" onclick="applyImageToAll()" style="padding:8px 12px; cursor:pointer; font-size:12px; color:#e2e8f0; transition:0.2s; border-radius:4px;" onmouseover="this.style.background='#334155'" onmouseout="this.style.background='transparent'">📥 Nhập ảnh cho toàn bộ các thẻ</div>
+    <div class="menu-item" onclick="removeCurrentImage()" style="padding:8px 12px; cursor:pointer; font-size:12px; color:#ef4444; transition:0.2s; border-radius:4px;" onmouseover="this.style.background='#334155'" onmouseout="this.style.background='transparent'">❌ Xóa ảnh này</div>
     <div class="menu-item" onclick="keepAndCancel()" style="padding:8px 12px; cursor:pointer; font-size:12px; color:#ef4444; transition:0.2s; border-radius:4px;" onmouseover="this.style.background='#334155'" onmouseout="this.style.background='transparent'">🗑️ Giữ thẻ này và hủy các thẻ khác</div>
 </div>
+<!-- Extensions Modal -->
+<div id="extModalOverlay" class="modal-overlay" onclick="if(event.target==this) closeExtModal()">
+  <div class="modal">
+    <h2 style="margin-top:0; font-size:16px; margin-bottom:16px;" id="extModalTitle">Đang cài cho profile: ...</h2>
+    <input type="hidden" id="extModalProfileId">
+    <p style="font-size:13px; color:#94a3b8; margin-bottom:12px;">
+      Danh sách đường dẫn tiện ích (cách nhau bằng xuống dòng hoặc ';'):
+    </p>
+    <textarea id="extModalTextarea" style="width:100%; height:120px; background:#1e293b; color:#e2e8f0; border:1px solid #334155; border-radius:6px; padding:10px; margin-bottom:16px; font-family:monospace; font-size:12px;"></textarea>
+    
+    <div style="display:flex; gap:10px; margin-bottom: 16px; flex-wrap: wrap;">
+      <button class="btn btn-ghost" style="border:1px solid #334155; background:#1e293b; color:#cbd5e1; flex:1;" onclick="appendExtensionFile()">📄 Chọn file .crx</button>
+      <button class="btn btn-ghost" style="border:1px solid #334155; background:#1e293b; color:#cbd5e1; flex:1;" onclick="appendExtensionFolder()">📁 Chọn thư mục extension</button>
+      <button class="btn btn-danger" style="background:#f43f5e; color:#fff; border:none; flex:1;" onclick="clearExtensions()">🗑️ Xóa hết</button>
+    </div>
+
+    <p style="font-size:12px; color:#64748b; margin-bottom:8px;">
+      Ví dụ: C:\addons\ublock.crx ; D:\ext\adblock (thư mục có manifest.json)
+    </p>
+    <p style="font-size:12px; color:#64748b; margin-bottom:24px;">
+      ⚠️ Mỗi profile tự giải nén .crx vào thư mục riêng — không xung đột.
+    </p>
+
+    <div style="display:flex; justify-content:center; gap:20px;">
+      <button class="btn btn-ghost" style="background:#1e293b; width:120px;" onclick="closeExtModal()">Hủy</button>
+      <button id="extSaveBtn" class="btn btn-primary" style="background:#3b82f6; width:120px;" onclick="saveExtensions()">Áp dụng</button>
+    </div>
+  </div>
+</div>
+
+<!-- Chat Modal -->
+<div id="chatModalOverlay" class="modal-overlay" onclick="if(event.target==this) closeChatModal()">
+  <div class="modal lg" style="display:flex;flex-direction:column;height:80vh;padding:0;overflow:hidden;">
+    <div style="padding:16px 20px;border-bottom:1px solid #2a3650;display:flex;justify-content:space-between;align-items:center;">
+      <h2 style="margin:0;font-size:16px;">💬 Chat Dola (Thẻ <span id="chatModalFid"></span>)</h2>
+      <button class="btn btn-ghost" style="padding:4px 8px;" onclick="closeChatModal()">✕</button>
+    </div>
+    
+    <div id="chatMessages" style="flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:12px;background:#0b0e14;">
+      <!-- Messages here -->
+    </div>
+    
+    <div style="padding:16px;border-top:1px solid #2a3650;background:#151a27;display:flex;gap:8px;">
+      <input type="text" id="chatInput" class="input" placeholder="Nhập tin nhắn chat với Dola..." style="flex:1;" onkeypress="if(event.key==='Enter') sendChatMessage()">
+      <button class="btn btn-primary" onclick="sendChatMessage()">Gửi</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let currentChatFid = null;
+let chatPollInterval = null;
+
+function openChatModal(fId) {
+    const taskId = fIdToTaskId[fId];
+    if(!taskId) {
+        alert("Thẻ này chưa chạy, không có log chat!");
+        return;
+    }
+    currentChatFid = fId;
+    document.getElementById("chatModalFid").textContent = fId;
+    document.getElementById("chatModalOverlay").classList.add("active");
+    
+    // Clear old messages
+    document.getElementById("chatMessages").innerHTML = '<div style="text-align:center;color:#64748b;font-size:12px;">Đang tải log chat...</div>';
+    
+    pollChat();
+    if(chatPollInterval) clearInterval(chatPollInterval);
+    chatPollInterval = setInterval(pollChat, 2000);
+}
+
+function closeChatModal() {
+    document.getElementById("chatModalOverlay").classList.remove("active");
+    if(chatPollInterval) {
+        clearInterval(chatPollInterval);
+        chatPollInterval = null;
+    }
+    currentChatFid = null;
+}
+
+async function pollChat() {
+    if(!currentChatFid) return;
+    const taskId = fIdToTaskId[currentChatFid];
+    if(!taskId) return;
+    
+    try {
+        const res = await fetch(`/api/tasks/${taskId}/chat`);
+        const data = await res.json();
+        
+        if (data && data.messages) {
+            renderChat(data.messages);
+        }
+    } catch(e) {
+        console.error("Lỗi lấy chat:", e);
+    }
+}
+
+function renderChat(messages) {
+    const container = document.getElementById("chatMessages");
+    if(!messages || messages.length === 0) {
+        container.innerHTML = '<div style="text-align:center;color:#64748b;font-size:12px;">Chưa có tin nhắn nào.</div>';
+        return;
+    }
+    
+    let html = '';
+    messages.forEach(m => {
+        const isUser = m.role === 'user';
+        html += `
+        <div style="display:flex; justify-content: ${isUser ? 'flex-end' : 'flex-start'};">
+            <div style="max-width:80%; padding:10px 14px; border-radius:12px; font-size:13px; line-height:1.4; white-space:pre-wrap;
+                ${isUser ? 'background:#3b82f6;color:#fff;border-bottom-right-radius:2px;' : 'background:#1e293b;color:#e2e8f0;border-bottom-left-radius:2px;'}">
+                ${m.text.replace(/</g, "&lt;").replace(/>/g, "&gt;")}
+            </div>
+        </div>
+        `;
+    });
+    
+    const wasScrolledToBottom = container.scrollHeight - container.clientHeight <= container.scrollTop + 50;
+    container.innerHTML = html;
+    if (wasScrolledToBottom) {
+        container.scrollTop = container.scrollHeight;
+    }
+}
+
+async function sendChatMessage() {
+    if(!currentChatFid) return;
+    const taskId = fIdToTaskId[currentChatFid];
+    if(!taskId) return;
+    
+    const input = document.getElementById("chatInput");
+    const msg = input.value.trim();
+    if(!msg) return;
+    
+    input.value = "";
+    input.disabled = true;
+    
+    try {
+        await fetch(`/api/tasks/${taskId}/chat`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({message: msg})
+        });
+        // Poll immediately to see the change faster
+        setTimeout(pollChat, 500);
+    } catch(e) {
+        alert("Lỗi gửi tin nhắn: " + e.message);
+    } finally {
+        input.disabled = false;
+        input.focus();
+    }
+}
+</script>
+<!-- Modal Check Video -->
+<div id="checkVideoModal" class="modal-overlay">
+  <div class="modal-content" style="max-width: 500px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #334155; padding-bottom:12px; margin-bottom:16px;">
+      <h3 style="margin:0; color:#e2e8f0;">🔍 Chọn Profile Để Kiểm Tra Video</h3>
+      <button class="btn btn-ghost" style="padding:4px 8px;" onclick="closeCheckVideoModal()">✕</button>
+    </div>
+    
+    <div style="margin-bottom:16px;">
+      <label style="display:flex; align-items:center; gap:8px; cursor:pointer; color:#94a3b8; font-size:14px; user-select:none;">
+        <input type="checkbox" id="checkVideoSelectAll" onchange="toggleCheckVideoSelectAll(this)" style="width:16px; height:16px; accent-color:#3b82f6;">
+        <span style="font-weight:bold; color:#e2e8f0;">Chọn tất cả</span>
+      </label>
+    </div>
+    
+    <div id="checkVideoProfileList" style="display:flex; flex-direction:column; gap:8px; max-height:400px; overflow-y:auto; padding-right:8px; margin-bottom:20px; border:1px solid #334155; border-radius:8px; padding:12px; background:#0f172a;">
+      <!-- Profile checkboxes will be injected here -->
+    </div>
+    
+    <div style="display:flex; justify-content:flex-end; gap:12px;">
+      <button class="btn btn-ghost" onclick="closeCheckVideoModal()">Hủy</button>
+      <button class="btn btn-primary" style="background:#3b82f6; border-color:#3b82f6;" onclick="submitCheckVideo()">Bắt đầu Kiểm Tra</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function openCheckVideoModal() {
+  const container = document.getElementById('checkVideoProfileList');
+  container.innerHTML = '';
+  document.getElementById('checkVideoSelectAll').checked = false;
+  
+  if (allProfiles.length === 0) {
+      container.innerHTML = '<div style="color:#94a3b8; font-size:13px; text-align:center;">Chưa có profile nào.</div>';
+  } else {
+      allProfiles.forEach(p => {
+          const div = document.createElement('div');
+          div.style.display = 'flex';
+          div.style.alignItems = 'center';
+          div.style.gap = '10px';
+          div.style.padding = '8px 12px';
+          div.style.borderRadius = '6px';
+          div.style.background = '#1e293b';
+          div.style.cursor = 'pointer';
+          div.style.border = '1px solid transparent';
+          div.style.userSelect = 'none';
+          
+          const checkbox = document.createElement('input');
+          checkbox.type = 'checkbox';
+          checkbox.value = p.id;
+          checkbox.className = 'check-video-profile-cb';
+          checkbox.style.width = '16px';
+          checkbox.style.height = '16px';
+          checkbox.style.accentColor = '#3b82f6';
+          checkbox.style.pointerEvents = 'none'; // click xuyên qua
+          
+          const label = document.createElement('span');
+          label.textContent = p.name + (p.notes ? ` (${p.notes})` : '');
+          label.style.flex = '1';
+          label.style.color = '#e2e8f0';
+          label.style.fontSize = '14px';
+          label.style.pointerEvents = 'none';
+          
+          div.onclick = (e) => {
+              checkbox.checked = !checkbox.checked;
+              if(checkbox.checked) {
+                  div.style.background = '#2563eb33';
+                  div.style.borderColor = '#3b82f6';
+              } else {
+                  div.style.background = '#1e293b';
+                  div.style.borderColor = 'transparent';
+              }
+          };
+          
+          div.appendChild(checkbox);
+          div.appendChild(label);
+          container.appendChild(div);
+      });
+  }
+  
+  document.getElementById('checkVideoModal').style.display = 'flex';
+}
+
+function closeCheckVideoModal() {
+  document.getElementById('checkVideoModal').style.display = 'none';
+}
+
+// Chạy check video cho 1 fId cụ thể (dùng cho nút Check lại)
+async function submitCheckVideoForFid(fId) {
+  const profileSelect = document.getElementById(`videoProfileId_${fId}`);
+  if (!profileSelect || !profileSelect.value) { alert('Không tìm thấy profile!'); return; }
+  const pId = profileSelect.value;
+  
+  const retryBtn = document.getElementById(`vtask_retry_${fId}`);
+  if (retryBtn) retryBtn.style.display = 'none';
+  
+  const statusBar = document.getElementById(`vtask_status_${fId}`);
+  if (statusBar) {
+    statusBar.style.display = 'flex';
+    statusBar.className = 'status-bar running';
+    statusBar.innerHTML = '<div class="spinner" style="flex-shrink:0;"></div> <div style="font-size:11px;flex:1;">⏳ Đang khởi tạo lại kiểm tra...</div>';
+  }
+  
+  activeCheckVideoCount += 1;
+  updateStopCheckBtn();
+  
+  const globalHeadless = document.getElementById('globalHeadless') ? document.getElementById('globalHeadless').checked : false;
+  try {
+    const res = await fetch('/api/video/check', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profile_id: pId, is_headless: globalHeadless })
+    });
+    const data = await res.json();
+    if (data.ok && data.task_id) {
+      fIdToTaskId[fId] = data.task_id;
+      if (videoTaskPolls[fId]) clearInterval(videoTaskPolls[fId]);
+      videoTaskPolls[fId] = setInterval(() => {
+        pollTaskStatusDynamic(fId, data.task_id);
+        fetch(`/api/video/status/${data.task_id}`).then(r=>r.json()).then(s => {
+          if (s.status === 'success' || s.status === 'error' || s.status === 'not_found') {
+            if (!window._checkDoneSet) window._checkDoneSet = new Set();
+            if (!window._checkDoneSet.has(data.task_id)) {
+              window._checkDoneSet.add(data.task_id);
+              activeCheckVideoCount = Math.max(0, activeCheckVideoCount - 1);
+              updateStopCheckBtn();
+            }
+          }
+        }).catch(()=>{});
+      }, 2000);
+    } else {
+      activeCheckVideoCount = Math.max(0, activeCheckVideoCount - 1);
+      updateStopCheckBtn();
+      if (statusBar) { statusBar.className = 'status-bar error'; statusBar.innerHTML = `❌ Lỗi: ${data.message || 'Không thể khởi tạo'}`; }
+      if (retryBtn) retryBtn.style.display = 'block';
+    }
+  } catch(e) {
+    activeCheckVideoCount = Math.max(0, activeCheckVideoCount - 1);
+    updateStopCheckBtn();
+    if (statusBar) { statusBar.className = 'status-bar error'; statusBar.innerHTML = `❌ Lỗi: ${e.message}`; }
+    if (retryBtn) retryBtn.style.display = 'block';
+  }
+}
+
+function toggleCheckVideoSelectAll(source) {
+  const checkboxes = document.querySelectorAll('.check-video-profile-cb');
+  checkboxes.forEach(cb => {
+      cb.checked = source.checked;
+      const div = cb.parentElement;
+      if(cb.checked) {
+          div.style.background = '#2563eb33';
+          div.style.borderColor = '#3b82f6';
+      } else {
+          div.style.background = '#1e293b';
+          div.style.borderColor = 'transparent';
+      }
+  });
+}
+
+// Đếm số luồng check video đang chạy
+let activeCheckVideoCount = 0;
+
+function updateStopCheckBtn() {
+  const btn = document.getElementById('stopCheckVideoBtn');
+  if (!btn) return;
+  if (activeCheckVideoCount > 0) {
+    btn.style.display = 'flex';
+    btn.textContent = `🛑 Dừng Check (${activeCheckVideoCount})`;
+  } else {
+    btn.style.display = 'none';
+    btn.textContent = '🛑 Dừng Check';
+  }
+}
+
+async function stopAllCheckVideo() {
+  const btn = document.getElementById('stopCheckVideoBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Đang dừng...'; }
+  try {
+    await fetch('/api/video/check/stop_all', { method: 'POST' });
+  } catch(e) {}
+  setTimeout(() => {
+    activeCheckVideoCount = 0;
+    updateStopCheckBtn();
+    if (btn) { btn.disabled = false; }
+  }, 1500);
+}
+
+function openVideoModal(url) {
+  const overlay = document.createElement('div');
+  overlay.style.position = 'fixed';
+  overlay.style.top = '0';
+  overlay.style.left = '0';
+  overlay.style.width = '100vw';
+  overlay.style.height = '100vh';
+  overlay.style.backgroundColor = 'rgba(0,0,0,0.85)';
+  overlay.style.zIndex = '999999';
+  overlay.style.display = 'flex';
+  overlay.style.alignItems = 'center';
+  overlay.style.justifyContent = 'center';
+  
+  const closeBtn = document.createElement('button');
+  closeBtn.innerHTML = '❌ Đóng';
+  closeBtn.style.position = 'absolute';
+  closeBtn.style.top = '20px';
+  closeBtn.style.right = '20px';
+  closeBtn.style.padding = '8px 16px';
+  closeBtn.style.fontSize = '14px';
+  closeBtn.style.fontWeight = 'bold';
+  closeBtn.style.background = '#ef4444';
+  closeBtn.style.color = '#fff';
+  closeBtn.style.border = 'none';
+  closeBtn.style.borderRadius = '8px';
+  closeBtn.style.cursor = 'pointer';
+  closeBtn.style.zIndex = '1000000';
+  
+  const vid = document.createElement('video');
+  vid.src = url;
+  vid.controls = true;
+  vid.autoplay = true;
+  vid.style.maxWidth = '90vw';
+  vid.style.maxHeight = '90vh';
+  vid.style.borderRadius = '8px';
+  vid.style.boxShadow = '0 0 20px rgba(0,0,0,0.5)';
+  
+  closeBtn.onclick = () => document.body.removeChild(overlay);
+  overlay.onclick = (e) => { if(e.target === overlay) document.body.removeChild(overlay); };
+  
+  overlay.appendChild(closeBtn);
+  overlay.appendChild(vid);
+  document.body.appendChild(overlay);
+}
+
+async function submitCheckVideo() {
+  const checkboxes = document.querySelectorAll('.check-video-profile-cb:checked');
+  const selectedIds = Array.from(checkboxes).map(cb => cb.value);
+  
+  if (selectedIds.length === 0) {
+      alert("Vui lòng chọn ít nhất 1 profile!");
+      return;
+  }
+  
+  closeCheckVideoModal();
+  
+  // Tăng counter và hiện nút dừng
+  activeCheckVideoCount += selectedIds.length;
+  updateStopCheckBtn();
+  
+  for (const pId of selectedIds) {
+      let currentFid = null;
+      for (let sel of document.querySelectorAll('select[id^="videoProfileId_"]')) {
+          if (sel.value === pId) { currentFid = sel.id.split('_')[1]; break; }
+      }
+      if (!currentFid) {
+          await addVideoForm();
+          currentFid = formCounter;
+      }
+      
+      const profileSelect = document.getElementById(`videoProfileId_${currentFid}`);
+      if(profileSelect) profileSelect.value = pId;
+      
+      const promptDiv = profileSelect ? profileSelect.closest('.video-form-grid').querySelector('div:has(textarea[id^="videoPrompt_"])') : null;
+      if(promptDiv) promptDiv.style.display = 'none';
+      
+      const uploadDiv = document.getElementById(`uploadBoxes_${currentFid}`);
+      if(uploadDiv) uploadDiv.style.display = 'none';
+      
+      const btnGroup = document.getElementById(`vtask_btns_${currentFid}`);
+      if(btnGroup) btnGroup.style.display = 'none';
+      
+      const createBtn = document.getElementById(`createVideoBtn_${currentFid}`);
+      if(createBtn) createBtn.style.display = 'none';
+      
+      const statusBar = document.getElementById(`vtask_status_${currentFid}`);
+      if(statusBar) {
+          statusBar.style.display = 'flex';
+          statusBar.className = 'status-bar running';
+          statusBar.innerHTML = `<div class="spinner" style="flex-shrink:0;"></div> <div style="font-size:11px;flex:1;">⏳ Đang khởi tạo luồng kiểm tra Video...</div>`;
+      }
+      
+      const vform = document.getElementById(`vform_${currentFid}`);
+      if(vform) {
+          vform.style.borderColor = "#3b82f6";
+          vform.style.boxShadow = "0 0 0 1px rgba(59,130,246,0.2)";
+      }
+      
+      const globalHeadless = document.getElementById('globalHeadless').checked;
+      fetch('/api/video/check', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ profile_id: pId, is_headless: globalHeadless })
+      })
+      .then(res => res.json())
+      .then(data => {
+          if (data.ok && data.task_id) {
+              fIdToTaskId[currentFid] = data.task_id;
+              if (videoTaskPolls[currentFid]) clearInterval(videoTaskPolls[currentFid]);
+              videoTaskPolls[currentFid] = setInterval(() => {
+                  pollTaskStatusDynamic(currentFid, data.task_id);
+                  // Kiểm tra task kết thúc để giảm counter
+                  fetch(`/api/video/status/${data.task_id}`).then(r=>r.json()).then(s => {
+                      if (s.status === 'success' || s.status === 'error' || s.status === 'not_found') {
+                          if (!window._checkDoneSet) window._checkDoneSet = new Set();
+                          if (!window._checkDoneSet.has(data.task_id)) {
+                              window._checkDoneSet.add(data.task_id);
+                              activeCheckVideoCount = Math.max(0, activeCheckVideoCount - 1);
+                              updateStopCheckBtn();
+                              clearInterval(videoTaskPolls[currentFid]);
+                          }
+                      }
+                  }).catch(()=>{});
+              }, 2000);
+          } else {
+              activeCheckVideoCount = Math.max(0, activeCheckVideoCount - 1);
+              updateStopCheckBtn();
+              if(statusBar) {
+                  statusBar.className = 'status-bar error';
+                  statusBar.innerHTML = `❌ Lỗi: ${data.message || "Không thể khởi tạo"}`;
+              }
+          }
+      })
+      .catch(e => {
+          activeCheckVideoCount = Math.max(0, activeCheckVideoCount - 1);
+          updateStopCheckBtn();
+          if(statusBar) {
+              statusBar.className = 'status-bar error';
+              statusBar.innerHTML = `❌ Lỗi fetch: ${e.message}`;
+          }
+      });
+      
+      // Wait to bypass the 300ms isAddingForm lock in addVideoForm
+      await new Promise(r => setTimeout(r, 400));
+  }
+}
+</script>
+
+<!-- ===== MODAL DÁN MAIL ===== -->
+<div id="pasteMailModal" class="modal-overlay">
+  <div class="modal" style="max-width:520px;">
+    <h2 id="pasteMailTitle" style="margin-bottom:12px;">📧 Dán thông tin tài khoản Microsoft</h2>
+    <p style="font-size:12px;color:#94a3b8;margin-bottom:14px;line-height:1.6;">
+      Dán thông tin theo định dạng: <code style="background:#0f1420;padding:2px 6px;border-radius:4px;color:#46c8ff;">email|password|token|guid</code><br>
+      Ví dụ: <code style="background:#0f1420;padding:2px 6px;border-radius:4px;color:#6ee7b7;font-size:11px;">JamesRobinson089728@hotmail.com|tukhas93851|M.C561...|9e5f94bc...</code>
+    </p>
+    <div class="form-group">
+      <textarea id="pasteMailInput" class="textarea" rows="4" placeholder="Dán dòng tài khoản vào đây: email|password|token|guid" style="font-size:12px;font-family:Consolas,monospace;"></textarea>
+    </div>
+    <div id="pasteMailStatus" style="font-size:13px;min-height:20px;margin-bottom:12px;font-weight:600;"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <button class="btn btn-ghost" onclick="closePasteMailModal()">Hủy</button>
+      <button class="btn btn-primary" onclick="saveMsAccount()" style="background:linear-gradient(135deg,#0369a1,#0ea5e9);">💾 Lưu tài khoản</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>

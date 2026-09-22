@@ -368,6 +368,112 @@ def auto_signup_endpoint(profile_id: str):
                 page.wait_for_timeout(3000)
                 print(f"Current URL after click: {page.url}")
                 
+                # === Đọc thông tin tài khoản từ ms_account.txt ===
+                ms_acc_file = Path(profile.user_data_dir) / "ms_account.txt"
+                ms_email = None
+                ms_password = None
+                if ms_acc_file.exists():
+                    try:
+                        raw_acc = ms_acc_file.read_text(encoding="utf-8").strip()
+                        parts_acc = raw_acc.split("|")
+                        if len(parts_acc) >= 2:
+                            ms_email = parts_acc[0].strip()
+                            ms_password = parts_acc[1].strip()
+                            print(f"Loaded MS account: {ms_email}")
+                    except Exception as e:
+                        print(f"Error reading ms_account.txt: {e}")
+                
+                if ms_email and ms_password:
+                    # Đợi trang Microsoft login load xong
+                    try:
+                        page.wait_for_url("*login.microsoftonline.com*", timeout=15000)
+                    except:
+                        try:
+                            page.wait_for_url("*login.live.com*", timeout=10000)
+                        except:
+                            pass
+                    
+                    page.wait_for_timeout(2000)
+                    print(f"MS login page URL: {page.url}")
+                    
+                    # Điền email vào ô input
+                    try:
+                        import time
+                        email_input = page.locator('input[type="email"], input[name="loginfmt"], input[id="i0116"]')
+                        email_input.wait_for(state="visible", timeout=10000)
+                        email_input.click()
+                        time.sleep(0.3)
+                        email_input.fill(ms_email)
+                        page.wait_for_timeout(500)
+                        print(f"Filled email: {ms_email}")
+                        
+                        # Click nút Tiếp theo / Next
+                        next_btn = page.locator('input[type="submit"][value="Tiếp theo"], input[type="submit"][value="Next"], input#idSIButton9, button:has-text("Tiếp theo"), button:has-text("Next")')
+                        if next_btn.count() > 0:
+                            next_btn.first.click()
+                        else:
+                            page.keyboard.press("Enter")
+                        print("Clicked Next after email")
+                        page.wait_for_timeout(3000)
+                    except Exception as e:
+                        print(f"Error filling email: {e}")
+                    
+                    # Điền mật khẩu
+                    try:
+                        pwd_input = page.locator('input[type="password"], input[name="passwd"], input[id="i0118"]')
+                        pwd_input.wait_for(state="visible", timeout=10000)
+                        pwd_input.click()
+                        time.sleep(0.3)
+                        pwd_input.fill(ms_password)
+                        page.wait_for_timeout(500)
+                        print(f"Filled password")
+                        
+                        # Click nút Tiếp theo / Sign in
+                        signin_btn = page.locator('input[type="submit"][value="Tiếp theo"], input[type="submit"][value="Sign in"], input#idSIButton9, button:has-text("Tiếp theo"), button:has-text("Sign in")')
+                        if signin_btn.count() > 0:
+                            signin_btn.first.click()
+                        else:
+                            page.keyboard.press("Enter")
+                        print("Clicked Sign in after password")
+                        page.wait_for_timeout(4000)
+                    except Exception as e:
+                        print(f"Error filling password: {e}")
+                    
+                    # Xử lý trang "Giúp bảo vệ tài khoản của bạn" → Click "Thêm email"
+                    try:
+                        # Đợi trang bảo vệ hoặc redirect
+                        for _ in range(10):
+                            cur_url = page.url
+                            if "account.live.com/interrupt" in cur_url or "credentialaction" in cur_url:
+                                break
+                            page.wait_for_timeout(1000)
+                        
+                        if "account.live.com/interrupt" in page.url or "credentialaction" in page.url:
+                            print("Trang bao ve tai khoan detected!")
+                            # Click nút "Thêm email"
+                            them_email_btn = page.locator('button:has-text("Thêm email"), input[value="Thêm email"], a:has-text("Thêm email")')
+                            if them_email_btn.count() > 0:
+                                them_email_btn.first.click()
+                                print("Clicked 'Thêm email'!")
+                            else:
+                                # Fallback JS
+                                page.evaluate("""() => {
+                                    const all = document.querySelectorAll('button, input[type=submit], a');
+                                    for (let el of all) {
+                                        const t = (el.innerText || el.value || '').trim();
+                                        if (t === 'Thêm email' || t.includes('Them email') || t.toLowerCase().includes('add email')) {
+                                            el.click();
+                                            return;
+                                        }
+                                    }
+                                }""")
+                                print("Clicked 'Thêm email' via JS fallback")
+                            page.wait_for_timeout(2000)
+                    except Exception as e:
+                        print(f"Error on protection page: {e}")
+                else:
+                    print("Không có thông tin tài khoản MS. Vui lòng bấm nút 'Dán mail' để thêm tài khoản trước!")
+                
                 browser.disconnect()
         except Exception as e:
             print(f"Auto signup FATAL err: {e}")
@@ -375,7 +481,30 @@ def auto_signup_endpoint(profile_id: str):
     threading.Thread(target=run_auto_signup, daemon=True).start()
     return {"ok": True, "message": "Bắt đầu Auto Login Higgsfield (Microsoft)..."}
 
-# ===== VIDEO CREATION API =====
+@app.post("/api/profiles/{profile_id}/set-ms-account")
+def set_ms_account(profile_id: str, payload: dict = Body(...)):
+    """Lưu thông tin tài khoản Microsoft vào profile. Format: email|password|token|guid"""
+    profile = manager.get_profile(profile_id)
+    if not profile: raise HTTPException(404, "Profile not found")
+    
+    raw = payload.get("raw", "").strip()
+    if not raw:
+        raise HTTPException(400, "Thiếu dữ liệu tài khoản")
+    
+    parts = raw.split("|")
+    if len(parts) < 2:
+        raise HTTPException(400, "Sai định dạng. Cần: email|password hoặc email|password|token|guid")
+    
+    email = parts[0].strip()
+    password = parts[1].strip()
+    
+    acc_file = Path(profile.user_data_dir) / "ms_account.txt"
+    acc_file.parent.mkdir(parents=True, exist_ok=True)
+    acc_file.write_text(raw, encoding="utf-8")
+    
+    return {"ok": True, "email": email, "message": f"Đã lưu tài khoản {email}"}
+
+
 import threading
 import uuid as uuid_module
 from fastapi import UploadFile, File, Form
