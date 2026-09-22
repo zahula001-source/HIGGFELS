@@ -429,16 +429,22 @@ def auto_signup_endpoint(profile_id: str):
                         print("Clicked Next after email")
                         page.wait_for_timeout(3000)
                         
-                        # Kiểm tra xem có bị chuyển hướng sang trang "Xác minh email của bạn" không
-                        # Nếu có, bấm "Sử dụng mật khẩu của bạn" để quay lại form mật khẩu
-                        use_pwd_btn = page.locator('a#iUsePasswordLink, a#idA_PWD_SwitchToPassword, a:has-text("Sử dụng mật khẩu"), a:has-text("Use your password")')
-                        if use_pwd_btn.count() > 0 and use_pwd_btn.first.is_visible():
-                            use_pwd_btn.first.click()
-                            print("Clicked 'Sử dụng mật khẩu của bạn' (Use your password)")
-                            page.wait_for_timeout(2000)
-                            
                     except Exception as e:
                         print(f"Error filling email: {e}")
+                    
+                    # Kiểm tra xem có bị chuyển hướng sang trang "Xác minh email của bạn" (chọn phương thức xác thực) không
+                    # Nếu có, bấm "Sử dụng mật khẩu của bạn" để quay lại form mật khẩu
+                    try:
+                        page.wait_for_timeout(1000)
+                        use_pwd_btn = page.locator('a#iUsePasswordLink, a#idA_PWD_SwitchToPassword, span:has-text("Sử dụng mật khẩu"), text="Sử dụng mật khẩu", text="Use your password"')
+                        if use_pwd_btn.count() > 0 and use_pwd_btn.first.is_visible():
+                            use_pwd_btn.first.click(force=True)
+                            print("Clicked 'Sử dụng mật khẩu của bạn' (Use your password)")
+                            page.wait_for_timeout(2000)
+                    except:
+                        pass
+                        
+                    # Điền mật khẩu
                     
                     # Điền mật khẩu
                     try:

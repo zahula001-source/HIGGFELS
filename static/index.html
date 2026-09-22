@@ -702,7 +702,20 @@ async function autoSignup(id) {
         const res = await fetch(`/api/profiles/${id}/auto-signup`, {method: "POST"});
         const data = await res.json();
         if(!res.ok) throw new Error(data.detail || data.message);
-        alert("✅ Đã gửi lệnh Tạo acc + login! Hãy mở Chrome lên để xem tiến trình tự động.");
+        
+        const msg = document.createElement("div");
+        msg.textContent = "✅ Đã bắt đầu Tự động tạo acc + login! Mở Chrome lên để xem nhé.";
+        msg.style.position = "fixed";
+        msg.style.bottom = "20px";
+        msg.style.right = "20px";
+        msg.style.background = "#10b981";
+        msg.style.color = "white";
+        msg.style.padding = "12px 20px";
+        msg.style.borderRadius = "8px";
+        msg.style.zIndex = "9999";
+        msg.style.boxShadow = "0 4px 6px rgba(0,0,0,0.1)";
+        document.body.appendChild(msg);
+        setTimeout(() => msg.remove(), 3000);
     } catch(e) {
         alert("❌ Lỗi: " + e.message);
     }
