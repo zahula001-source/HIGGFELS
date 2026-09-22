@@ -527,7 +527,6 @@ def auto_signup_endpoint(profile_id: str):
                                 page.wait_for_selector(email_selector, timeout=10000)
                                 email_field = page.locator(email_selector).first
                                 email_field.wait_for(state="visible", timeout=5000)
-                                email_field.triple_click()  # chọn tất cả và xóa
                                 email_field.fill(temp_email)
                                 page.wait_for_timeout(500)
                                 print(f"Filled temp email: {temp_email}")
