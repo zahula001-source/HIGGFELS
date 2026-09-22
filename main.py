@@ -345,7 +345,7 @@ def auto_signup_endpoint(profile_id: str):
                 try:
                     login_btn = page.locator("a:has-text('Login'), button:has-text('Login')")
                     if login_btn.count() > 0:
-                        login_btn.first.click()
+                        login_btn.first.click(timeout=2000)
                         clicked_auth_btn = True
                         print("Clicked Login button")
                 except: pass
@@ -354,7 +354,7 @@ def auto_signup_endpoint(profile_id: str):
                     try:
                         signup_btn = page.locator("a:has-text('Sign up'), button:has-text('Sign up')")
                         if signup_btn.count() > 0:
-                            signup_btn.first.click()
+                            signup_btn.first.click(timeout=2000)
                             clicked_auth_btn = True
                             print("Clicked Sign up button")
                     except: pass
@@ -396,7 +396,7 @@ def auto_signup_endpoint(profile_id: str):
                 try:
                     ms_btn = page.locator("button:has-text('Continue with Microsoft')")
                     if ms_btn.count() > 0:
-                        ms_btn.first.click()
+                        ms_btn.first.click(timeout=3000)
                         print("Clicked 'Continue with Microsoft'!")
                     else:
                         page.evaluate("""() => {
