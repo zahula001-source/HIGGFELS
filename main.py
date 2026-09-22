@@ -1457,36 +1457,45 @@ def run_video_automation(task_id, prompt, img1_path, img2_path, profile_id, save
                 except:
                     pass
                 
-                # ── BƯỚC 2: Kiểm tra đã login chưa (Kiểm tra Avatar -> Settings) ──
+                # ── BƯỚC 2: Kiểm tra đã login chưa (Kiểm tra Avatar -> Settings HOẶC có chữ 'Use free gens') ──
                 is_logged_in = False
                 try:
-                    import re
-                    # Tìm nút Avatar (Mở rộng selector để bao quát cả giao diện higgsfield mới)
-                    # Ưu tiên tìm theo aria-label="Account menu" là chuẩn nhất cho bản mới
-                    avatar_loc = page.locator('button[aria-label="Account menu"], button[aria-haspopup="menu"], button:has(.rounded-full), div[role="button"]:has(.rounded-full)').filter(has_not_text=re.compile(r"^(Đăng nhập|Log In|Sign In)$", re.IGNORECASE)).last
-                    
-                    if avatar_loc.is_visible(timeout=2000):
-                        avatar_loc.click(timeout=3000)
-                        page.wait_for_timeout(1000)
-                        
-                        # Kiểm tra xem có menu Settings/Cài đặt/Đăng xuất/Công việc xổ ra không
-                        has_settings = page.evaluate("""() => {
-                            const allBtns = Array.from(document.querySelectorAll('button, p, div, span, a'));
-                            return allBtns.some(b => b.innerText && (
-                                b.innerText.trim() === 'Settings' || 
-                                b.innerText.trim() === 'Cài đặt' || 
-                                b.innerText.trim() === 'Đăng xuất' || 
-                                b.innerText.trim() === 'Log out' ||
-                                b.innerText.trim() === 'Sign Out' ||
-                                b.innerText.trim() === 'Tài khoản' ||
-                                b.innerText.trim() === 'Account'
-                            ));
-                        }""")
-                        
-                        if has_settings:
+                    # Cách 1: Tìm chữ "Use free gens" (dấu hiệu chắc chắn đã login)
+                    try:
+                        has_free_gens = page.locator('text="Use free gens"').is_visible(timeout=1000)
+                        if has_free_gens:
                             is_logged_in = True
-                            page.mouse.click(0, 0) # Click ra ngoài để đóng menu
-                            page.wait_for_timeout(500)
+                            print("--- Đã thấy 'Use free gens' -> Đã login!")
+                    except: pass
+                    
+                    # Cách 2: Tìm nút Avatar (nếu Cách 1 chưa ra)
+                    if not is_logged_in:
+                        import re
+                        # Tìm nút Avatar (Mở rộng selector để bao quát cả giao diện higgsfield mới)
+                        avatar_loc = page.locator('button[aria-label="Account menu"], button[aria-haspopup="menu"], button:has(.rounded-full), div[role="button"]:has(.rounded-full)').filter(has_not_text=re.compile(r"^(Đăng nhập|Log In|Sign In)$", re.IGNORECASE)).last
+                        
+                        if avatar_loc.is_visible(timeout=2000):
+                            avatar_loc.click(timeout=3000)
+                            page.wait_for_timeout(1000)
+                            
+                            # Kiểm tra xem có menu Settings/Cài đặt/Đăng xuất/Công việc xổ ra không
+                            has_settings = page.evaluate("""() => {
+                                const allBtns = Array.from(document.querySelectorAll('button, p, div, span, a'));
+                                return allBtns.some(b => b.innerText && (
+                                    b.innerText.trim() === 'Settings' || 
+                                    b.innerText.trim() === 'Cài đặt' || 
+                                    b.innerText.trim() === 'Đăng xuất' || 
+                                    b.innerText.trim() === 'Log out' ||
+                                    b.innerText.trim() === 'Sign Out' ||
+                                    b.innerText.trim() === 'Tài khoản' ||
+                                    b.innerText.trim() === 'Account'
+                                ));
+                            }""")
+                            
+                            if has_settings:
+                                is_logged_in = True
+                                page.mouse.click(0, 0) # Click ra ngoài để đóng menu
+                                page.wait_for_timeout(500)
                 except Exception as inner_e:
                     print(f"Lỗi soi avatar: {inner_e}")
                     pass
