@@ -386,7 +386,7 @@ function renderProfiles(profiles){
         <span>📑 ${p.tabs_count||0} tabs</span>
         <span>🖥️ ${esc(p.fingerprint?.screen||'1920x1080')}</span>
         <span>🎲 ID: ${p.fingerprint?.random_id||''}</span>
-        ${p.notes?`<span>📝 ${esc(p.notes)}</span>`:''}
+        ${p.notes === 'free gen' ? `<span><b style="color:#fff;background:#10b981;padding:2px 6px;border-radius:4px;font-size:11px;">🟢 ${esc(p.notes)}</b></span>` : (p.notes === 'không free' ? `<span><b style="color:#fff;background:#f59e0b;padding:2px 6px;border-radius:4px;font-size:11px;">🟡 ${esc(p.notes)}</b></span>` : (p.notes ? `<span>📝 ${esc(p.notes)}</span>` : ''))}
       </div>
       ${p.ms_email ? `<div style="padding:4px 8px; font-size:12px; color:#38bdf8; background:#0f172a; border-radius:4px; margin-bottom:8px; cursor:pointer; display:inline-block; border:1px solid #1e293b;" onclick="navigator.clipboard.writeText('${p.ms_email}'); const old=this.innerHTML; this.innerHTML='✅ Đã copy!'; setTimeout(()=>this.innerHTML=old, 1500);" title="Click để copy email">📧 ${esc(p.ms_email)}</div>` : ''}
       <div class="card-actions">
@@ -964,7 +964,9 @@ function populateVideoProfiles() {
     const cur = sel.value;
     sel.innerHTML = '<option value="">-- Chọn profile đã đăng nhập --</option>';
     (allProfiles || []).forEach(p => {
-      sel.innerHTML += `<option value="${p.id}" ${p.id === cur ? 'selected' : ''}>${p.name} (${p.os})</option>`;
+      if (p.notes !== "không free") {
+        sel.innerHTML += `<option value="${p.id}" ${p.id === cur ? 'selected' : ''}>${p.name} (${p.os})</option>`;
+      }
     });
   });
 }

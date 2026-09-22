@@ -679,6 +679,14 @@ def auto_signup_endpoint(profile_id: str):
                                 print("Đã đăng nhập thành công vào Higgsfield!")
                                 break
                             
+                        # 0.5 Kiểm tra popup Congratulations (Upgrade promotion)
+                        try:
+                            congrats = page.locator('text="Congratulations!"')
+                            if congrats.count() > 0 and congrats.first.is_visible():
+                                print("Đã gặp popup Congratulations! Đăng ký hoàn tất.")
+                                break
+                        except: pass
+                            
                         # Xử lý trang Quiz (Khảo sát người dùng mới)
                         if "higgsfield.ai/quiz" in cur_url:
                             # Khởi tạo bộ nhớ tạm để không click lại đáp án cũ (tránh kẹt ở slide 1)
@@ -837,6 +845,40 @@ def auto_signup_endpoint(profile_id: str):
                             pass
                 else:
                     print("Không có thông tin tài khoản MS. Vui lòng bấm nút 'Dán mail' để thêm tài khoản trước!")
+                
+                # ====== BƯỚC CUỐI CÙNG: KIỂM TRA FREE GENS ======
+                if "auth/sign-in" not in page.url:
+                    print("Đang kiểm tra trạng thái Free Gens...")
+                    try:
+                        page.goto("https://higgsfield.ai/ai/video?model=genjutsu", timeout=30000)
+                        
+                        def check_free_gens():
+                            page.wait_for_timeout(4000)
+                            if page.locator('text="Use free gens"').count() > 0:
+                                return True
+                            return False
+                            
+                        is_free = check_free_gens()
+                        if not is_free:
+                            print("Chưa thấy 'Use free gens', reload trang...")
+                            page.reload(timeout=30000)
+                            is_free = check_free_gens()
+                            if not is_free:
+                                print("Vẫn chưa thấy 'Use free gens', reload lần cuối...")
+                                page.reload(timeout=30000)
+                                is_free = check_free_gens()
+                                
+                        p_obj = manager.get_profile(profile.id)
+                        if p_obj:
+                            if is_free:
+                                p_obj.notes = "free gen"
+                                print("=> Cập nhật thẻ thành 'free gen' (Xanh lá)")
+                            else:
+                                p_obj.notes = "không free"
+                                print("=> Cập nhật thẻ thành 'không free' (Vàng)")
+                            manager._save()
+                    except Exception as e:
+                        print(f"Lỗi khi kiểm tra Free Gens: {e}")
                 
                 try:
                     p.stop()
