@@ -1785,6 +1785,20 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                         upload_btn.click(timeout=5000, force=True)
                     fc_info.value.set_files(file_paths)
                     
+                # CỰC KỲ QUAN TRỌNG: Ngay sau khi chọn file Video, popup "Edit reference" sẽ hiện ra để bắt Confirm trước!
+                # Nút Confirm nằm trong popup Edit reference, có cấu trúc <span class="col-start-1 row-start-1">Confirm</span>
+                try:
+                    confirm_btn = pg.locator('button:has(span.col-start-1.row-start-1:text-is("Confirm"))').last
+                    if not confirm_btn.is_visible(timeout=3000):
+                        confirm_btn = pg.locator('button:has-text("Confirm")').last
+                        
+                    if confirm_btn.is_visible(timeout=2000):
+                        print("  -> Thấy nút Confirm của Edit reference, tiến hành bấm...")
+                        confirm_btn.click(timeout=3000, force=True)
+                        pg.wait_for_timeout(2000) # Đợi popup đóng
+                except Exception as inner_e:
+                    print(f"  -> Không thấy Confirm modal ngay sau khi upload (hoặc up ảnh nên không có).")
+                    
                 # 3. Chờ quá trình upload xong (Mất chữ Uploading...)
                 try:
                     uploading_indicator = pg.locator('text="Uploading..."')
@@ -1816,21 +1830,6 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                         else:
                             items.nth(i).click(timeout=3000, force=True)
                         pg.wait_for_timeout(1500)
-                        
-                        # CỰC KỲ QUAN TRỌNG: Xử lý modal "Confirm" (Edit reference) hiện ra KHI CLICK VÀO VIDEO!
-                        try:
-                            # Nút Confirm nằm trong popup Edit reference, có cấu trúc <span class="col-start-1 row-start-1">Confirm</span>
-                            confirm_btn = pg.locator('button:has(span.col-start-1.row-start-1:text-is("Confirm"))').last
-                            if not confirm_btn.is_visible(timeout=2000):
-                                confirm_btn = pg.locator('button:has-text("Confirm")').last
-                                
-                            if confirm_btn.is_visible(timeout=2000):
-                                print("  -> Thấy nút Confirm của Edit reference, tiến hành bấm...")
-                                confirm_btn.click(timeout=3000, force=True)
-                                pg.wait_for_timeout(2000) # Đợi popup đóng
-                        except Exception as inner_e:
-                            print(f"  -> Bỏ qua Confirm modal: {inner_e}")
-                            
                     except: pass
                     
                 # 5. Tắt modal upload bằng nút X (nếu có, thường dành cho tải ảnh)
