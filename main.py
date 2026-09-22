@@ -649,8 +649,8 @@ def auto_signup_endpoint(profile_id: str):
                             
                         # Xử lý trang Quiz (Khảo sát người dùng mới)
                         if "higgsfield.ai/quiz" in cur_url:
-                            # Thử click các câu trả lời
-                            for q_text in ["For personal use", "Viral content & UGC videos", "Beginner", "Canvas"]:
+                            # Thử click các câu trả lời và bảng Cookie
+                            for q_text in ["Chấp nhận tất cả Cookies", "Accept all cookies", "For personal use", "Viral content & UGC videos", "Beginner", "Canvas", "Video", "Visual editing workspace"]:
                                 ans_btn = page.locator(f'text="{q_text}"')
                                 if ans_btn.count() > 0 and ans_btn.first.is_visible():
                                     ans_btn.first.click(force=True)
