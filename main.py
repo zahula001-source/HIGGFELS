@@ -336,17 +336,20 @@ def auto_signup_endpoint(profile_id: str):
                 
                 if not clicked_auth_btn:
                     # Fallback: tìm bằng JS
-                    page.evaluate("""() => {
-                        const els = document.querySelectorAll('a, button');
-                        for (let el of els) {
-                            const t = (el.innerText || '').trim().toLowerCase();
-                            if (t === 'login' || t === 'sign up' || t === 'signup') {
-                                el.click();
-                                return;
+                    try:
+                        page.evaluate("""() => {
+                            const els = document.querySelectorAll('a, button');
+                            for (let el of els) {
+                                const t = (el.innerText || '').trim().toLowerCase();
+                                if (t === 'login' || t === 'sign up' || t === 'signup') {
+                                    el.click();
+                                    return;
+                                }
                             }
-                        }
-                    }""")
-                    print("Clicked auth button via JS fallback")
+                        }""")
+                        print("Clicked auth button via JS fallback")
+                    except Exception as e:
+                        print(f"Fallback click err (tab might be closed/navigating): {e}")
                 
                 # B2: Đợi popup "Welcome to Higgsfield" xuất hiện hoặc phát hiện đã login
                 try:
