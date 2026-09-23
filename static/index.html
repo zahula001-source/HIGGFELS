@@ -369,6 +369,9 @@ function parseProxyInput(str){
 }
 
 async function loadProfiles(){
+  if (document.activeElement && document.activeElement.tagName === 'INPUT' && document.activeElement.closest('.card-header')) {
+    return; // Đang edit tên thì không refresh lại danh sách để tránh mất focus
+  }
   try{
     const res = await fetch("/api/profiles");
     allProfiles = await res.json();
@@ -724,6 +727,63 @@ function clearExtensions() {
 }
 
 async function autoSignup(id) {
+    const profile = allProfiles.find(p => p.id === id);
+    if (profile && !profile.running) {
+        const autoFp = document.getElementById("globalAutoFp") ? document.getElementById("globalAutoFp").checked : false;
+        const enableExt = document.getElementById("globalEnableExt") ? document.getElementById("globalEnableExt").checked : false;
+        const startupUrls = localStorage.getItem("globalStartupUrls") || "";
+        const startupMode = localStorage.getItem("globalStartupMode") || "once";
+        
+        const loadingMsg = document.createElement("div");
+        loadingMsg.textContent = "⏳ Đang mở Chrome trước khi tạo acc...";
+        loadingMsg.style.position = "fixed";
+        loadingMsg.style.bottom = "20px";
+        loadingMsg.style.right = "20px";
+        loadingMsg.style.background = "#f59e0b";
+        loadingMsg.style.color = "white";
+        loadingMsg.style.padding = "12px 20px";
+        loadingMsg.style.borderRadius = "8px";
+        loadingMsg.style.zIndex = "9999";
+        document.body.appendChild(loadingMsg);
+        
+        try {
+            const res = await fetch(`/api/profiles/${id}/launch`, {
+                method:"POST", 
+                headers:{"Content-Type":"application/json"}, 
+                body:JSON.stringify({
+                    headless:false, 
+                    auto_random_fp: autoFp,
+                    startup_urls: startupUrls,
+                    startup_mode: startupMode,
+                    enable_ext: enableExt
+                })
+            });
+            const data = await res.json();
+            if(!res.ok){
+                alert("Lỗi mở Chrome: "+(data.detail||JSON.stringify(data))); 
+                loadingMsg.remove();
+                return;
+            }
+            setTimeout(loadProfiles, 1000);
+            
+            // Đợi 8 giây cho Chrome mở xong rồi mới gọi auto signup
+            setTimeout(async () => {
+                loadingMsg.remove();
+                await callAutoSignupApi(id);
+            }, 8000);
+            return;
+        } catch(e) {
+            alert("Lỗi: " + e.message);
+            loadingMsg.remove();
+            return;
+        }
+    }
+    
+    // Nếu đã chạy rồi thì gọi api luôn
+    await callAutoSignupApi(id);
+}
+
+async function callAutoSignupApi(id) {
     try {
         const res = await fetch(`/api/profiles/${id}/auto-signup`, {method: "POST"});
         const data = await res.json();

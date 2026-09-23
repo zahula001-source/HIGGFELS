@@ -121,6 +121,14 @@ class ProfileManager:
             return True
         return False
 
+    def update_profile_name(self, profile_id: str, new_name: str) -> bool:
+        p = self.get_profile(profile_id)
+        if p:
+            p.name = new_name
+            self._save()
+            return True
+        return False
+
     def delete_profile(self, profile_id: str) -> bool:
         p = self.get_profile(profile_id)
         if not p:
