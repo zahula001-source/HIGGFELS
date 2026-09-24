@@ -1260,8 +1260,77 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                         print(f"Lỗi nhấn Generate (Lần thử {gen_attempt+1}): {e}")
                 
                 if not generate_success:
-                    print("  -> Đã thử Generate 3 lần nhưng vẫn không thấy Processing. Yêu cầu tải lại trang!")
-                    raise Exception("ReloadRequired")
+                    # Reload trang + bật lại free gens + thử Generate thêm 3 lần nữa
+                    # (Không raise ReloadRequired để tránh re-upload toàn bộ ảnh/video)
+                    print("  -> Đã thử Generate 3 lần không thấy Processing. Đang reload trang và thử lại...")
+                    video_tasks[task_id] = {"status": "running", "message": "⏳ Generate chưa phản hồi, đang reload trang và thử lại..."}
+                    page.reload()
+                    page.wait_for_load_state('networkidle')
+                    page.wait_for_timeout(4000)
+
+                    # Thử Generate thêm 3 lần sau reload
+                    for retry_gen in range(3):
+                        try:
+                            # Bật lại free gens (có thể bị tắt sau reload)
+                            free_gens2 = page.locator('button[aria-label="Use free gens"]')
+                            if free_gens2.is_visible(timeout=3000):
+                                if free_gens2.get_attribute("aria-checked") == "false":
+                                    print(f"  -> Bật lại Use free gens sau reload (Retry {retry_gen+1})...")
+                                    free_gens2.click(timeout=3000, force=True)
+                                    page.wait_for_timeout(1000)
+
+                            # Điền lại prompt nếu bị mất
+                            if prompt:
+                                prompt_input2 = page.locator('div[aria-label="Prompt"][contenteditable="true"]').last
+                                if prompt_input2.is_visible(timeout=2000):
+                                    cur_text = prompt_input2.text_content()
+                                    if not cur_text or len(cur_text.strip()) < 2:
+                                        print(f"  -> Prompt bị mất sau reload, dán lại (Retry {retry_gen+1})...")
+                                        prompt_input2.click(timeout=3000, force=True)
+                                        page.wait_for_timeout(200)
+                                        page.keyboard.press("Control+A")
+                                        page.keyboard.press("Backspace")
+                                        page.wait_for_timeout(200)
+                                        clean_prompt2 = prompt.replace("`", "'").replace("\\", "\\\\")
+                                        page.evaluate(f"""(el) => {{
+                                            const dt = new DataTransfer();
+                                            dt.setData('text/plain', `{clean_prompt2}`);
+                                            const event = new ClipboardEvent('paste', {{ clipboardData: dt, bubbles: true, cancelable: true }});
+                                            el.dispatchEvent(event);
+                                        }}""", prompt_input2.element_handle())
+                                        page.wait_for_timeout(500)
+                                        prompt_input2.type(" ")
+
+                            # Ấn Generate lại
+                            generate_btn2 = page.locator('button:has-text("Generate")').last
+                            if generate_btn2.is_visible(timeout=3000):
+                                print(f"  -> Ấn Generate lại sau reload (Retry {retry_gen+1})...")
+                                try:
+                                    box2 = generate_btn2.bounding_box()
+                                    if box2:
+                                        page.mouse.move(box2["x"] + box2["width"]/2, box2["y"] + box2["height"]/2)
+                                        page.wait_for_timeout(200)
+                                        page.mouse.down()
+                                        page.wait_for_timeout(100)
+                                        page.mouse.up()
+                                    else:
+                                        generate_btn2.click(timeout=3000, force=True)
+                                except:
+                                    generate_btn2.click(timeout=3000, force=True)
+                                page.wait_for_timeout(2000)
+
+                            # Kiểm tra Processing
+                            processing_text2 = page.locator('text="Processing"').first
+                            processing_text2.wait_for(state="visible", timeout=15000)
+                            print(f"  -> THÀNH CÔNG sau reload: Đã thấy 'Processing' (Retry {retry_gen+1})!")
+                            generate_success = True
+                            break
+                        except Exception as eg:
+                            print(f"  -> Retry Generate {retry_gen+1}/3 sau reload thất bại: {eg}")
+
+                    if not generate_success:
+                        print("  -> Đã retry Generate sau reload nhưng vẫn không thấy Processing. Raise lỗi!")
+                        raise Exception("ReloadRequired")
 
 
                 break # Thoát vòng lặp master_attempt nếu mọi thứ thành công
