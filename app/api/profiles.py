@@ -467,164 +467,48 @@ def auto_signup_endpoint(profile_id: str):
                     except Exception as e:
                         print(f"Error filling password: {e}")
                     
-                    # Xử lý trang "Giúp bảo vệ tài khoản của bạn" → Click "Thêm email"
-                    try:
-                        if page.url.startswith("https://higgsfield.ai"): raise ValueError("Already logged in, skipping protection")
-                        # Đợi trang bảo vệ hoặc redirect
-                        for _ in range(15):
-                            cur_url = page.url
-                            if "account.live.com/interrupt" in cur_url or "credentialaction" in cur_url:
-                                break
-                            page.wait_for_timeout(1000)
-                        
-                        if "account.live.com/interrupt" in page.url or "credentialaction" in page.url:
-                            print("Trang bao ve tai khoan detected!")
-                            # Click nút "Thêm email"
-                            them_email_btn = page.locator('button:has-text("Thêm email"), input[value="Thêm email"], a:has-text("Thêm email")')
-                            if them_email_btn.count() > 0:
-                                them_email_btn.first.click()
-                                print("Clicked 'Thêm email'!")
-                            else:
-                                page.evaluate("""() => {
-                                    const all = document.querySelectorAll('button, input[type=submit], a');
-                                    for (let el of all) {
-                                        const t = (el.innerText || el.value || '').trim();
-                                        if (t === 'Thêm email' || t.includes('Them email') || t.toLowerCase().includes('add email')) {
-                                            el.click();
-                                            return;
-                                        }
-                                    }
-                                }""")
-                                print("Clicked 'Thêm email' via JS fallback")
-                            page.wait_for_timeout(2000)
-                            
-                            # === TinyHost API: Lấy email temp để xác minh ===
-                            import urllib.request, json as json_mod, re as re_mod, string, random as random_mod
-                            
-                            def tinyhost_get_random_domain():
-                                """Lấy domain ngẫu nhiên từ TinyHost API"""
-                                try:
-                                    req = urllib.request.Request("https://tinyhost.shop/api/random-domains/?limit=10")
-                                    with urllib.request.urlopen(req, timeout=10) as resp:
-                                        data = json_mod.loads(resp.read().decode())
-                                        domains = data.get("domains", [])
-                                        if domains:
-                                            return random_mod.choice(domains)
-                                except Exception as e:
-                                    print(f"Error getting domain: {e}")
-                                return "spacezin.space"  # fallback domain
-                            
-                            def tinyhost_check_inbox(domain, user, keyword="Mã bảo mật"):
-                                """Poll inbox tìm email chứa keyword"""
-                                try:
-                                    url = f"https://tinyhost.shop/api/email/{domain}/{user}/?limit=20"
-                                    req = urllib.request.Request(url)
-                                    with urllib.request.urlopen(req, timeout=10) as resp:
-                                        data = json_mod.loads(resp.read().decode())
-                                        emails = data.get("emails", [])
-                                        for em in emails:
-                                            subj = em.get("subject", "") or ""
-                                            body = em.get("body", "") or ""
-                                            if keyword.lower() in subj.lower() or keyword.lower() in body.lower() or "microsoft" in subj.lower():
-                                                return em
-                                except Exception as e:
-                                    print(f"Inbox check err: {e}")
-                                return None
-                            
-                            def extract_otp_code(text):
-                                """Trích xuất mã OTP 6 chữ số từ body email"""
-                                # Tìm "Mã bảo mật: XXXXXX" hoặc 6 chữ số đứng riêng
-                                m = re_mod.search(r'[Mm]ã bảo mật[:\s]+(\d{6})', text)
-                                if m: return m.group(1)
-                                m = re_mod.search(r'security code[:\s]+(\d{6})', text, re_mod.IGNORECASE)
-                                if m: return m.group(1)
-                                # Tìm mọi chuỗi 6 chữ số
-                                codes = re_mod.findall(r'\b(\d{6})\b', text)
-                                if codes: return codes[0]
-                                return None
-                            
-                            # Tạo email temp ngẫu nhiên
-                            temp_domain = tinyhost_get_random_domain()
-                            temp_user = ''.join(random_mod.choices(string.ascii_lowercase, k=6)) + ''.join(random_mod.choices(string.digits, k=4))
-                            temp_email = f"{temp_user}@{temp_domain}"
-                            print(f"Temp email for verification: {temp_email}")
-                            
-                            # Trang "Thêm địa chỉ email" - điền email temp vào
-                            try:
-                                # Đợi trang "Thêm địa chỉ email" load
-                                email_selector = 'input[type="email"], input[name="EmailAddress"], input#iProofEmail, input[name="Email"], input#Email, input.fui-Input__input, input[type="text"]'
-                                page.wait_for_selector(email_selector, timeout=10000)
-                                email_field = page.locator(email_selector).first
-                                email_field.wait_for(state="visible", timeout=5000)
-                                email_field.fill(temp_email)
-                                page.wait_for_timeout(500)
-                                print(f"Filled temp email: {temp_email}")
-                                
-                                # Click Tiếp theo
-                                next_btn = page.locator('input[type="submit"], button[type="submit"], button:has-text("Tiếp theo"), button:has-text("Next")')
-                                if next_btn.count() > 0:
-                                    next_btn.first.click()
-                                else:
-                                    page.keyboard.press("Enter")
-                                print("Clicked Next after temp email")
-                                page.wait_for_timeout(3000)
-                            except Exception as e:
-                                print(f"Error filling temp email: {e}")
-                            
-                            # === Poll TinyHost API để lấy mã OTP ===
-                            otp_code = None
-                            print(f"Polling TinyHost inbox for OTP... ({temp_email})")
-                            for attempt in range(20):  # thử 20 lần, mỗi lần cách 5 giây = 100s tổng
-                                page.wait_for_timeout(5000)
-                                em = tinyhost_check_inbox(temp_domain, temp_user)
-                                if em:
-                                    body_text = em.get("body", "") or ""
-                                    otp_code = extract_otp_code(body_text)
-                                    if otp_code:
-                                        print(f"OTP found: {otp_code}")
-                                        break
-                                    else:
-                                        print(f"Email found but no OTP in body: {body_text[:100]}")
-                                else:
-                                    print(f"Waiting for OTP email... attempt {attempt+1}/20")
-                            
-                            if otp_code:
-                                # Điền mã OTP vào trang "Nhập mã của bạn"
-                                # Microsoft dùng 6 ô input riêng biệt hoặc 1 ô nhập 6 số
-                                try:
-                                    # Thử 6 ô riêng biệt trước
-                                    otp_inputs = page.locator('input[id^="codeEntry-"], input[id^="idTxtBx_SAOTCC_OTC_"], input[maxlength="1"]')
-                                    if otp_inputs.count() >= 6:
-                                        for i, digit in enumerate(otp_code):
-                                            if i < otp_inputs.count():
-                                                otp_inputs.nth(i).fill(digit)
-                                                page.wait_for_timeout(100)
-                                        print(f"Filled OTP in 6 separate inputs: {otp_code}")
-                                    else:
-                                        # 1 ô nhập dạng text/number
-                                        single_input = page.locator('input[type="text"], input[type="tel"], input[type="number"]').first
-                                        single_input.fill(otp_code)
-                                        print(f"Filled OTP in single input: {otp_code}")
-                                    
-                                    page.wait_for_timeout(500)
-                                    
-                                    # Click Tiếp theo để xác nhận
-                                    confirm_btn = page.locator('input[type="submit"], button[type="submit"], button:has-text("Tiếp theo"), button:has-text("Verify"), button:has-text("Next")')
-                                    if confirm_btn.count() > 0:
-                                        confirm_btn.first.click()
-                                    else:
-                                        page.keyboard.press("Enter")
-                                    print("Submitted OTP code!")
-                                    page.wait_for_timeout(3000)
-                                    
-                                    # Xử lý chuỗi trang sau khi nhập mã OTP
-                                    # (Đã chuyển vòng lặp pop-up ra ngoài)
-                                except Exception as e:
-                                    print(f"Error filling OTP: {e}")
-                            else:
-                                print("OTP not received within timeout. Manual intervention needed.")
-                    except Exception as e:
-                        print(f"Error on protection page: {e}")
+                    # === TinyHost API Helpers ===
+                    import urllib.request, json as json_mod, re as re_mod, string, random as random_mod
+                    
+                    def tinyhost_get_random_domain():
+                        """Lấy domain ngẫu nhiên từ TinyHost API"""
+                        try:
+                            req = urllib.request.Request("https://tinyhost.shop/api/random-domains/?limit=10")
+                            with urllib.request.urlopen(req, timeout=10) as resp:
+                                data = json_mod.loads(resp.read().decode())
+                                domains = data.get("domains", [])
+                                if domains:
+                                    return random_mod.choice(domains)
+                        except Exception as e:
+                            print(f"Error getting domain: {e}")
+                        return "spacezin.space"  # fallback domain
+                    
+                    def tinyhost_check_inbox(domain, user, keyword="Mã bảo mật"):
+                        """Poll inbox tìm email chứa keyword"""
+                        try:
+                            url = f"https://tinyhost.shop/api/email/{domain}/{user}/?limit=20"
+                            req = urllib.request.Request(url)
+                            with urllib.request.urlopen(req, timeout=10) as resp:
+                                data = json_mod.loads(resp.read().decode())
+                                emails = data.get("emails", [])
+                                for em in emails:
+                                    subj = em.get("subject", "") or ""
+                                    body = em.get("body", "") or ""
+                                    if keyword.lower() in subj.lower() or keyword.lower() in body.lower() or "microsoft" in subj.lower():
+                                        return em
+                        except Exception as e:
+                            print(f"Inbox check err: {e}")
+                        return None
+                    
+                    def extract_otp_code(text):
+                        """Trích xuất mã OTP 6 chữ số từ body email"""
+                        m = re_mod.search(r'[Mm]ã bảo mật[:\s]+(\d{6})', text)
+                        if m: return m.group(1)
+                        m = re_mod.search(r'security code[:\s]+(\d{6})', text, re_mod.IGNORECASE)
+                        if m: return m.group(1)
+                        codes = re_mod.findall(r'\b(\d{6})\b', text)
+                        if codes: return codes[0]
+                        return None
                     
                     # === Vòng lặp toàn cầu xử lý các trang sau khi đăng nhập (Quiz, Yes/Accept, FIDO, Turnstile) ===
                     print("Handling post-login popups...")
@@ -734,6 +618,110 @@ def auto_signup_endpoint(profile_id: str):
                             except Exception:
                                 pass
                                 
+                            continue
+
+                        # 0.4 Xử lý trang "Giúp bảo vệ tài khoản của bạn"
+                        if "account.live.com/interrupt" in cur_url or "credentialaction" in cur_url:
+                            print("Trang bao ve tai khoan detected!")
+                            try:
+                                # Click nút "Thêm email"
+                                # Mở rộng selector để bắt chính xác hơn
+                                them_email_btn = page.locator('button:has-text("Thêm email"), input[value="Thêm email"], a:has-text("Thêm email"), #idSubmit_SAOTCS_SendCode, [data-testid="AddEmailButton"]')
+                                if them_email_btn.count() > 0 and them_email_btn.first.is_visible():
+                                    them_email_btn.first.click(force=True)
+                                    print("Clicked 'Thêm email' via locator!")
+                                else:
+                                    page.evaluate("""() => {
+                                        const all = document.querySelectorAll('button, input[type=submit], a, div[role="button"]');
+                                        for (let el of all) {
+                                            const t = (el.innerText || el.value || '').trim().toLowerCase();
+                                            if (t === 'thêm email' || t.includes('them email') || t.includes('add email')) {
+                                                el.click();
+                                                return;
+                                            }
+                                        }
+                                    }""")
+                                    print("Clicked 'Thêm email' via JS fallback")
+                                page.wait_for_timeout(3000)
+                                
+                                # Tạo email temp ngẫu nhiên
+                                temp_domain = tinyhost_get_random_domain()
+                                temp_user = ''.join(random_mod.choices(string.ascii_lowercase, k=6)) + ''.join(random_mod.choices(string.digits, k=4))
+                                temp_email = f"{temp_user}@{temp_domain}"
+                                print(f"Temp email for verification: {temp_email}")
+                                
+                                # Trang "Thêm địa chỉ email" - điền email temp vào
+                                email_filled = False
+                                try:
+                                    # Đợi trang "Thêm địa chỉ email" load
+                                    email_selector = 'input[type="email"], input[name="EmailAddress"], input#iProofEmail, input[name="Email"], input#Email, input.fui-Input__input, input[type="text"]'
+                                    page.wait_for_selector(email_selector, timeout=10000)
+                                    email_field = page.locator(email_selector).first
+                                    email_field.wait_for(state="visible", timeout=5000)
+                                    email_field.fill(temp_email)
+                                    page.wait_for_timeout(500)
+                                    print(f"Filled temp email: {temp_email}")
+                                    
+                                    # Click Tiếp theo
+                                    next_btn = page.locator('input[type="submit"], button[type="submit"], button:has-text("Tiếp theo"), button:has-text("Next")')
+                                    if next_btn.count() > 0:
+                                        next_btn.first.click()
+                                    else:
+                                        page.keyboard.press("Enter")
+                                    print("Clicked Next after temp email")
+                                    page.wait_for_timeout(3000)
+                                    email_filled = True
+                                except Exception as e:
+                                    print(f"Error filling temp email: {e}")
+                                
+                                # CHỈ poll TinyHost API nếu đã điền email thành công
+                                if email_filled:
+                                    otp_code = None
+                                    print(f"Polling TinyHost inbox for OTP... ({temp_email})")
+                                    for attempt in range(20):  # thử 20 lần, mỗi lần cách 5 giây = 100s tổng
+                                        page.wait_for_timeout(5000)
+                                        em = tinyhost_check_inbox(temp_domain, temp_user)
+                                        if em:
+                                            body_text = em.get("body", "") or ""
+                                            otp_code = extract_otp_code(body_text)
+                                            if otp_code:
+                                                print(f"OTP found: {otp_code}")
+                                                break
+                                            else:
+                                                print(f"Email found but no OTP in body: {body_text[:100]}")
+                                        else:
+                                            print(f"Waiting for OTP email... attempt {attempt+1}/20")
+                                    
+                                    if otp_code:
+                                        # Điền mã OTP vào trang "Nhập mã của bạn"
+                                        try:
+                                            otp_inputs = page.locator('input[id^="codeEntry-"], input[id^="idTxtBx_SAOTCC_OTC_"], input[maxlength="1"]')
+                                            if otp_inputs.count() >= 6:
+                                                for i, digit in enumerate(otp_code):
+                                                    if i < otp_inputs.count():
+                                                        otp_inputs.nth(i).fill(digit)
+                                                        page.wait_for_timeout(100)
+                                                print(f"Filled OTP in 6 separate inputs: {otp_code}")
+                                            else:
+                                                single_input = page.locator('input[type="text"], input[type="tel"], input[type="number"]').first
+                                                single_input.fill(otp_code)
+                                                print(f"Filled OTP in single input: {otp_code}")
+                                            
+                                            page.wait_for_timeout(500)
+                                            confirm_btn = page.locator('input[type="submit"], button[type="submit"], button:has-text("Tiếp theo"), button:has-text("Verify"), button:has-text("Next")')
+                                            if confirm_btn.count() > 0:
+                                                confirm_btn.first.click()
+                                            else:
+                                                page.keyboard.press("Enter")
+                                            print("Submitted OTP code!")
+                                            page.wait_for_timeout(3000)
+                                        except Exception as e:
+                                            print(f"Error filling OTP: {e}")
+                                    else:
+                                        print("OTP not received within timeout.")
+                            except Exception as e:
+                                print(f"Error handling protection page: {e}")
+                            
                             continue
                             
                         # 0.5. Popup "Chúng tôi đang cập nhật các điều khoản của mình" (account.live.com/tou/accrue)
