@@ -976,3 +976,15 @@ def set_max_retries(val: int = Form(...)):
         GLOBAL_MAX_RETRIES = val
     return {"ok": True}
 
+
+
+@router.put("/api/profiles/{profile_id}/name")
+def rename_profile(profile_id: str, payload: dict = Body(...)):
+    name = payload.get("name", "").strip()
+    if not name:
+        raise HTTPException(400, "Tên không được để trống")
+    ok = manager.update_profile_name(profile_id, name)
+    if not ok:
+        raise HTTPException(404, "Profile not found")
+    return {"ok": True, "name": name}
+
