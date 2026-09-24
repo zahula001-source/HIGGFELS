@@ -1092,14 +1092,9 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                             break # Thành công thì thoát loop ảnh
                         except Exception as e:
                             if "ReloadRequired" in str(e):
-                                print("  -> Lỗi upload: Đang tải lại trang để thực hiện lại thao tác tải ảnh...")
-                                video_tasks[task_id] = {"status": "running", "message": "Lỗi upload media, đang tải lại trang để tải lại ảnh..."}
-                                page.reload()
-                                page.wait_for_load_state('networkidle')
-                                page.wait_for_timeout(3000)
-                                if attempt == 2:
-                                    raise Exception("Đã thử tải lại trang 3 lần nhưng upload ảnh vẫn báo Failed!")
-                                continue
+                                # Raise lên master_attempt để reload và làm lại cả ảnh + video từ đầu
+                                print("  -> Lỗi upload ảnh (ReloadRequired), chuyển lên master loop để retry toàn bộ...")
+                                raise e
                             raise e
 
                 # 2. Upload Video (Có cơ chế Retry riêng)
@@ -1125,14 +1120,10 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                             break # Thành công thì thoát loop video
                         except Exception as e:
                             if "ReloadRequired" in str(e):
-                                print("  -> Lỗi upload: Đang tải lại trang để thực hiện lại thao tác tải video...")
-                                video_tasks[task_id] = {"status": "running", "message": "Lỗi upload media, đang tải lại trang để tải lại video..."}
-                                page.reload()
-                                page.wait_for_load_state('networkidle')
-                                page.wait_for_timeout(3000)
-                                if attempt == 2:
-                                    raise Exception("Đã thử tải lại trang 3 lần nhưng upload video vẫn báo Failed!")
-                                continue
+                                # Raise lên master_attempt để reload và làm lại cả ảnh + video từ đầu
+                                # (Không retry nội bộ vì sau reload ảnh bị mất, video vẫn fail)
+                                print("  -> Lỗi upload video (ReloadRequired), chuyển lên master loop để retry toàn bộ...")
+                                raise e
                             raise e
 
                 # ĐỀ PHÒNG WEB TỰ VĂNG (LOGOUT)
