@@ -1082,7 +1082,9 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                                 page.wait_for_timeout(1000)
                             print(f"=== BẮT ĐẦU UPLOAD ẢNH ({len(images_to_upload)} file) (Lần {attempt+1}) ===")
                             video_tasks[task_id] = {"status": "running", "message": f"Đang tải {len(images_to_upload)} ảnh lên..."}
-                            upload_and_select(page, "Add reference images", images_to_upload)
+                            # Web tự hiển thị ảnh mới nhất lên đầu (đảo ngược thứ tự)
+                            # -> Đảo ngược list trước khi upload để kết quả cuối đúng thứ tự gốc (1,2,3)
+                            upload_and_select(page, "Add reference images", list(reversed(images_to_upload)))
                     
                             # Bấm ra ngoài (để đóng popup nếu có, giúp hiện nút tải video)
                             try:
