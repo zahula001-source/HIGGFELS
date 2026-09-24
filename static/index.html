@@ -207,6 +207,10 @@ body{background:#0b0e14;color:#e5e7eb;min-height:100vh;}
 <div id="modalOverlay" class="modal-overlay" onclick="if(event.target==this) closeModal()">
   <div class="modal">
     <h2>Tao Profile Chrome Moi Hoan Toan</h2>
+    <div class="form-group" style="background:#1e293b; padding:10px; border-radius:8px; border:1px dashed #475569; margin-bottom: 12px;">
+      <label style="color:#60a5fa;">⚡ Dán Nhanh (email|password|token|guid)</label>
+      <textarea id="f_quick_paste" class="textarea" style="min-height:80px;" placeholder="Dán thông tin tài khoản vào đây: email|password|token|guid...&#10;Sẽ được tự động lưu vào Thông Tin Tài Khoản của profile và điền Tên profile (nếu trống)." oninput="handleQuickPaste()"></textarea>
+    </div>
     <div class="form-group">
       <label>Ten Profile *</label>
       <input id="f_name" class="input" placeholder="VD: m1, FB Ads 01 - US, TikTok Shop...">
@@ -513,6 +517,23 @@ async function toggleAutoFp(id, state){
 }
 function closeCookieModal(){document.getElementById("cookieModal").classList.remove("active"); currentCookieProfileId=null;}
 
+function handleQuickPaste() {
+  const text = document.getElementById("f_quick_paste").value;
+  if (!text) return;
+  
+  const fName = document.getElementById("f_name");
+  
+  // Chỉ tự động điền nếu Tên Profile đang trống
+  if (!fName.value.trim()) {
+    const parts = text.split(/\||:/);
+    if (parts[0] && parts[0].includes("@")) {
+      fName.value = parts[0].trim();
+    } else {
+      fName.value = text.trim().substring(0, 50);
+    }
+  }
+}
+
 async function createProfile(){
   const name = document.getElementById("f_name").value.trim();
   const os = document.getElementById("f_os").value;
@@ -527,8 +548,21 @@ async function createProfile(){
     const res = await fetch("/api/profiles", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload)});
     if(!res.ok) throw new Error(await res.text());
     const profile = await res.json();
+
+    const quickPasteContent = document.getElementById("f_quick_paste") ? document.getElementById("f_quick_paste").value.trim() : "";
+    if (quickPasteContent && profile.id) {
+       try {
+           await fetch(`/api/profiles/${profile.id}/set-ms-account`, {
+               method: "POST",
+               headers: {"Content-Type": "application/json"},
+               body: JSON.stringify({raw: quickPasteContent})
+           });
+       } catch (e) { console.warn("Failed to save ms_account:", e); }
+    }
+
     closeModal();
     document.getElementById("f_name").value=""; document.getElementById("f_proxy").value=""; document.getElementById("f_notes").value="";
+    if(document.getElementById("f_quick_paste")) document.getElementById("f_quick_paste").value="";
     await loadProfiles();
     setTimeout(() => { window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }); }, 100);
     
@@ -2177,9 +2211,24 @@ function openCheckVideoModal() {
           const label = document.createElement('span');
           label.textContent = p.name + (p.notes ? ` (${p.notes})` : '');
           label.style.flex = '1';
-          label.style.color = '#e2e8f0';
           label.style.fontSize = '14px';
           label.style.pointerEvents = 'none';
+          
+          // Tô màu theo trạng thái
+          const notes = (p.notes || '').toLowerCase();
+          if (notes === 'free gen') {
+              label.style.color = '#22c55e'; // Xanh lá
+              div.style.borderLeft = '3px solid #22c55e';
+          } else if (notes === 'không free' || notes === 'khong free') {
+              label.style.color = '#eab308'; // Vàng
+              div.style.borderLeft = '3px solid #eab308';
+          } else if (notes.includes('lỗi') || notes.includes('loi') || notes.includes('login')) {
+              label.style.color = '#94a3b8'; // Xám - giữ nguyên
+              div.style.borderLeft = '3px solid #475569';
+          } else {
+              label.style.color = '#e2e8f0'; // Mặc định trắng
+              div.style.borderLeft = '3px solid transparent';
+          }
           
           div.onclick = (e) => {
               checkbox.checked = !checkbox.checked;
