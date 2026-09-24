@@ -692,7 +692,18 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                             except:
                                 pass
                     except Exception as js_err:
-                        print(f"--- [BƯỚC 4] Lỗi JS lần {i+1}: {js_err}")
+                        err_str = str(js_err)
+                        if "Execution context was destroyed" in err_str:
+                            print(f"--- [BƯỚC 4] Bắt được tín hiệu chuyển trang (Execution context destroyed). Coi như click Microsoft thành công!")
+                            success_click = True
+                            break
+                        print(f"--- [BƯỚC 4] Lỗi JS lần {i+1}: {err_str}")
+                    
+                    # Ngoài ra, nếu URL đã nhảy sang trang login Microsoft thì cũng coi như thành công
+                    if "login.microsoftonline" in page.url or "higgsfield.ai/ai/video" in page.url:
+                        print("--- [BƯỚC 4] Đã phát hiện chuyển hướng thành công qua URL!")
+                        success_click = True
+                        break
                     
                     page.wait_for_timeout(2000)
                 
