@@ -17,7 +17,7 @@ from app.manager import manager
 from app.browser import launch_profile_with_fallback, close_profile, is_running, list_running
 from app.browser_settings import browser_launch_options
 
-def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool = False):
+def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool = False, _already_tried_login: bool = False):
     from playwright.sync_api import sync_playwright
     import time, os
     from pathlib import Path
@@ -104,20 +104,53 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                 is_not_logged_in = True
                 
             if is_not_logged_in:
-                video_tasks[task_id]["message"] = "Chưa login, đang tự chuyển sang Auto Login..."
+                # Nếu đã thử login 1 lần rồi mà vẫn chưa login → báo lỗi, không retry nữa
+                if _already_tried_login:
+                    video_tasks[task_id]["status"] = "error"
+                    video_tasks[task_id]["message"] = "❌ Đã thử Auto Login nhưng vẫn chưa đăng nhập được!"
+                    try: context.close()
+                    except: pass
+                    with pw_lock: p.stop()
+                    return
+
+                video_tasks[task_id]["message"] = "Chưa login, đang tự động đăng nhập..."
                 try: context.close()
                 except: pass
                 with pw_lock: p.stop()
                 
-                import requests, time
+                import requests as _req
                 try:
-                    video_tasks[task_id]["status"] = "error" 
-                    video_tasks[task_id]["message"] = "Đã chuyển sang Auto Login!"
-                    requests.post(f"http://127.0.0.1:5333/api/profiles/{profile_id}/launch", json={"headless": False})
+                    video_tasks[task_id]["message"] = "🔑 Đang chạy Auto Login, vui lòng chờ..."
+                    _req.post(f"http://127.0.0.1:5333/api/profiles/{profile_id}/launch", json={"headless": False})
                     time.sleep(8)
-                    requests.post(f"http://127.0.0.1:5333/api/profiles/{profile_id}/auto-signup")
+                    _req.post(f"http://127.0.0.1:5333/api/profiles/{profile_id}/auto-signup")
                 except Exception as e:
+                    video_tasks[task_id]["status"] = "error"
                     video_tasks[task_id]["message"] = f"Lỗi gọi auto login: {e}"
+                    return
+
+                # Chờ auto login hoàn tất (tối đa 3 phút)
+                video_tasks[task_id]["message"] = "⏳ Đang chờ đăng nhập hoàn tất..."
+                waited = 0
+                while waited < 180:
+                    time.sleep(5)
+                    waited += 5
+                    # Kiểm tra xem task auto-signup đã báo login xong chưa
+                    # (profile sẽ được đóng Chrome sau khi auto-signup xong)
+                    p_obj = manager.get_profile(profile_id)
+                    if p_obj and getattr(p_obj, 'notes', None) in ("không free", "free gen"):
+                        # Profile đã được cập nhật → login xong
+                        break
+                    # Cũng thoát nếu bị force stop
+                    if video_tasks.get(task_id, {}).get("force_stop"):
+                        video_tasks[task_id]["status"] = "error"
+                        video_tasks[task_id]["message"] = "🛑 Đã dừng theo yêu cầu!"
+                        return
+
+                # Sau khi login xong → tiếp tục check video (đánh dấu đã thử login để tránh loop)
+                video_tasks[task_id]["message"] = "✅ Đăng nhập xong! Đang tiếp tục kiểm tra video..."
+                time.sleep(3)
+                run_check_video_automation(task_id, profile_id, is_headless, _already_tried_login=True)
                 return
             
             video_tasks[task_id]["message"] = "Đang chuyển sang tab History..."
