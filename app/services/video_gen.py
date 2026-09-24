@@ -1276,7 +1276,7 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                     print("  -> Đã thử Generate 3 lần không thấy Processing. Đang reload trang và thử lại...")
                     video_tasks[task_id] = {"status": "running", "message": "⏳ Generate chưa phản hồi, đang reload trang và thử lại..."}
                     page.reload()
-                    page.wait_for_load_state('networkidle')
+                    page.wait_for_load_state('domcontentloaded')
                     page.wait_for_timeout(4000)
 
                     # Thử Generate thêm 3 lần sau reload
@@ -1350,8 +1350,8 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                     print(f"--- Lỗi Upload/Generate, tải lại trang và làm lại từ đầu (Lần {master_attempt+1}/3) ---")
                     video_tasks[task_id] = {"status": "running", "message": "Bị lỗi web, đang tải lại trang để thử lại..."}
                     page.reload()
-                    page.wait_for_load_state('networkidle')
-                    page.wait_for_timeout(3000)
+                    page.wait_for_load_state('domcontentloaded')
+                    page.wait_for_timeout(5000)
                     if master_attempt == 2:
                         raise Exception("Đã thử tải lại trang 3 lần nhưng vẫn thất bại!")
                     continue
