@@ -736,6 +736,26 @@ def auto_signup_endpoint(profile_id: str):
                                 
                             continue
                             
+                        # 0.5. Popup "Chúng tôi đang cập nhật các điều khoản của mình" (account.live.com/tou/accrue)
+                        # Phải click nút "Tiếp theo" (data-testid=primaryButton) để tiếp tục
+                        try:
+                            tiep_theo_btn = page.locator('button[data-testid="primaryButton"]')
+                            if tiep_theo_btn.count() > 0 and tiep_theo_btn.first.is_visible():
+                                btn_text = tiep_theo_btn.first.inner_text().strip().lower()
+                                has_tos = (
+                                    "account.live.com/tou" in cur_url or
+                                    "tou/accrue" in cur_url or
+                                    "tiếp theo" in btn_text or
+                                    "next" in btn_text
+                                )
+                                if has_tos:
+                                    tiep_theo_btn.first.click()
+                                    print("Clicked 'Tiếp theo' on Microsoft ToS update page (data-testid=primaryButton)!")
+                                    page.wait_for_timeout(2000)
+                                    continue
+                        except Exception as e:
+                            pass
+
                         # 1. Nút "Trông rất được!" / "Looks good!"
                         looks_good_btn = page.locator('#iLooksGood, input[value*="Trông rất được"], input[value*="Looks good"]')
                         if looks_good_btn.count() > 0 and looks_good_btn.first.is_visible():
@@ -850,37 +870,79 @@ def auto_signup_endpoint(profile_id: str):
                 
                 # ====== BƯỚC CUỐI CÙNG: KIỂM TRA FREE GENS ======
                 if "auth/sign-in" not in page.url:
-                    print("Đang kiểm tra trạng thái Free Gens...")
+                    print("Đang kiểm tra trạng thái đăng nhập và Free Gens...")
                     try:
                         page.goto("https://higgsfield.ai/ai/video?model=genjutsu", timeout=30000)
                         
-                        def check_free_gens():
+                        def check_login_status():
                             page.wait_for_timeout(4000)
-                            if page.locator('text="Use free gens"').count() > 0:
-                                return True
-                            return False
+                            status_free = False
+                            status_logged = False
                             
-                        is_free = check_free_gens()
-                        if not is_free:
-                            print("Chưa thấy 'Use free gens', reload trang...")
+                            # Tang 1: Kiem tra "Use free gens"
+                            if page.locator('text="Use free gens"').count() > 0:
+                                status_free = True
+                                status_logged = True
+                                print("Xac nhan login: thay 'Use free gens'!")
+                                return status_logged, status_free
+                                
+                            # Tang 2: Click Avatar -> Radix Portal append vao DOM -> tim a[href*=logout]
+                            try:
+                                avatar_btn = page.locator('button.hfnav-avatar-ring, button[aria-label="Account menu"]')
+                                if avatar_btn.count() > 0 and avatar_btn.first.is_visible():
+                                    avatar_btn.first.click()
+                                    page.wait_for_timeout(2000)
+                                    has_logout = page.evaluate("""() => {
+                                        const links = document.querySelectorAll('a[href*="logout"]');
+                                        return links.length > 0;
+                                    }""")
+                                    if has_logout:
+                                        status_logged = True
+                                        print("Xac nhan login: tim thay a[href*=logout] trong DOM!")
+                                    page.keyboard.press("Escape")
+                                    page.wait_for_timeout(500)
+                            except Exception as e:
+                                print(f"Loi check Sign Out: {e}")
+                                
+                            # Tang 3: Fallback - Clerk session cookie
+                            if not status_logged:
+                                try:
+                                    has_session = page.evaluate("""() => {
+                                        return document.cookie.includes('__session') || 
+                                               document.cookie.includes('__clerk');
+                                    }""")
+                                    if has_session:
+                                        status_logged = True
+                                        print("Xac nhan login: tim thay Clerk session cookie!")
+                                except Exception as e:
+                                    print(f"Loi check Clerk session: {e}")
+                                    
+                            return status_logged, status_free
+                            
+                        is_logged, is_free = check_login_status()
+                        if not is_logged:
+                            print("Chua thay dau hieu login, reload trang...")
                             page.reload(timeout=30000)
-                            is_free = check_free_gens()
-                            if not is_free:
-                                print("Vẫn chưa thấy 'Use free gens', reload lần cuối...")
+                            is_logged, is_free = check_login_status()
+                            if not is_logged:
+                                print("Van chua thay, reload lan cuoi...")
                                 page.reload(timeout=30000)
-                                is_free = check_free_gens()
+                                is_logged, is_free = check_login_status()
                                 
                         p_obj = manager.get_profile(profile.id)
                         if p_obj:
                             if is_free:
                                 p_obj.notes = "free gen"
-                                print("=> Cập nhật thẻ thành 'free gen' (Xanh lá)")
-                            else:
+                                print("=> Cap nhat the thanh 'free gen' (Xanh la)")
+                            elif is_logged:
                                 p_obj.notes = "không free"
-                                print("=> Cập nhật thẻ thành 'không free' (Vàng)")
+                                print("=> Cap nhat the thanh 'khong free' (Vang)")
+                            else:
+                                p_obj.notes = "lỗi login"
+                                print("=> Cap nhat the thanh 'loi login'")
                             manager._save()
                     except Exception as e:
-                        print(f"Lỗi khi kiểm tra Free Gens: {e}")
+                        print(f"Lỗi khi kiểm tra đăng nhập/Free Gens: {e}")
                 
         except Exception as e:
             print(f"Auto signup FATAL err: {e}")

@@ -781,6 +781,23 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                                     page.wait_for_timeout(1000)
                         except: pass
 
+                    # 1.35. Xử lý popup "Chúng tôi đang cập nhật các điều khoản" (account.live.com/tou/accrue)
+                    try:
+                        tiep_theo_btn = page.locator('button[data-testid="primaryButton"]')
+                        if tiep_theo_btn.count() > 0 and tiep_theo_btn.first.is_visible():
+                            btn_text = tiep_theo_btn.first.inner_text().strip().lower()
+                            has_tos = (
+                                "account.live.com/tou" in page.url or
+                                "tou/accrue" in page.url or
+                                "tiếp theo" in btn_text or
+                                "next" in btn_text
+                            )
+                            if has_tos:
+                                tiep_theo_btn.first.click()
+                                print("Clicked 'Tiếp theo' on Microsoft ToS update page!")
+                                page.wait_for_timeout(2000)
+                    except: pass
+
                     page.wait_for_timeout(1000)
                     
                     # 2. Bấm vào nút Avatar bằng Playwright (như người thật) thay vì JS
