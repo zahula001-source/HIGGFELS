@@ -193,7 +193,7 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                     video_tasks[task_id] = {"status": "running", "message": "Đang thao tác Cancel & Gen lại..."}
                     
                     try:
-                        # CHẾ ĐỘ DEBUG: Ép hiện thanh công cụ và ĐỨNG IM
+                        # 1. Click Copy
                         page.evaluate("""() => {
                             const procSpans = Array.from(document.querySelectorAll('span, div'));
                             const proc = procSpans.find(el => el.innerText && el.innerText.trim() === 'Processing');
@@ -201,21 +201,31 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                                 let card = proc.closest('div.group\\\\/card');
                                 if (!card) card = proc.closest('section');
                                 if (!card) card = proc.closest('.v_list_row');
-                                
                                 if (card) {
-                                    // Ép hiển thị tất cả các thanh công cụ (action panels) của thẻ này
+                                    // Ép hiển thị thanh công cụ
                                     const style = document.createElement('style');
                                     style.innerHTML = 'div[id^="action-panel"], div[class*="opacity-0"] { opacity: 1 !important; pointer-events: auto !important; }';
                                     document.head.appendChild(style);
+                                    
+                                    const actionPanel = card.querySelector('#action-panel-bottom');
+                                    if (actionPanel) {
+                                        // Tìm tất cả các nút button bên trong bảng action-panel-bottom
+                                        const btns = actionPanel.querySelectorAll('button');
+                                        // Theo HTML user: btns[0] là Cancel, btns[1] là Copy, btns[2] là Trash
+                                        if (btns.length >= 2) {
+                                            const copyBtn = btns[1];
+                                            copyBtn.dispatchEvent(new MouseEvent('mouseover', {bubbles: true}));
+                                            copyBtn.dispatchEvent(new PointerEvent('pointerdown', {bubbles: true}));
+                                            copyBtn.dispatchEvent(new PointerEvent('pointerup', {bubbles: true}));
+                                            copyBtn.click();
+                                        }
+                                    }
                                 }
                             }
                         }""")
-                        video_tasks[task_id] = {"status": "running", "message": "🛑 DEBUG: Nút đã hiện! Hãy F12 copy HTML gửi tôi..."}
-                        print("🛑 ĐANG Ở CHẾ ĐỘ DEBUG: Đứng im 60 giây để user lấy code HTML...")
-                        page.wait_for_timeout(60000)
-                        continue # Bỏ qua các bước sau để user có thời gian copy
+                        page.wait_for_timeout(3000)
                         
-                        # Click Cancel trên chính thẻ Processing
+                        # 2. Click Cancel
                         page.evaluate("""() => {
                             const procSpans = Array.from(document.querySelectorAll('span, div'));
                             const proc = procSpans.find(el => el.innerText && el.innerText.trim() === 'Processing');
@@ -223,12 +233,16 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                                 let card = proc.closest('div.group\\\\/card');
                                 if (!card) card = proc.closest('section');
                                 if (!card) card = proc.closest('.v_list_row');
-                                
                                 if (card) {
-                                    const btns = Array.from(card.querySelectorAll('button'));
-                                    const cancelBtn = btns.find(b => b.innerText && b.innerText.includes('Cancel') || b.getAttribute('aria-label') === 'Cancel');
-                                    if (cancelBtn) {
-                                        cancelBtn.click();
+                                    const actionPanel = card.querySelector('#action-panel-bottom');
+                                    if (actionPanel) {
+                                        const btns = actionPanel.querySelectorAll('button');
+                                        if (btns.length >= 1) {
+                                            const cancelBtn = btns[0];
+                                            cancelBtn.dispatchEvent(new PointerEvent('pointerdown', {bubbles: true}));
+                                            cancelBtn.dispatchEvent(new PointerEvent('pointerup', {bubbles: true}));
+                                            cancelBtn.click();
+                                        }
                                     }
                                 }
                             }
