@@ -209,9 +209,21 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                         page.evaluate("""() => {
                             const btns = Array.from(document.querySelectorAll('button'));
                             const copyBtn = btns.find(b => b.innerHTML.includes('M19.25 7.75C19.25') || (b.getAttribute('data-component') === 'model' && b.getAttribute('data-job-set') === 'hf_mult_motion_control'));
-                            if (copyBtn) copyBtn.click();
+                            if (copyBtn) {
+                                // Ép hiển thị panel chứa nút để tránh bị chặn bởi pointer-events-none
+                                const panel = copyBtn.closest('div[id^="action-panel"]');
+                                if (panel) {
+                                    panel.style.opacity = '1';
+                                    panel.style.pointerEvents = 'auto';
+                                }
+                                // Thao tác như người thật
+                                copyBtn.dispatchEvent(new MouseEvent('mouseover', {bubbles: true}));
+                                copyBtn.dispatchEvent(new MouseEvent('mousedown', {bubbles: true}));
+                                copyBtn.dispatchEvent(new MouseEvent('mouseup', {bubbles: true}));
+                                copyBtn.click();
+                            }
                         }""")
-                        page.wait_for_timeout(2000)
+                        page.wait_for_timeout(4000)
                         
                         # 2. Hover Processing và click Cancel
                         page.evaluate("""() => {
