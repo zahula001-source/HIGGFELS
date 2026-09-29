@@ -193,51 +193,53 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                     video_tasks[task_id] = {"status": "running", "message": "Đang thao tác Cancel & Gen lại..."}
                     
                     try:
-                        # 1. Hover vào thẻ lịch sử chứa năm 2026 hoặc tỷ lệ khung hình
+                        # 1 & 2. Tìm thẻ đang Processing -> Ép hiện thanh công cụ -> Click Copy -> Đợi 2s -> Click Cancel
                         page.evaluate("""() => {
-                            const textNodes = Array.from(document.querySelectorAll('span, p, div, button'));
-                            const hoverTarget = textNodes.reverse().find(el => el.innerText && (el.innerText.includes('2026') || el.innerText.includes(':9') || el.innerText.includes('1:1') || el.innerText.includes('3:4') || el.innerText.includes('9:16')));
-                            if (hoverTarget) {
-                                hoverTarget.dispatchEvent(new MouseEvent('mouseover', {bubbles: true}));
-                                const card = hoverTarget.closest('div, section');
-                                if (card) card.dispatchEvent(new MouseEvent('mouseover', {bubbles: true}));
-                            }
-                        }""")
-                        page.wait_for_timeout(1000)
-                        
-                        # Click nút Use as Prompt (nhận dạng qua mã SVG chính xác mà user cung cấp)
-                        page.evaluate("""() => {
-                            const btns = Array.from(document.querySelectorAll('button'));
-                            const copyBtn = btns.find(b => b.innerHTML.includes('M19.25 7.75C19.25') || (b.getAttribute('data-component') === 'model' && b.getAttribute('data-job-set') === 'hf_mult_motion_control'));
-                            if (copyBtn) {
-                                // Ép hiển thị panel chứa nút để tránh bị chặn bởi pointer-events-none
-                                const panel = copyBtn.closest('div[id^="action-panel"]');
-                                if (panel) {
-                                    panel.style.opacity = '1';
-                                    panel.style.pointerEvents = 'auto';
-                                }
-                                // Thao tác như người thật
-                                copyBtn.dispatchEvent(new MouseEvent('mouseover', {bubbles: true}));
-                                copyBtn.dispatchEvent(new MouseEvent('mousedown', {bubbles: true}));
-                                copyBtn.dispatchEvent(new MouseEvent('mouseup', {bubbles: true}));
-                                copyBtn.click();
-                            }
-                        }""")
-                        page.wait_for_timeout(4000)
-                        
-                        # 2. Hover Processing và click Cancel
-                        page.evaluate("""() => {
-                            const procSpans = Array.from(document.querySelectorAll('span'));
+                            const procSpans = Array.from(document.querySelectorAll('span, div'));
                             const proc = procSpans.find(el => el.innerText && el.innerText.trim() === 'Processing');
                             if (proc) {
-                                const card = proc.closest('section');
+                                // Tìm thẻ card chứa chữ Processing
+                                let card = proc.closest('div.group\\\\/card'); // Thử selector group/card trước
+                                if (!card) card = proc.closest('section');
+                                if (!card) card = proc.closest('.v_list_row');
+                                
                                 if (card) {
+                                    // Ép hiển thị tất cả các thanh công cụ (action panels) của thẻ này
+                                    const style = document.createElement('style');
+                                    style.innerHTML = 'div[id^="action-panel"], div[class*="opacity-0"] { opacity: 1 !important; pointer-events: auto !important; }';
+                                    document.head.appendChild(style);
+                                    
                                     card.dispatchEvent(new MouseEvent('mouseover', {bubbles: true}));
-                                    setTimeout(() => {
-                                        const btns = Array.from(card.querySelectorAll('button'));
-                                        const cancelBtn = btns.find(b => b.innerText && b.innerText.includes('Cancel') || b.getAttribute('aria-label') === 'Cancel');
-                                        if(cancelBtn) cancelBtn.click();
-                                    }, 500);
+                                    
+                                    // Tìm nút Copy
+                                    const btns = Array.from(card.querySelectorAll('button'));
+                                    const copyBtn = btns.find(b => b.innerHTML.includes('M19.25 7.75C19.25') || (b.getAttribute('data-job-set') === 'hf_mult_motion_control'));
+                                    if (copyBtn) {
+                                        copyBtn.dispatchEvent(new MouseEvent('mouseover', {bubbles: true}));
+                                        copyBtn.dispatchEvent(new MouseEvent('mousedown', {bubbles: true}));
+                                        copyBtn.dispatchEvent(new MouseEvent('mouseup', {bubbles: true}));
+                                        copyBtn.click();
+                                    }
+                                }
+                            }
+                        }""")
+                        page.wait_for_timeout(3000)
+                        
+                        # Click Cancel trên chính thẻ Processing
+                        page.evaluate("""() => {
+                            const procSpans = Array.from(document.querySelectorAll('span, div'));
+                            const proc = procSpans.find(el => el.innerText && el.innerText.trim() === 'Processing');
+                            if (proc) {
+                                let card = proc.closest('div.group\\\\/card');
+                                if (!card) card = proc.closest('section');
+                                if (!card) card = proc.closest('.v_list_row');
+                                
+                                if (card) {
+                                    const btns = Array.from(card.querySelectorAll('button'));
+                                    const cancelBtn = btns.find(b => b.innerText && b.innerText.includes('Cancel') || b.getAttribute('aria-label') === 'Cancel');
+                                    if (cancelBtn) {
+                                        cancelBtn.click();
+                                    }
                                 }
                             }
                         }""")
