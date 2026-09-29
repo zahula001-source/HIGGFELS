@@ -50,7 +50,8 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                 args.append("--window-size=1366,768")
                 
             try:
-                from app.browser_settings import browser_launch_options
+                from app.browser_settings import browser_launch_options, get_global_args
+                args.extend(get_global_args())
                 b_opts = browser_launch_options()
             except:
                 b_opts = {}

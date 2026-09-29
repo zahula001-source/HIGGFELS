@@ -142,6 +142,16 @@ body{background:#0b0e14;color:#e5e7eb;min-height:100vh;}
       </div>
       
       <div style="display:flex; align-items:center; gap:6px; border:1px solid #334155; padding: 4px 8px; border-radius: 6px; background: #1e293b;">
+        <input type="checkbox" id="globalLightweightCache" onchange="updateBackendConfig()" style="cursor:pointer;">
+        <label for="globalLightweightCache" style="font-size:12px; cursor:pointer; color:#facc15; font-weight:bold; margin:0;" title="Bật: Chỉ lưu Login (tốn 5-10MB/profile) thay vì hàng trăm MB">⚡ Nhẹ Máy (Ít Cache)</label>
+      </div>
+
+      <div style="display:flex; align-items:center; gap:6px; border:1px solid #334155; padding: 4px 8px; border-radius: 6px; background: #1e293b;">
+        <input type="checkbox" id="globalBlockMedia" onchange="updateBackendConfig()" style="cursor:pointer;">
+        <label for="globalBlockMedia" style="font-size:12px; cursor:pointer; color:#f87171; font-weight:bold; margin:0;" title="Bật: Chặn tải Ảnh & Video trên trình duyệt để cực kỳ nhẹ máy">🚫 Chặn Ảnh/Video</label>
+      </div>
+      
+      <div style="display:flex; align-items:center; gap:6px; border:1px solid #334155; padding: 4px 8px; border-radius: 6px; background: #1e293b;">
          <label for="globalMaxRetries" style="font-size:12px; color:#f59e0b; margin:0;" title="Số lần thử lại tối đa cho mỗi thẻ">Thử Lại Max:</label>
          <input type="number" id="globalMaxRetries" value="20" min="1" max="999" oninput="saveUIState(); updateMaxRetries()" style="width:40px; background:transparent; border:1px solid #475569; color:#fff; border-radius:4px; text-align:center; font-size:12px; outline:none;">
       </div>
@@ -159,7 +169,21 @@ body{background:#0b0e14;color:#e5e7eb;min-height:100vh;}
     <div style="display:flex;gap:10px;align-items:center;">
       <button class="btn btn-primary" onclick="openModal()">+ Tao Profile Moi (Chrome moi hoan toan)</button>
       <button class="btn btn-ghost" onclick="loadProfiles()">↻ Lam moi</button>
-      <button class="btn btn-ghost" onclick="exportAllCookies(this)">🍪 Xuất All Cookie</button>
+      <div style="position:relative;display:inline-block;" id="exportCookieDropdownWrap">
+        <button class="btn btn-ghost" onclick="toggleExportDropdown()" id="exportCookieMainBtn">🍪 Xuất Cookie ▾</button>
+        <div id="exportCookieDropdown" style="display:none;position:absolute;top:calc(100% + 4px);left:0;background:#1e293b;border:1px solid #334155;border-radius:8px;min-width:180px;z-index:999;box-shadow:0 8px 24px rgba(0,0,0,0.5);">
+          <div onclick="exportAllCookies(document.getElementById('exportCookieMainBtn'), 'file'); toggleExportDropdown()" style="padding:10px 16px;cursor:pointer;color:#e2e8f0;font-size:13px;" onmouseover="this.style.background='#334155'" onmouseout="this.style.background=''">
+            📦 Xuất Tất Cả Profiles
+          </div>
+          <div onclick="exportAllCookies(document.getElementById('exportCookieMainBtn'), 'copy'); toggleExportDropdown()" style="padding:10px 16px;cursor:pointer;color:#93c5fd;font-size:13px;" onmouseover="this.style.background='#334155'" onmouseout="this.style.background=''">
+            📋 Copy JSON Tất Cả
+          </div>
+          <div onclick="openExportSelectModal(); toggleExportDropdown()" style="padding:10px 16px;cursor:pointer;color:#e2e8f0;font-size:13px;border-top:1px solid #334155;" onmouseover="this.style.background='#334155'" onmouseout="this.style.background=''">
+            ☑️ Chọn Từng Thẻ
+          </div>
+        </div>
+      </div>
+      <button class="btn btn-ghost" onclick="openImportBundleModal()" style="background:#0c2340; border:1px solid #1d4ed8; color:#93c5fd;">📥 Nhập Cookie Bundle</button>
       <button class="btn btn-ghost" onclick="manageExtensions(null)" style="background:#0f172a; border: 1px solid #475569;">🧩 Tiện Ích</button>
 
       <div style="display:flex; align-items:center; gap:8px; margin-left: 20px; border: 1px solid #334155; padding: 6px 12px; border-radius: 8px; background: #1e293b; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
@@ -352,6 +376,45 @@ body{background:#0b0e14;color:#e5e7eb;min-height:100vh;}
   </div>
 </div>
 
+<!-- Modal Chọn Từng Thẻ để Xuất -->
+<div id="exportSelectModal" class="modal-overlay" onclick="if(event.target==this) closeExportSelectModal()">
+  <div class="modal lg">
+    <h2>☑️ Chọn Thẻ Cần Xuất</h2>
+    <p style="font-size:12px;color:#94a3b8;margin-bottom:12px;">Chọn các profile muốn xuất thành file <b>.json</b> — có thể nhập lại trên máy khác.</p>
+    <label style="display:flex; align-items:center; gap:8px; cursor:pointer; color:#fff; font-weight:bold; margin-bottom: 12px; background: #1e293b; padding: 10px; border-radius: 8px;">
+      <input type="checkbox" id="exportSelectAll" style="width:16px;height:16px;" onchange="toggleExportSelectAll(this.checked)"> Chọn tất cả
+    </label>
+    <div id="exportSelectList" style="max-height:300px; overflow-y:auto; background:#0f172a; border-radius:8px; border:1px solid #1e2535; padding:10px; display:flex; flex-direction:column; gap:8px;">
+    </div>
+    <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;">
+      <button class="btn btn-ghost" onclick="closeExportSelectModal()">Hủy</button>
+      <button class="btn btn-ghost" style="background:#0f3460;border:1px solid #1d4ed8;color:#93c5fd;" onclick="doCopySelected()">📋 Copy JSON</button>
+      <button class="btn btn-primary" onclick="doExportSelected()">📤 Xuất File</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Nhập Cookie Bundle -->
+<div id="importBundleModal" class="modal-overlay" onclick="if(event.target==this) closeImportBundleModal()">
+  <div class="modal lg">
+    <h2>📥 Nhập Cookie Bundle</h2>
+    <p style="font-size:12px;color:#94a3b8;margin-bottom:12px;">Dán JSON từ file xuất <b>hoặc</b> tải file .json lên.<br>Hệ thống sẽ tự động tạo đúng số thẻ với đầy đủ tài khoản bên trong.</p>
+    <div class="form-group">
+      <label>📄 Tải file .json lên</label>
+      <input type="file" id="importBundleFile" accept=".json" onchange="loadBundleFile(this)" style="padding:8px; border:1px dashed #475569; border-radius:6px; width:100%; color:#e2e8f0; background:#0f172a; cursor:pointer;">
+    </div>
+    <div class="form-group">
+      <label>📋 Hoặc Paste JSON trực tiếp</label>
+      <textarea id="importBundleText" class="textarea" style="min-height:200px;" placeholder='[{"name":"Profile 1", "ms_account":"...", ...}]'></textarea>
+    </div>
+    <div id="importBundleStatus" style="font-size:13px;margin:8px 0;display:none;"></div>
+    <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;">
+      <button class="btn btn-ghost" onclick="closeImportBundleModal()">Hủy</button>
+      <button class="btn btn-primary" onclick="doImportBundle()">✅ Tạo Profiles Từ Bundle</button>
+    </div>
+  </div>
+</div>
+
 <script>
 let allProfiles = [];
 let currentCookieProfileId = null;
@@ -370,6 +433,35 @@ function parseProxyInput(str){
     }
   }catch(e){}
   return null;
+}
+
+async function loadBackendConfig() {
+  try {
+    const res = await fetch("/api/config");
+    if(res.ok) {
+      const data = await res.json();
+      if (document.getElementById("globalLightweightCache")) {
+        document.getElementById("globalLightweightCache").checked = !!data.lightweight_cache;
+      }
+      if (document.getElementById("globalBlockMedia")) {
+        document.getElementById("globalBlockMedia").checked = !!data.block_media;
+      }
+    }
+  } catch(e) {}
+}
+
+async function updateBackendConfig() {
+  const payload = {
+    lightweight_cache: document.getElementById("globalLightweightCache")?.checked || false,
+    block_media: document.getElementById("globalBlockMedia")?.checked || false
+  };
+  try {
+    await fetch("/api/config", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(payload)
+    });
+  } catch(e) {}
 }
 
 async function loadProfiles(){
@@ -406,7 +498,7 @@ function renderProfiles(profiles){
     const proxyBadge = hasProxy ? `🟢 ${p.proxy.host} 🇻🇳` : "IP that";
     return `
     <div class="card ${running?'running':''}" style="position: relative; overflow: hidden;">
-      ${p.notes === 'free gen' ? `<div style="position:absolute;top:0;right:0;background:#10b981;color:#fff;font-size:10px;font-weight:bold;padding:4px 12px;border-bottom-left-radius:8px;z-index:10;box-shadow:-2px 2px 4px rgba(0,0,0,0.2);">free gen</div>` : (p.notes === 'không free' ? `<div style="position:absolute;top:0;right:0;background:#f59e0b;color:#fff;font-size:10px;font-weight:bold;padding:4px 12px;border-bottom-left-radius:8px;z-index:10;box-shadow:-2px 2px 4px rgba(0,0,0,0.2);">không free</div>` : '')}
+      ${p.notes && p.notes.startsWith('free gen') ? `<div style="position:absolute;top:0;right:0;background:#10b981;color:#fff;font-size:10px;font-weight:bold;padding:4px 12px;border-bottom-left-radius:8px;z-index:10;box-shadow:-2px 2px 4px rgba(0,0,0,0.2);">${esc(p.notes)}</div>` : (p.notes === 'không free' ? `<div style="position:absolute;top:0;right:0;background:#f59e0b;color:#fff;font-size:10px;font-weight:bold;padding:4px 12px;border-bottom-left-radius:8px;z-index:10;box-shadow:-2px 2px 4px rgba(0,0,0,0.2);">không free</div>` : '')}
       <div class="card-header" ondblclick="editProfileName('${p.id}', '${esc(p.name)}', this.querySelector('.card-title'))" title="Ấn đúp vào vùng này để đổi tên" style="cursor: pointer;">
         <div class="card-title" style="font-size: 18px; font-weight: bold;"><span class="dot ${running?'running':''}"></span>${esc(p.name)}</div>
         <div style="font-size:10px;color:#64748b;">#${p.id} ID:${p.fingerprint?.random_id||''}</div>
@@ -419,7 +511,7 @@ function renderProfiles(profiles){
         <span>📑 ${p.tabs_count||0} tabs</span>
         <span>🖥️ ${esc(p.fingerprint?.screen||'1920x1080')}</span>
         <span>🎲 ID: ${p.fingerprint?.random_id||''}</span>
-        ${p.notes && p.notes !== 'free gen' && p.notes !== 'không free' ? `<span>📝 ${esc(p.notes)}</span>` : ''}
+        ${p.notes && !p.notes.startsWith('free gen') && p.notes !== 'không free' ? `<span>📝 ${esc(p.notes)}</span>` : ''}
       </div>
       ${p.ms_email ? `<div style="padding:4px 8px; font-size:12px; color:#38bdf8; background:#0f172a; border-radius:4px; margin-bottom:8px; cursor:pointer; display:inline-block; border:1px solid #1e293b;" onclick="navigator.clipboard.writeText('${p.ms_email}'); const old=this.innerHTML; this.innerHTML='✅ Đã copy!'; setTimeout(()=>this.innerHTML=old, 1500);" title="Click để copy email">📧 ${esc(p.ms_email)}</div>` : ''}
       <div class="card-actions">
@@ -431,6 +523,7 @@ function renderProfiles(profiles){
         <button class="btn btn-sm btn-success" onclick="autoSignup('${p.id}')">🤖 Tạo acc + login</button>
         <button class="btn btn-sm" style="background:#0369a1;color:#fff;" onclick="openPasteMailModal('${p.id}')">📧 Dán mail</button>
         <button class="btn btn-sm btn-ghost" onclick="duplicateProfile('${p.id}')">📋 Clone</button>
+        <button class="btn btn-sm" style="background:#0e7490;color:#fff;" onclick="exportSingleBundle('${p.id}')" title="Xuất riêng thẻ này ra file JSON">📤 Xuất</button>
         <button class="btn btn-sm btn-danger" onclick="deleteProfile('${p.id}')">🗑</button>
       </div>
       <div class="card-footer">
@@ -603,7 +696,7 @@ async function launchProfile(id){
   if(autoSignup && data.ok && data.pid) {
     setTimeout(async () => {
       try {
-        const r = await fetch(`/api/profiles/${id}/auto-signup`, {method:"POST"});
+        const r = await fetch(`/api/profiles/${id}/auto-signup?keep_open=true`, {method:"POST"});
         const d = await r.json();
         if(!r.ok) console.warn("Auto signup err:", d);
       } catch(e) { console.warn("Auto signup exception:", e); }
@@ -643,32 +736,214 @@ async function doImportCookie(){
   }
 }
 
-async function exportAllCookies(btn){
+async function exportAllCookies(btn, mode='file'){
   const oldText = btn.textContent;
   btn.textContent = "⏳ Đang xuất...";
   btn.disabled = true;
   try {
-    const resFolder = await fetch(`/api/select-folder`);
-    const dataFolder = await resFolder.json();
-    if (!dataFolder.path) {
-      alert("Bạn chưa chọn thư mục lưu!");
-      return;
-    }
-    const targetDir = dataFolder.path;
-    const res = await fetch(`/api/export-all-cookies`, {
+    const res = await fetch("/api/export-bundle", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({target_dir: targetDir})
+      body: JSON.stringify({profile_ids: []})
     });
     const data = await res.json();
     if(!data.ok) throw new Error(data.message || JSON.stringify(data));
-    
-    alert(`✅ Đã xuất thành công ${data.count} profiles ra thư mục:\n${data.files[2]}`);
+    const jsonStr = JSON.stringify(data.bundle, null, 2);
+    if (mode === 'copy') {
+      await navigator.clipboard.writeText(jsonStr);
+      alert(`✅ Đã copy JSON của ${data.count} profiles vào clipboard!`);
+    } else {
+      const blob = new Blob([jsonStr], {type: "application/json"});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `higgsfield_bundle_${new Date().toISOString().slice(0,10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      alert(`✅ Đã xuất thành công ${data.count} profiles ra file JSON!`);
+    }
   } catch(e) {
-    alert("❌ Lỗi xuất cookie: " + e.message);
+    alert("❌ Lỗi xuất: " + e.message);
   } finally {
     btn.textContent = oldText;
     btn.disabled = false;
+  }
+}
+
+function toggleExportDropdown() {
+  const dd = document.getElementById("exportCookieDropdown");
+  dd.style.display = dd.style.display === "none" ? "block" : "none";
+}
+document.addEventListener("click", e => {
+  const wrap = document.getElementById("exportCookieDropdownWrap");
+  if (wrap && !wrap.contains(e.target)) {
+    const dd = document.getElementById("exportCookieDropdown");
+    if (dd) dd.style.display = "none";
+  }
+});
+
+function openExportSelectModal() {
+  const list = document.getElementById("exportSelectList");
+  list.innerHTML = allProfiles.map(p => `
+    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:8px;border-radius:6px;background:#1e293b;">
+      <input type="checkbox" class="export-select-cb" value="${p.id}" style="width:15px;height:15px;">
+      <span style="color:#e2e8f0;font-size:13px;">📋 ${esc(p.name)} <span style="color:#64748b;font-size:11px;">#${p.id}</span>${p.ms_email ? ` <span style="color:#38bdf8;font-size:11px;">📧${esc(p.ms_email)}</span>` : ''}</span>
+    </label>`).join("");
+  document.getElementById("exportSelectAll").checked = false;
+  document.getElementById("exportSelectModal").classList.add("active");
+}
+function closeExportSelectModal() { document.getElementById("exportSelectModal").classList.remove("active"); }
+function toggleExportSelectAll(checked) {
+  document.querySelectorAll(".export-select-cb").forEach(cb => cb.checked = checked);
+}
+async function doExportSelected() {
+  const ids = [...document.querySelectorAll(".export-select-cb:checked")].map(cb => cb.value);
+  if (!ids.length) { alert("Chưa chọn thẻ nào!"); return; }
+  try {
+    const res = await fetch("/api/export-bundle", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({profile_ids: ids})
+    });
+    const data = await res.json();
+    if(!data.ok) throw new Error(data.message);
+    const blob = new Blob([JSON.stringify(data.bundle, null, 2)], {type: "application/json"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `higgsfield_bundle_${ids.length}profiles_${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    closeExportSelectModal();
+    alert(`✅ Đã xuất ${data.count} profiles ra file JSON!`);
+  } catch(e) { alert("Lỗi: " + e.message); }
+}
+async function doCopySelected() {
+  const ids = [...document.querySelectorAll(".export-select-cb:checked")].map(cb => cb.value);
+  if (!ids.length) { alert("Chưa chọn thẻ nào!"); return; }
+  try {
+    const res = await fetch("/api/export-bundle", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({profile_ids: ids})
+    });
+    const data = await res.json();
+    if(!data.ok) throw new Error(data.message);
+    await navigator.clipboard.writeText(JSON.stringify(data.bundle, null, 2));
+    closeExportSelectModal();
+    alert(`✅ Đã copy JSON của ${data.count} profiles vào clipboard!`);
+  } catch(e) { alert("Lỗi: " + e.message); }
+}
+async function exportSingleBundle(id) {
+  try {
+    const res = await fetch("/api/export-bundle", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({profile_ids: [id]})
+    });
+    const data = await res.json();
+    if(!data.ok) throw new Error(data.message);
+    const p = allProfiles.find(x => x.id === id);
+    const name = p ? p.name.replace(/[^a-zA-Z0-9_-]/g, "_") : id;
+    const jsonStr = JSON.stringify(data.bundle, null, 2);
+    
+    // Hiện mini dialog chọn Copy hay Save File
+    const choice = await showExportChoiceDialog(name);
+    if (choice === 'copy') {
+      await navigator.clipboard.writeText(jsonStr);
+      // Flash thông báo nhỏ không chẹn màn hình
+      showToast('✅ Đã copy JSON thẻ ' + (p ? p.name : id) + ' vào clipboard!');
+    } else if (choice === 'file') {
+      const blob = new Blob([jsonStr], {type: "application/json"});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${name}_bundle.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+  } catch(e) { alert("Lỗi: " + e.message); }
+}
+
+function showExportChoiceDialog(profileName) {
+  return new Promise(resolve => {
+    // Xóa dialog cũ nếu có
+    const old = document.getElementById('exportChoiceDialog');
+    if (old) old.remove();
+    
+    const overlay = document.createElement('div');
+    overlay.id = 'exportChoiceDialog';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center;';
+    overlay.innerHTML = `
+      <div style="background:#1e293b;border:1px solid #334155;border-radius:12px;padding:24px;min-width:280px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.8);">
+        <div style="font-size:20px;margin-bottom:8px;">📤 Xuất Profile</div>
+        <div style="color:#94a3b8;font-size:13px;margin-bottom:20px;">Chọn cách xuất <b style='color:#e2e8f0;'>${profileName.replace(/_/g,' ')}</b></div>
+        <div style="display:flex;gap:10px;justify-content:center;">
+          <button id="ecBtnCopy" style="padding:10px 20px;background:#1d4ed8;border:none;border-radius:8px;color:#fff;cursor:pointer;font-size:14px;font-weight:bold;">📋 Copy JSON</button>
+          <button id="ecBtnFile" style="padding:10px 20px;background:#059669;border:none;border-radius:8px;color:#fff;cursor:pointer;font-size:14px;font-weight:bold;">📥 Lưu File</button>
+          <button id="ecBtnCancel" style="padding:10px 16px;background:#475569;border:none;border-radius:8px;color:#fff;cursor:pointer;font-size:13px;">Hủy</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    
+    document.getElementById('ecBtnCopy').onclick = () => { overlay.remove(); resolve('copy'); };
+    document.getElementById('ecBtnFile').onclick = () => { overlay.remove(); resolve('file'); };
+    document.getElementById('ecBtnCancel').onclick = () => { overlay.remove(); resolve(null); };
+    overlay.addEventListener('click', e => { if(e.target === overlay) { overlay.remove(); resolve(null); } });
+  });
+}
+
+function showToast(msg) {
+  const old = document.getElementById('exportToast');
+  if (old) old.remove();
+  const t = document.createElement('div');
+  t.id = 'exportToast';
+  t.textContent = msg;
+  t.style.cssText = 'position:fixed;bottom:24px;right:24px;background:#059669;color:#fff;padding:12px 20px;border-radius:10px;font-size:14px;z-index:9999;box-shadow:0 8px 24px rgba(0,0,0,0.4);transition:opacity 0.5s;';
+  document.body.appendChild(t);
+  setTimeout(() => { t.style.opacity='0'; setTimeout(() => t.remove(), 500); }, 2500);
+}
+
+function openImportBundleModal() {
+  document.getElementById("importBundleText").value = "";
+  document.getElementById("importBundleFile").value = "";
+  document.getElementById("importBundleStatus").style.display = "none";
+  document.getElementById("importBundleModal").classList.add("active");
+}
+function closeImportBundleModal() { document.getElementById("importBundleModal").classList.remove("active"); }
+function loadBundleFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => { document.getElementById("importBundleText").value = e.target.result; };
+  reader.readAsText(file);
+}
+async function doImportBundle() {
+  const raw = document.getElementById("importBundleText").value.trim();
+  if (!raw) { alert("Chưa có dữ liệu! Hãy paste JSON hoặc tải file."); return; }
+  let bundle;
+  try { bundle = JSON.parse(raw); } catch(e) { alert("JSON không hợp lệ: " + e.message); return; }
+  if (!Array.isArray(bundle)) { alert("Bundle phải là array [...]"); return; }
+  const statusEl = document.getElementById("importBundleStatus");
+  statusEl.style.display = "block";
+  statusEl.style.color = "#f59e0b";
+  statusEl.textContent = `⏳ Đang tạo ${bundle.length} profiles...`;
+  try {
+    const res = await fetch("/api/import-bundle", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({bundle})
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || JSON.stringify(data));
+    statusEl.style.color = "#10b981";
+    let msg = `✅ Đã tạo ${data.created} profiles thành công!`;
+    if (data.errors && data.errors.length) msg += `\n⚠️ Lỗi: ${data.errors.map(e=>e.name+': '+e.error).join(', ')}`;
+    statusEl.textContent = msg;
+    setTimeout(() => { closeImportBundleModal(); loadProfiles(); }, 2000);
+  } catch(e) {
+    statusEl.style.color = "#ef4444";
+    statusEl.textContent = "❌ Lỗi: " + e.message;
   }
 }
 
@@ -803,7 +1078,7 @@ async function autoSignup(id) {
             // Đợi 8 giây cho Chrome mở xong rồi mới gọi auto signup
             setTimeout(async () => {
                 loadingMsg.remove();
-                await callAutoSignupApi(id);
+                await callAutoSignupApi(id, false); // Nút tạo tài khoản thì đóng lại
             }, 8000);
             return;
         } catch(e) {
@@ -814,12 +1089,12 @@ async function autoSignup(id) {
     }
     
     // Nếu đã chạy rồi thì gọi api luôn
-    await callAutoSignupApi(id);
+    await callAutoSignupApi(id, false); // Nút tạo tài khoản thì đóng lại
 }
 
-async function callAutoSignupApi(id) {
+async function callAutoSignupApi(id, keepOpen = false) {
     try {
-        const res = await fetch(`/api/profiles/${id}/auto-signup`, {method: "POST"});
+        const res = await fetch(`/api/profiles/${id}/auto-signup${keepOpen ? '?keep_open=true' : ''}`, {method: "POST"});
         const data = await res.json();
         if(!res.ok) throw new Error(data.detail || data.message);
         
@@ -852,12 +1127,12 @@ function openBatchCheckFreeGenModal() {
     } else {
         allProfiles.forEach(p => {
             const notes = p.notes ? ` (${p.notes})` : "";
-            const isFreeGen = p.notes === "free gen";
+            const isFreeGen = p.notes && p.notes.startsWith("free gen");
             const colorStyle = isFreeGen ? "color: #10b981;" : (p.notes === "không free" ? "color: #f59e0b;" : "color: #cbd5e1;");
             
             list.innerHTML += `
                 <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; background: #151a27; padding: 8px 12px; border-radius: 6px; border: 1px solid #1e2535;">
-                    <input type="checkbox" class="batch-chk" value="${p.id}" style="width:16px;height:16px;" onchange="updateBatchCheckAllStatus()">
+                    <input type="checkbox" class="batch-chk" value="${p.id}" style="width:16px;height:16px;" onclick="handleBatchCheckClick(event, this)">
                     <span style="font-weight:bold; ${colorStyle}">${esc(p.name)}${notes}</span>
                 </label>
             `;
@@ -879,7 +1154,31 @@ function toggleBatchCheckAll(checked) {
 function updateBatchCheckAllStatus() {
     const chks = document.querySelectorAll('.batch-chk');
     const allChecked = Array.from(chks).every(c => c.checked);
-    document.getElementById("batchCheckAll").checked = allChecked;
+    const anyChecked = Array.from(chks).some(c => c.checked);
+    const checkAllBox = document.getElementById("batchCheckAll");
+    checkAllBox.checked = allChecked;
+    checkAllBox.indeterminate = !allChecked && anyChecked;
+}
+
+let lastBatchChecked = null;
+function handleBatchCheckClick(e, checkbox) {
+    const chks = Array.from(document.querySelectorAll('.batch-chk'));
+    
+    if (e.shiftKey && lastBatchChecked) {
+        let start = chks.indexOf(checkbox);
+        let end = chks.indexOf(lastBatchChecked);
+        if (start > end) {
+            let temp = start;
+            start = end;
+            end = temp;
+        }
+        for (let i = start; i <= end; i++) {
+            chks[i].checked = lastBatchChecked.checked;
+        }
+    }
+    
+    lastBatchChecked = checkbox;
+    updateBatchCheckAllStatus();
 }
 
 async function startBatchCheckFreeGen() {
@@ -2216,7 +2515,7 @@ function openCheckVideoModal() {
           
           // Tô màu theo trạng thái
           const notes = (p.notes || '').toLowerCase();
-          if (notes === 'free gen') {
+          if (notes.startsWith('free gen')) {
               label.style.color = '#22c55e'; // Xanh lá
               div.style.borderLeft = '3px solid #22c55e';
           } else if (notes === 'không free' || notes === 'khong free') {
@@ -2521,5 +2820,10 @@ async function submitCheckVideo() {
   </div>
 </div>
 
+<script>
+  window.addEventListener('DOMContentLoaded', () => {
+    loadBackendConfig();
+  });
+</script>
 </body>
 </html>

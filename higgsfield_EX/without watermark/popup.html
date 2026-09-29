@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zakariya zDola30s Pro v1.1</title>
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Claude-Style Header -->
+        <header class="app-header">
+            <div class="brand-group">
+                <div class="logo-wrapper">
+                    <img src="icon48.png" alt="Logo" class="app-logo">
+                    <span class="pulse-dot"></span>
+                </div>
+                <div class="brand-info">
+                    <h1 class="brand-title">Zakariya <span class="highlight">zDola30s</span></h1>
+                    <span class="engine-badge">⚡ 30S CLAUDE ENGINE • v1.1 Pro</span>
+                </div>
+            </div>
+            <div class="status-chip" id="connection-status" title="Connection to Dola tab">
+                <span class="status-indicator"></span>
+                <span class="status-text">Connected</span>
+            </div>
+        </header>
+
+        <!-- Main Workspace -->
+        <main class="workspace">
+            <!-- Prompt Box Section -->
+            <div class="card prompt-card">
+                <div class="card-header">
+                    <label for="prompt-input" class="card-label">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                        Video Prompt
+                    </label>
+                    <div class="quick-actions">
+                        <button type="button" class="btn-micro" id="btn-paste" title="Paste from clipboard">📋 Paste</button>
+                        <button type="button" class="btn-micro" id="btn-clear" title="Clear text">Clear</button>
+                    </div>
+                </div>
+                
+                <textarea 
+                    id="prompt-input" 
+                    class="prompt-textarea" 
+                    placeholder="Enter your prompt here (e.g., Cinematic shot of a futuristic cyberpunk neon samurai in heavy rain, ultra detailed 8k 30s motion)..."
+                    rows="4"
+                ></textarea>
+                
+                <div class="prompt-footer">
+                    <span class="char-counter" id="char-count">0 chars</span>
+                    <button type="button" class="btn-micro sample-btn" id="btn-sample">🎲 Example Prompt</button>
+                </div>
+            </div>
+
+            <!-- Configuration Row -->
+            <div class="config-row">
+                <!-- Ratio Selector -->
+                <div class="config-group">
+                    <span class="config-label">Ratio:</span>
+                    <div class="ratio-pill-group">
+                        <button type="button" class="ratio-btn active" data-ratio="9:16">9:16</button>
+                        <button type="button" class="ratio-btn" data-ratio="16:9">16:9</button>
+                        <button type="button" class="ratio-btn" data-ratio="1:1">1:1</button>
+                    </div>
+                </div>
+
+                <!-- Duration Fixed Badge -->
+                <div class="config-group">
+                    <span class="config-label">Duration:</span>
+                    <div class="duration-badge">
+                        <span class="lightning">⚡</span> <strong>30s Force</strong>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Primary Generate Button -->
+            <button type="button" class="btn-primary-generate" id="btn-generate">
+                <span class="btn-glow"></span>
+                <span class="btn-content">
+                    <svg class="generate-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+                    </svg>
+                    <span id="generate-btn-text">Generate 30s Video</span>
+                </span>
+            </button>
+
+            <!-- Auto-Download Status Card -->
+            <div class="auto-download-card">
+                <div class="download-info">
+                    <div class="icon-circle">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    </div>
+                    <div class="download-text">
+                        <div class="download-title">Auto-Download Active</div>
+                        <div class="download-desc">Original unwatermarked 1080P video saves automatically</div>
+                    </div>
+                </div>
+                <label class="switch-toggle" title="Toggle Auto-Download">
+                    <input type="checkbox" id="toggle-auto-download" checked>
+                    <span class="slider"></span>
+                </label>
+            </div>
+
+            <!-- Action Status Message -->
+            <div class="action-alert" id="action-alert" style="display: none;">
+                <span class="alert-icon">ℹ️</span>
+                <span class="alert-text" id="alert-message">Ready</span>
+            </div>
+
+            <!-- Recent Auto-Downloads List Drawer -->
+            <div class="recent-downloads-section">
+                <div class="section-title-row">
+                    <span class="section-title">Recent Downloads</span>
+                    <span class="download-count" id="download-count-badge">0 saved</span>
+                </div>
+                <div class="downloads-list" id="downloads-list">
+                    <div class="empty-downloads">No videos generated in this session yet. Ready for your prompt!</div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Footer -->
+        <footer class="app-footer">
+            <span class="footer-credit">Developed by <strong>Zakariya</strong> • v1.1 Pro</span>
+        </footer>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+</html>

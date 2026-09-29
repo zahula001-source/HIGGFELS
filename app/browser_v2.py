@@ -150,6 +150,8 @@ except Exception as e:
 
 def get_chromium_python_code(profile_id, user_data_dir, proxy_dict):
     proxy_str = json.dumps(proxy_dict) if proxy_dict else "None"
+    from app.browser_settings import get_global_args
+    extra = get_global_args()
     code = f'''
 import time, json
 from playwright.sync_api import sync_playwright
@@ -157,6 +159,7 @@ from playwright.sync_api import sync_playwright
 profile_id = "{profile_id}"
 user_data_dir = r"{user_data_dir}"
 proxy = {proxy_str}
+extra_args = {json.dumps(extra)}
 
 print(f"[{{profile_id}}] Starting Chromium (instant)...")
 
@@ -165,7 +168,7 @@ with sync_playwright() as p:
         "--disable-blink-features=AutomationControlled",
         "--no-first-run",
         "--no-default-browser-check",
-    ]
+    ] + extra_args
     context = p.chromium.launch_persistent_context(
         user_data_dir=user_data_dir,
         headless=False,

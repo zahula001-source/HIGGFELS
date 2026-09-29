@@ -1,0 +1,232 @@
+/* Prompt Dock-style Image Dock. */
+#studio-relay-page-overlays,
+#studio-relay-page-overlays .studio-relay-page-overlay-card {
+    align-items: flex-end !important;
+    overflow: visible !important;
+}
+
+#studio-relay-page-overlays .studio-relay-image-dock {
+    width: min(332px, calc(100vw - 16px)) !important;
+    max-height: min(430px, calc(100vh - 120px)) !important;
+    align-self: flex-end !important;
+    gap: 9px !important;
+    padding: 14px !important;
+    overflow: hidden !important;
+    border-color: rgba(148, 163, 184, 0.22) !important;
+    border-radius: 18px !important;
+    background:
+        radial-gradient(circle at 92% 2%, rgba(99, 102, 241, 0.18), transparent 34%),
+        linear-gradient(160deg, rgba(22, 24, 33, 0.99), rgba(11, 12, 17, 0.99)) !important;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(99, 102, 241, 0.08) !important;
+}
+
+#studio-relay-page-overlays .studio-relay-image-dock-header {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 10px !important;
+}
+
+#studio-relay-page-overlays .studio-relay-image-dock-header > strong {
+    color: #f4f4f5 !important;
+    font: 750 12px/1.2 Inter, ui-sans-serif, system-ui, sans-serif !important;
+}
+
+#studio-relay-page-overlays .studio-relay-image-dock-done {
+    flex: 0 0 auto !important;
+    padding: 4px 7px !important;
+    border: 1px solid rgba(74, 222, 128, 0.2) !important;
+    border-radius: 6px !important;
+    background: rgba(34, 197, 94, 0.14) !important;
+    color: #bbf7d0 !important;
+    font: 750 7px/1 Inter, ui-sans-serif, system-ui, sans-serif !important;
+}
+
+#studio-relay-page-overlays .studio-relay-image-dock-divider {
+    height: 1px !important;
+    background: linear-gradient(90deg, rgba(124, 58, 237, 0.6), rgba(124, 58, 237, 0.04)) !important;
+}
+
+#studio-relay-page-overlays #studio-relay-image-dock-search {
+    width: 100% !important;
+    min-height: 32px !important;
+    padding: 7px 10px !important;
+    border: 1px solid rgba(148, 163, 184, 0.22) !important;
+    border-radius: 10px !important;
+    outline: none !important;
+    background: rgba(8, 9, 14, 0.92) !important;
+    box-shadow: none !important;
+    color: #f4f4f5 !important;
+    font: 550 9px/1.2 Inter, ui-sans-serif, system-ui, sans-serif !important;
+}
+
+#studio-relay-page-overlays #studio-relay-image-dock-search::placeholder {
+    color: #71717a !important;
+}
+
+#studio-relay-page-overlays #studio-relay-image-dock-search:focus {
+    border-color: #818cf8 !important;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.18) !important;
+}
+
+#studio-relay-page-overlays .studio-relay-image-dock-actions {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.65fr) !important;
+    gap: 6px !important;
+}
+
+#studio-relay-page-overlays .studio-relay-image-dock-actions button,
+#studio-relay-page-overlays .studio-relay-image-dock-row button {
+    min-height: 34px !important;
+    padding: 7px 9px !important;
+    border: 1px solid rgba(148, 163, 184, 0.2) !important;
+    border-radius: 9px !important;
+    background: rgba(39, 39, 48, 0.92) !important;
+    box-shadow: none !important;
+    color: #e4e4e7 !important;
+    font: 700 9px/1 Inter, ui-sans-serif, system-ui, sans-serif !important;
+    white-space: nowrap !important;
+    cursor: pointer !important;
+}
+
+#studio-relay-page-overlays .studio-relay-image-dock-actions button:hover,
+#studio-relay-page-overlays .studio-relay-image-dock-row button:hover {
+    border-color: rgba(129, 140, 248, 0.55) !important;
+    background: rgba(63, 63, 70, 0.98) !important;
+    color: #ffffff !important;
+}
+
+#studio-relay-page-overlays .studio-relay-image-dock-actions button:disabled,
+#studio-relay-page-overlays .studio-relay-image-dock-row button:disabled {
+    cursor: not-allowed !important;
+    opacity: 0.48 !important;
+}
+
+#studio-relay-page-overlays .studio-relay-image-dock-actions .studio-relay-image-dock-primary {
+    border-color: rgba(165, 180, 252, 0.38) !important;
+    background: linear-gradient(135deg, #6366f1, #7c3aed) !important;
+    color: #ffffff !important;
+}
+
+#studio-relay-page-overlays .studio-relay-image-dock-list {
+    display: flex !important;
+    min-height: 44px !important;
+    max-height: 210px !important;
+    flex-direction: column !important;
+    gap: 6px !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    scrollbar-color: rgba(129, 140, 248, 0.45) transparent !important;
+    scrollbar-width: thin !important;
+}
+
+#studio-relay-page-overlays .studio-relay-image-dock-row {
+    display: grid !important;
+    grid-template-columns: 10px auto minmax(0, 1fr) auto !important;
+    align-items: center !important;
+    gap: 7px !important;
+    min-height: 42px !important;
+    padding: 6px 7px !important;
+    border: 1px solid rgba(148, 163, 184, 0.16) !important;
+    border-radius: 9px !important;
+    background: rgba(17, 17, 19, 0.9) !important;
+}
+
+#studio-relay-page-overlays .studio-relay-image-dock-row:hover {
+    border-color: rgba(129, 140, 248, 0.38) !important;
+    background: rgba(24, 24, 27, 0.96) !important;
+}
+
+#studio-relay-page-overlays .studio-relay-image-dock-dot {
+    width: 8px !important;
+    height: 8px !important;
+    border: 1px solid rgba(212, 212, 216, 0.72) !important;
+    border-radius: 999px !important;
+    background: #a78bfa !important;
+    box-shadow: 0 0 8px rgba(167, 139, 250, 0.35) !important;
+}
+
+#studio-relay-page-overlays .studio-relay-image-dock-row.is-done .studio-relay-image-dock-dot {
+    border-color: rgba(134, 239, 172, 0.8) !important;
+    background: #22c55e !important;
+    box-shadow: 0 0 8px rgba(34, 197, 94, 0.35) !important;
+}
+
+#studio-relay-page-overlays .studio-relay-image-dock-number {
+    padding: 4px 5px !important;
+    border-radius: 5px !important;
+    background: rgba(99, 102, 241, 0.18) !important;
+    color: #c7d2fe !important;
+    font: 750 7px/1 Inter, ui-sans-serif, system-ui, sans-serif !important;
+}
+
+#studio-relay-page-overlays .studio-relay-image-dock-info {
+    display: flex !important;
+    min-width: 0 !important;
+    flex-direction: column !important;
+    gap: 3px !important;
+}
+
+#studio-relay-page-overlays .studio-relay-image-dock-info strong,
+#studio-relay-page-overlays .studio-relay-image-dock-info small {
+    display: block !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+}
+
+#studio-relay-page-overlays .studio-relay-image-dock-info strong {
+    color: #e4e4e7 !important;
+    font: 700 9px/1.1 Inter, ui-sans-serif, system-ui, sans-serif !important;
+}
+
+#studio-relay-page-overlays .studio-relay-image-dock-info small {
+    color: #71717a !important;
+    font: 550 7px/1.1 Inter, ui-sans-serif, system-ui, sans-serif !important;
+}
+
+#studio-relay-page-overlays .studio-relay-image-dock-row button {
+    min-height: 26px !important;
+    padding: 5px 7px !important;
+    border-color: rgba(129, 140, 248, 0.28) !important;
+    background: rgba(99, 102, 241, 0.15) !important;
+    color: #c7d2fe !important;
+    font-size: 7.5px !important;
+}
+
+#studio-relay-page-overlays .studio-relay-image-dock-empty {
+    margin: auto 0 !important;
+    padding: 12px 8px !important;
+    color: #71717a !important;
+    font: 600 8.5px/1.4 Inter, ui-sans-serif, system-ui, sans-serif !important;
+    text-align: center !important;
+}
+
+#studio-relay-page-overlays .studio-relay-image-dock-status {
+    min-height: 11px !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+    color: #a1a1aa !important;
+    font: 600 7.5px/1.3 Inter, ui-sans-serif, system-ui, sans-serif !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+}
+
+#studio-relay-page-overlays .studio-relay-image-dock-status[data-state="success"] {
+    color: #86efac !important;
+}
+
+#studio-relay-page-overlays .studio-relay-image-dock-status[data-state="error"] {
+    color: #fca5a5 !important;
+}
+
+#studio-relay-page-overlays .studio-relay-image-dock-status[data-state="working"] {
+    color: #c7d2fe !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #studio-relay-page-overlays * {
+        animation: none !important;
+        transition-duration: 0.01ms !important;
+    }
+}

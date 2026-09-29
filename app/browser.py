@@ -70,7 +70,7 @@ def clean_session_hard(user_data_dir):
     except Exception as e:
         print(f"Clean hard err {e}")
 
-def get_chromium_runner_simple(profile_id, user_data_dir, proxy_dict, fingerprint, startup_urls=None, startup_mode="once", port=None, enable_ext_btn2=False, enable_ext=True, profile_extensions="", headless=False):
+def get_chromium_runner_simple(profile_id, profile_name, user_data_dir, proxy_dict, fingerprint, startup_urls=None, startup_mode="once", port=None, enable_ext_btn2=False, enable_ext=True, profile_extensions="", headless=False):
     proxy_str = repr(proxy_dict)
     user_data_dir_fs = user_data_dir.replace("\\", "/")
     log_path = str((LOGS_DIR / f"launch_{profile_id}.log").as_posix())
@@ -94,13 +94,13 @@ def get_chromium_runner_simple(profile_id, user_data_dir, proxy_dict, fingerprin
     lines.append("")
     lines.append(f'project_root = {str(BASE_DIR)!r}')
     lines.append(f'profile_id = "{profile_id}"')
+    lines.append(f'profile_name = {json.dumps(profile_name)}')
     lines.append(f'user_data_dir = r"{user_data_dir_fs}"')
     lines.append(f'proxy = {proxy_str}')
     lines.append(f'sw = {sw}')
     lines.append(f'sh = {sh}')
     lines.append(f'random_id = {random_id}')
     
-    import json
     lines.append(f'startup_urls_str = {json.dumps(startup_urls if startup_urls else "")}')
     lines.append(f'startup_mode = {json.dumps(startup_mode if startup_mode else "once")}')
     lines.append(f'cdp_port = {port}')
@@ -162,6 +162,28 @@ def get_chromium_runner_simple(profile_id, user_data_dir, proxy_dict, fingerprin
     lines.append('        accept_downloads=True,')
     lines.append("    )")
     code_no_ext = """
+    # Tao extension doi ten tab
+    # Tao extension doi ten tab
+    try:
+        name_ext_dir = Path(user_data_dir) / "automation_extensions" / "name_tab"
+        name_ext_dir.mkdir(parents=True, exist_ok=True)
+        (name_ext_dir / "manifest.json").write_text(json.dumps({
+            "manifest_version": 3,
+            "name": "Profile Name Tab",
+            "version": "1.0",
+            "content_scripts": [{
+                "matches": ["<all_urls>"],
+                "js": ["content.js"],
+                "run_at": "document_idle"
+            }]
+        }), encoding="utf-8")
+        
+        js_code = "setInterval(() => { if (!document.title.startsWith('[' + " + repr(profile_name) + " + ']')) { document.title = '[' + " + repr(profile_name) + " + '] ' + document.title.replace(/^\\\\[.*?\\\\]\\\\s*/, ''); } }, 1000);"
+        (name_ext_dir / "content.js").write_text(js_code, encoding="utf-8")
+        launch_args.setdefault("extension_paths", []).append(str(name_ext_dir))
+    except Exception as e:
+        log(f"Err creating name tab ext: {e}")
+
     if enable_ext and profile_extensions:
         import sys
         sys.path.insert(0, str(Path(__file__).parent.parent / "app"))
@@ -412,6 +434,27 @@ def _launch_profile(profile, req=None):
             fp_path.write_text(json.dumps(profile.fingerprint, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
         except:
             pass
+            
+    # Ghi tên profile vào file Preferences để Chrome hiển thị ở góc trên bên phải
+    try:
+        default_dir = Path(user_data_dir) / "Default"
+        default_dir.mkdir(parents=True, exist_ok=True)
+        pref_file = default_dir / "Preferences"
+        
+        prefs = {}
+        if pref_file.exists():
+            try:
+                prefs = json.loads(pref_file.read_text(encoding="utf-8"))
+            except:
+                pass
+        
+        if "profile" not in prefs:
+            prefs["profile"] = {}
+        prefs["profile"]["name"] = profile.name
+        
+        pref_file.write_text(json.dumps(prefs, ensure_ascii=False), encoding="utf-8")
+    except Exception as e:
+        print(f"Error setting profile name in Preferences: {e}")
 
     startup_urls = req.startup_urls if req else None
     startup_mode = req.startup_mode if req else None
@@ -421,7 +464,7 @@ def _launch_profile(profile, req=None):
     port = get_free_port()
     headless = getattr(req, 'headless', False) if req else False
     
-    py_code = get_chromium_runner_simple(profile.id, user_data_dir, proxy_dict, profile.fingerprint, startup_urls, startup_mode, port, enable_ext_btn2, enable_ext, profile_extensions, headless=headless)
+    py_code = get_chromium_runner_simple(profile.id, profile.name, user_data_dir, proxy_dict, profile.fingerprint, startup_urls, startup_mode, port, enable_ext_btn2, enable_ext, profile_extensions, headless=headless)
 
     tmp_script = DATA_DIR / f"runner_{profile.id}.py"
     tmp_script.write_text(py_code, encoding="utf-8")

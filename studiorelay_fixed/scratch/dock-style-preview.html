@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>StudioRelay dock style preview</title>
+    <style>
+        * { box-sizing: border-box; }
+        html, body { width: 100%; min-height: 100%; margin: 0; }
+        body {
+            overflow: hidden;
+            background:
+                radial-gradient(circle at 22% 22%, rgba(30, 64, 175, 0.2), transparent 32%),
+                linear-gradient(145deg, #111827, #05070b 68%);
+            color: #cbd5e1;
+            font: 14px/1.5 Inter, system-ui, sans-serif;
+        }
+        .page {
+            width: min(720px, calc(100% - 460px));
+            margin: 70px;
+        }
+        .page-kicker { color: #818cf8; font-size: 12px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+        .page h1 { max-width: 620px; margin: 10px 0; color: #f8fafc; font-size: 42px; line-height: 1.08; }
+        .page p { max-width: 540px; color: #94a3b8; font-size: 16px; }
+        .stage {
+            height: 250px;
+            margin-top: 34px;
+            border: 1px solid rgba(148, 163, 184, .15);
+            border-radius: 18px;
+            background: rgba(15, 23, 42, .55);
+        }
+        .generation-bar {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin-top: 18px;
+            padding: 12px 14px;
+            border: 1px solid rgba(148, 163, 184, .15);
+            border-radius: 14px;
+            background: #ffffff;
+            color: #111827;
+        }
+        .generation-bar button {
+            border: 0;
+            background: transparent;
+            color: #2563eb;
+            font: 650 14px/1 Inter, system-ui, sans-serif;
+        }
+    </style>
+    <link rel="stylesheet" href="../dock-polish.css">
+</head>
+<body>
+    <main class="page">
+        <div class="page-kicker">Local visual fixture</div>
+        <h1>Dola workspace preview</h1>
+        <p>This page mimics the host surface so the injected dock theme can be reviewed without touching a real account or session.</p>
+        <div class="generation-bar">
+            <button type="button">Create Video</button>
+            <span>Model 2.0 Fast</span>
+            <span>30s (Bypassed)</span>
+            <span style="color:#0ea5e9; font-weight:700;">Ratio 9:16</span>
+        </div>
+        <div class="stage"></div>
+    </main>
+
+    <aside
+        id="channa-seq-dock"
+        style="position: fixed; right: 28px; top: 28px; width: 352px; padding: 16px; background: #2e1065; border: 1px solid #7c3aed; border-radius: 12px; box-shadow: 0 12px 40px rgba(88,28,135,.55); z-index: 99;"
+    >
+        <div id="channa-dock-header" style="display:flex; align-items:center; justify-content:space-between; padding:12px; background:#4c1d95; border-radius:9px;">
+            <div>
+                <div style="font-size:11px; opacity:.75;">STUDIORELAY</div>
+                <strong style="font-size:16px;">Prompt Dock</strong>
+            </div>
+            <span id="channa-dock-counter" style="padding:5px 8px; background:#16a34a; color:white; border-radius:999px;">2 / 8</span>
+        </div>
+
+        <input
+            id="channa-dock-search"
+            type="search"
+            placeholder="Search prompts"
+            style="width:100%; margin-top:12px; padding:10px 12px; background:#1e1b4b; border:1px solid #8b5cf6; color:white;"
+        >
+
+        <div style="margin-top:12px; padding:12px; background:#3b0764; border:1px solid #6d28d9; border-radius:10px;">
+            <div style="display:flex; justify-content:space-between; gap:12px;">
+                <strong>Prompt 02</strong>
+                <span style="padding:3px 7px; background:#16a34a; border-radius:999px;">Queued</span>
+            </div>
+            <p style="margin:8px 0 0; color:#d8b4fe;">A clean cinematic product reveal with slow camera movement and balanced lighting.</p>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:12px;">
+            <button id="channa-dock-prev" type="button" style="padding:9px; background:#4c1d95; color:white;">Previous</button>
+            <button id="channa-dock-next" type="button" style="padding:9px; background:#16a34a; color:white;">Next prompt</button>
+        </div>
+        <button id="channa-dock-paste" type="button" style="width:100%; margin-top:8px; padding:10px; background:#7c3aed; color:white;">Paste into Studio</button>
+    </aside>
+
+    <div id="channa-inpage-toast" style="position:fixed; left:28px; bottom:28px; padding:10px 14px; background:#4c1d95; color:white;">Prompt ready</div>
+    <div id="channa-tab-session-badge" style="position:fixed; right:28px; bottom:28px; padding:8px 12px; background:#14532d; color:white;">Container: sample account [30s HD · Free Queue]</div>
+    <script src="../site-polish.js"></script>
+</body>
+</html>

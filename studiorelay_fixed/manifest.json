@@ -1,0 +1,90 @@
+{
+  "manifest_version": 3,
+  "name": "StudioRelay",
+  "version": "10.1.3",
+  "description": "A focused Dola workflow companion for prompts, accounts, automation settings, and Kartar page status.",
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
+  "permissions": [
+    "storage",
+    "cookies",
+    "downloads",
+    "tabs",
+    "webNavigation",
+    "declarativeNetRequest",
+    "declarativeNetRequestWithHostAccess"
+  ],
+  "host_permissions": [
+    "*://*.dola.com/*",
+    "*://*.seaart.ai/*",
+    "*://*.byteintl.com/*",
+    "*://*.ibytedtos.com/*",
+    "https://dola.com/*",
+    "https://www.dola.com/*",
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.dola.com/*",
+        "*://*.seaart.ai/*",
+        "https://dola.com/*",
+        "https://www.dola.com/*"
+      ],
+      "js": [
+        "without watermark/extractor.js",
+        "inject.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+        {
+            "matches": [
+                "*://*.dola.com/*",
+                "*://*.seaart.ai/*",
+                "https://dola.com/*",
+                "https://www.dola.com/*"
+            ],
+            "css": [
+                "dock-polish.css"
+            ],
+            "js": [
+                "content.js",
+                "raw-watermark-free-downloader.js",
+                "site-polish.js"
+            ],
+      "run_at": "document_start"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "StudioRelay",
+    "default_icon": {
+      "16": "icon16.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "inject.js",
+        "icon16.png",
+        "icon48.png",
+        "icon128.png"
+      ],
+      "matches": [
+        "*://*.dola.com/*",
+        "*://*.seaart.ai/*",
+        "https://dola.com/*",
+        "https://www.dola.com/*"
+      ]
+    }
+  ]
+}

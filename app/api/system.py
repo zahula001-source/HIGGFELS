@@ -54,6 +54,28 @@ def select_folder():
     except Exception as e:
         return {"path": ""}
 
+@router.post("/api/config")
+async def update_config(req: Request):
+    try:
+        import json
+        config_path = DATA_DIR / "config.json"
+        data = await req.json()
+        config_path.write_text(json.dumps(data, indent=4), encoding="utf-8")
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+@router.get("/api/config")
+def get_config():
+    try:
+        import json
+        config_path = DATA_DIR / "config.json"
+        if config_path.exists():
+            return json.loads(config_path.read_text(encoding="utf-8"))
+        return {}
+    except:
+        return {}
+
 @router.get("/")
 def index():
     index_file = STATIC_DIR / "index.html"

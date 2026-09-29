@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>StudioRelay</title>
+    <script src="popup-config.js"></script>
+    <script src="license-verifier.js"></script>
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <div class="app-backdrop" aria-hidden="true"></div>
+    <main class="popup-container">
+        <header class="header">
+            <div class="brand">
+                <img src="brand-icon.svg" class="avatar-img" alt="StudioRelay logo">
+                <div class="brand-copy">
+                    <h1 class="title">StudioRelay</h1>
+                    <span class="version-badge">Studio version 0.9.1</span>
+                    <a
+                        class="community-link"
+                        id="whatsapp-channel-link"
+                        href="https://whatsapp.com/channel/0029VbDkJSq1CYoXFhiE9g1Y"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        referrerpolicy="no-referrer"
+                        aria-label="Tham gia nhóm WhatsApp"
+                    >
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M20 11.5a8 8 0 0 1-11.8 7L4 20l1.5-4A8 8 0 1 1 20 11.5Z"/>
+                            <path d="M9 8.5c.4 2.5 2 4.1 4.5 4.8M9.2 8.2l1.2 2-1 .8M13.7 13.4l1-1 2 .9"/>
+                        </svg>
+                        <span>Tham gia nhóm WhatsApp</span>
+                    </a>
+                </div>
+            </div>
+            <div class="active-badge" id="header-active-account" title="Tài khoản đang dùng">Mặc định</div>
+        </header>
+
+        <section class="tab-content license-view" id="view-license-lock" style="display: none;" aria-labelledby="license-title">
+            <div class="lock-card">
+                <div class="lock-mark" aria-hidden="true">
+                    <img src="brand-icon.svg" class="lock-avatar-img" alt="">
+                </div>
+                <p class="eyebrow">Bản quyền StudioRelay</p>
+                <h2 class="lock-title" id="license-title">Kích hoạt thiết bị này</h2>
+                <p class="lock-sub">Bản quyền này gắn với thiết bị của bạn. Hãy copy ID thiết bị để lấy key.</p>
+                <div class="machine-id-container">
+                    <label class="machine-id-label" for="display-machine-id">ID Thiết bị</label>
+                    <div class="machine-id-box" id="display-machine-id" role="textbox" aria-readonly="true">Đang tạo…</div>
+                    <button class="btn-copy-id" id="btn-copy-machine-id" type="button">Copy ID thiết bị</button>
+                </div>
+                <div class="key-input-container">
+                    <label class="machine-id-label" for="input-license-key">Key kích hoạt</label>
+                    <input type="text" id="input-license-key" class="input-text" placeholder="CTB-VIP-XXXX-XXXX-XXXX-XXXX" autocomplete="off" spellcheck="false">
+                    <button class="btn-primary license-activate-btn" id="btn-activate-license" type="button">Kích hoạt ngay</button>
+                    <div id="activation-error" class="activation-error" role="status" aria-live="polite"></div>
+                </div>
+                <div class="contact-support-box">
+                    <span>Bạn cần key kích hoạt?</span>
+                    <span>Liên hệ quản trị viên để mua key.</span>
+                </div>
+            </div>
+        </section>
+        <div id="main-unlocked-ui">
+            <nav class="nav-tabs" aria-label="StudioRelay sections" role="tablist">
+                <button class="nav-btn" id="tab-generator" type="button" role="tab" aria-controls="view-generator" aria-selected="false" aria-hidden="true" tabindex="-1" hidden>
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M4 7.5h10.5A2.5 2.5 0 0 1 17 10v4a2.5 2.5 0 0 1-2.5 2.5H4A2.5 2.5 0 0 1 1.5 14v-4A2.5 2.5 0 0 1 4 7.5Z"/>
+                        <path d="m17 11 4.2-2.4a.5.5 0 0 1 .8.43v5.94a.5.5 0 0 1-.8.43L17 13"/>
+                    </svg>
+                    <span>Bảng điều khiển</span>
+                </button>
+                <button class="nav-btn active" id="tab-prompts" type="button" role="tab" aria-controls="view-prompts" aria-selected="true">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M7 3.5h7l3 3V20H7a2 2 0 0 1-2-2V5.5a2 2 0 0 1 2-2Z"/>
+                        <path d="M14 3.5V7h3.5M8.5 11h5.5M8.5 14.5h7"/>
+                    </svg>
+                    <span>Lệnh (Prompts)</span>
+                </button>
+                <button class="nav-btn" id="tab-accounts" type="button" role="tab" aria-controls="view-accounts" aria-selected="false">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M15.5 19a5.5 5.5 0 0 0-11 0M10 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM16 5.5a3 3 0 0 1 0 5.8M18 14.5a4.5 4.5 0 0 1 2 3.75"/>
+                    </svg>
+                    <span>Tài khoản</span>
+                </button>
+                <button class="nav-btn" id="tab-settings" type="button" role="tab" aria-controls="view-settings" aria-selected="false">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M12 2v3M12 19v3M4.9 4.9 7 7M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/>
+                    </svg>
+                    <span>Cài đặt</span>
+                </button>
+                <button class="nav-btn" id="tab-logs" type="button" role="tab" aria-controls="view-logs" aria-selected="false">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M5 4h14v16H5zM8.5 8h7M8.5 12h7M8.5 16h4"/>
+                    </svg>
+                    <span>Hoạt động</span>
+                </button>
+            </nav>
+            <section class="tab-content hidden" id="view-generator" role="tabpanel" aria-labelledby="tab-generator" aria-hidden="true" hidden>
+                <div class="status-card">
+                    <div class="status-indicator" aria-hidden="true"><span class="pulse-dot"></span></div>
+                    <div class="status-copy">
+                        <div class="status-title">Studio đã sẵn sàng</div>
+                        <div class="status-sub">Đã kết nối tính năng tạo video với Dola.</div>
+                    </div>
+                    <div class="badges-row" aria-label="Current generation settings">
+                        <span class="badge"><strong id="badge-duration">30s</strong></span>
+                        <span class="badge"><strong id="badge-ratio">9:16</strong></span>
+                    </div>
+                </div>
+                <div class="duration-selector-card">
+                    <div class="control-heading">
+                        <div>
+                            <span class="duration-label">Thời lượng video</span>
+                            <span class="control-hint">Chọn độ dài mong muốn</span>
+                        </div>
+                        <span class="context-label">Tạo video</span>
+                    </div>
+                    <div class="duration-pill-row" aria-label="Thời lượng video">
+                        <button class="dur-pill" data-dur="10" type="button">10s</button>
+                        <button class="dur-pill" data-dur="15" type="button">15s</button>
+                        <button class="dur-pill" data-dur="20" type="button">20s</button>
+                        <button class="dur-pill" data-dur="25" type="button">25s</button>
+                        <button class="dur-pill active" data-dur="30" type="button">30s</button>
+                        <button class="dur-pill" data-dur="60" type="button">60s</button>
+                    </div>
+                    <div class="control-heading control-heading-spaced">
+                        <div>
+                            <span class="duration-label">Khung hình (Tỷ lệ)</span>
+                            <span class="control-hint">Chọn tỷ lệ phù hợp</span>
+                        </div>
+                        <span class="context-label">Seedance 2.5</span>
+                    </div>
+                    <div class="ratio-pill-row" aria-label="Khung hình (Tỷ lệ)">
+                        <button class="ratio-pill active" data-ratio="9:16" type="button">9:16</button>
+                        <button class="ratio-pill" data-ratio="16:9" type="button">16:9</button>
+                        <button class="ratio-pill" data-ratio="1:1" type="button">1:1</button>
+                        <button class="ratio-pill" data-ratio="3:4" type="button">3:4</button>
+                        <button class="ratio-pill" data-ratio="4:3" type="button">4:3</button>
+                        <button class="ratio-pill" data-ratio="21:9" type="button">21:9</button>
+                    </div>
+                </div>
+                <div class="actions-group">
+                    <button id="btn-open-studio" class="btn-primary action-button" type="button">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7Z"/></svg>
+                        <span class="button-copy"><strong>Mở Bảng điều khiển</strong><small>Tiếp tục công việc của bạn</small></span>
+                        <svg class="trailing-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+                    </button>
+                    <button id="btn-fetch" class="btn-secondary action-button" type="button" title="Download the video from the active Dola tab">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7.5 10.5 12 15l4.5-4.5M5 20h14"/></svg>
+                        <span class="button-copy"><strong>Tải video</strong><small>Lưu video hiện tại với chất lượng gốc</small></span>
+                    </button>
+                    <button id="btn-clear-session" class="btn-danger btn-quiet-danger" type="button">Làm mới phiên làm việc</button>
+                </div>
+            </section>
+            <section class="tab-content" id="view-prompts" role="tabpanel" aria-labelledby="tab-prompts">
+                <div class="section-header-row">
+                    <div>
+                        <span class="section-title">Lệnh (Prompts)</span>
+                        <span class="section-description"><span id="prompt-counter">0</span> đã lưu</span>
+                    </div>
+                    <div class="toolbar-actions">
+                        <input type="file" id="file-upload-prompts" accept=".csv, .txt" hidden>
+                        <button id="btn-trigger-upload" class="btn-mini-primary" type="button" title="Import a CSV or TXT file">Tải lên</button>
+                        <button id="btn-reset-progress" class="btn-mini-primary" type="button" title="Reset completed prompt states">Làm mới</button>
+                        <button id="btn-clear-prompts" class="btn-mini-delete" type="button" title="Clear all prompts">Xóa sạch</button>
+                    </div>
+                </div>
+                <div class="search-filter-row">
+                    <label class="search-field" for="input-search-prompts">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <circle cx="11" cy="11" r="7"/>
+                            <path d="m16 16 4 4"/>
+                        </svg>
+                        <input type="text" id="input-search-prompts" class="input-search" placeholder="Tìm kiếm lệnh...">
+                    </label>
+                    <div class="filter-pills-row" aria-label="Prompt status filter">
+                        <button class="filter-pill active" data-filter="all" type="button">Tất cả <span id="count-all">0</span></button>
+                        <button class="filter-pill" data-filter="queued" type="button">Chờ chạy <span id="count-queued">0</span></button>
+                        <button class="filter-pill" data-filter="done" type="button">Đã xong <span id="count-done">0</span></button>
+                    </div>
+                </div>
+                <div class="prompt-input-card">
+                    <label class="field-label" for="textarea-quick-prompts">Thêm nhanh</label>
+                    <textarea id="textarea-quick-prompts" class="input-textarea" placeholder="Dán mỗi lệnh 1 dòng hoặc dán nội dung file CSV..."></textarea>
+                    <button id="btn-add-bulk-prompts" class="btn-primary btn-compact" type="button">Thêm vào danh sách</button>
+                </div>
+                <div class="prompts-list" id="prompts-container">
+                    <div class="empty-state">
+                        <span class="empty-state-icon" aria-hidden="true">+</span>
+                        <strong>Chưa có lệnh nào</strong>
+                        <span>Tải file lên hoặc nhập lệnh ở trên.</span>
+                    </div>
+                </div>
+            </section>
+            <section class="tab-content hidden" id="view-accounts" role="tabpanel" aria-labelledby="tab-accounts">
+                <div class="section-header-row">
+                    <div>
+                        <span class="section-title">Tài khoản</span>
+                        <span class="section-description"><span id="accounts-counter">0</span> đã lưu</span>
+                    </div>
+                    <div class="toolbar-actions">
+                        <input type="file" id="file-upload-accounts" multiple accept=".json, .txt, .netscape, .csv" hidden>
+                        <button id="btn-trigger-upload-accounts" class="btn-mini-primary" type="button" title="Nhập file cookie">Tải lên</button>
+                        <button id="btn-capture-session" class="btn-mini-primary" type="button" title="Lấy tài khoản đang đăng nhập từ tab hiện tại">Lấy ngay</button>
+                        <button id="btn-clear-all-accounts" class="btn-mini-delete" type="button" title="Xóa tất cả tài khoản">Xóa sạch</button>
+                    </div>
+                </div>
+                <div class="search-filter-row">
+                    <label class="search-field" for="input-search-accounts">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <circle cx="11" cy="11" r="7"/>
+                            <path d="m16 16 4 4"/>
+                        </svg>
+                        <input type="text" id="input-search-accounts" class="input-search" placeholder="Tìm kiếm tài khoản...">
+                    </label>
+                </div>
+                <div class="prompt-input-card">
+                    <label class="field-label" for="input-profile-name">Nhập một tài khoản</label>
+                    <input type="text" id="input-profile-name" class="input-text" placeholder="Tên tài khoản (không bắt buộc)">
+                    <textarea id="input-profile-cookies" class="input-textarea" placeholder="Dán nội dung JSON, Netscape, CSV, hoặc cookie..."></textarea>
+                    <button id="btn-import-profile" class="btn-primary btn-compact" type="button">Thêm tài khoản</button>
+                </div>
+                <div class="profiles-list" id="profiles-container">
+                    <div class="empty-state">
+                        <span class="empty-state-icon" aria-hidden="true">+</span>
+                        <strong>Chưa có tài khoản nào</strong>
+                        <span>Tải file lên hoặc lấy tài khoản từ tab hiện tại.</span>
+                    </div>
+                </div>
+            </section>
+            <section class="tab-content hidden" id="view-settings" role="tabpanel" aria-labelledby="tab-settings">
+                <div class="section-heading-block">
+                    <span class="section-title">Cài đặt</span>
+                    <span class="section-description">Tùy chỉnh tính năng tạo và tự động hóa.</span>
+                </div>
+                <div class="settings-list">
+                    <div class="setting-group">
+                        <div class="setting-group-title">License</div>
+                        <div class="setting-item license-setting">
+                            <div>
+                                <strong>Bản quyền đang kích hoạt</strong>
+                                <span id="settings-license-info">Thiết bị này đã được kích hoạt.</span>
+                            </div>
+                            <span class="success-mark" aria-label="Active">✓</span>
+                        </div>
+                    </div>
+                    <div class="setting-group">
+                        <div class="setting-group-title">Tạo video</div>
+                        <label class="setting-item setting-select-row">
+                            <span>Mặc định video duration</span>
+                            <select id="sel-duration" class="select-box">
+                                <option value="60">60 giây</option>
+                                <option value="30" selected>30 giây</option>
+                                <option value="25">25 giây</option>
+                                <option value="20">20 giây</option>
+                                <option value="15">15 giây</option>
+                                <option value="10">10 giây</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div class="setting-group">
+                        <div class="setting-group-title">Tự động hóa</div>
+                        <label class="setting-item">
+                            <span>Tự động đổi tài khoản khi hết lượt (chạm limit)</span>
+                            <input type="checkbox" id="chk-autorotate" checked>
+                        </label>
+                        <label class="setting-item">
+                            <span>Tự động chuyển prompt sau khi gửi</span>
+                            <input type="checkbox" id="chk-autonext" checked>
+                        </label>
+                        <label class="setting-item">
+                            <span>Tự động tải video khi hoàn thành</span>
+                            <input type="checkbox" id="chk-auto-dl" checked>
+                        </label>
+                        <label class="setting-item">
+                            <span>Tự động dọn dẹp format prompt cho tương thích</span>
+                            <input type="checkbox" id="chk-safety" checked>
+                        </label>
+                    </div>
+                </div>
+            </section>
+            <section class="tab-content hidden" id="view-logs" role="tabpanel" aria-labelledby="tab-logs">
+                <div class="section-heading-block">
+                    <span class="section-title">Hoạt động</span>
+                    <span class="section-description">Lịch sử trạng thái và hành động gần nhất.</span>
+                </div>
+                <div class="terminal" id="terminal" role="log" aria-live="polite">
+                    <div class="activity-item">
+                        <span class="activity-dot success"></span>
+                        <div><strong>StudioRelay đã sẵn sàng</strong><span>Dịch vụ đã được khởi tạo.</span></div>
+                    </div>
+                    <div class="activity-item">
+                        <span class="activity-dot success"></span>
+                        <div><strong>Đã xác thực bản quyền</strong><span>Thiết bị này đang hoạt động.</span></div>
+                    </div>
+                    <div class="activity-item">
+                        <span class="activity-dot"></span>
+                        <div><strong>Giao diện Kartar đã sẵn sàng</strong><span>Đã gắn thành công các trạng thái vào trang web.</span></div>
+                    </div>
+                    <div class="activity-item">
+                        <span class="activity-dot"></span>
+                        <div><strong>Quản lý tài khoản đã sẵn sàng</strong><span>Tính năng thêm, lấy và đổi tài khoản đã hoạt động.</span></div>
+                    </div>
+                </div>
+            </section>
+            <footer class="app-footer" id="app-footer">
+                <span>được tạo bằng</span>
+                <span class="footer-heart" role="img" aria-label="love">❤️</span>
+            </footer>
+        </div>
+    </main>
+    <dialog class="confirm-dialog" id="confirm-dialog" aria-labelledby="confirm-dialog-title" aria-describedby="confirm-dialog-description">
+        <div class="confirm-dialog-icon" aria-hidden="true">!</div>
+        <div>
+            <h2 id="confirm-dialog-title">Xác nhận hành động</h2>
+            <p id="confirm-dialog-description">Hành động này không thể hoàn tác.</p>
+        </div>
+        <div class="confirm-dialog-actions">
+            <button class="btn-secondary" id="confirm-dialog-cancel" type="button">Hủy bỏ</button>
+            <button class="btn-danger" id="confirm-dialog-accept" type="button">Tiếp tục</button>
+        </div>
+    </dialog>
+    <script src="popup.js"></script>
+    <script src="ui-polish.js"></script>
+</body>
+</html>

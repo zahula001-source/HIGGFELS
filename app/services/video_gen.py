@@ -36,11 +36,12 @@ def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False
     ignore_args = []
     args.append("--disable-extensions")
     if is_headless:
-        # Tắt chế độ headless thật để tránh bị website phát hiện/cắt xén DOM
-        # Thay vào đó, đẩy cửa sổ ra tít ngoài màn hình để giấu giao diện đi (vẫn tiết kiệm tài nguyên mà an toàn 100%)
-        # Đã comment lại theo yêu cầu người dùng để luôn hiển thị Chrome
-        # args.append("--window-position=-32000,-32000")
-        # args.append("--window-size=1366,768")
+        pass
+        
+    try:
+        from app.browser_settings import get_global_args
+        args.extend(get_global_args())
+    except Exception as e:
         pass
         
     engine = os.environ.get("HIGGSFIELD_BROWSER_ENGINE", "chrome").lower()
@@ -768,7 +769,34 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                                 page.wait_for_timeout(3000)
                         except: pass
                         
-                        quiz_options = ["For personal use", "Video generations", "Viral content", "Beginner", "I'm new to this"]
+                        quiz_options = [
+                            "Marketing Studio", "Cinema Studio", "MCP & CLI", "Shorts studio", "Supercomputer", "Canvas",
+                            "For personal use", "Video generations", "Viral content", "Beginner", "I'm new to this",
+                            "Video", "Visual editing", 
+                            "Instagram", "TikTok", "YouTube", "Prompting is hard",
+                            "Realistic AI avatars"
+                        ]
+                        
+                        try:
+                            page.evaluate("""() => {
+                                const allEls = document.querySelectorAll('div, span, h3, p');
+                                const targetTexts = [
+                                    'Marketing Studio', 'Cinema Studio', 'MCP & CLI', 'Shorts studio', 'Canvas', 'Supercomputer',
+                                    'For personal use', 'Viral content', 'Beginner', 'Intermediate', 'Advanced', 'Expert',
+                                    'Video', 'Visual editing', 'Instagram', 'TikTok', 'YouTube', 
+                                    'I\\'m new to this', 'Prompting is hard', 'Realistic AI avatars', 'Video generations'
+                                ];
+                                for(let el of allEls) {
+                                    const t = (el.innerText || '').trim();
+                                    if(targetTexts.includes(t)) {
+                                        const clickable = el.closest('button, [role="button"]') || el.closest('div[class*="border"]') || el;
+                                        clickable.click();
+                                    }
+                                }
+                            }""")
+                            page.wait_for_timeout(1000)
+                        except: pass
+
                         for q_text in quiz_options:
                             if q_text in page.quiz_clicked_options: continue
                             try:
@@ -779,34 +807,51 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                                         page.mouse.click(box["x"] + box["width"]/2, box["y"] + box["height"]/2)
                                         page.quiz_clicked_options.add(q_text)
                                         page.wait_for_timeout(500)
-                                        cont_btn = page.locator('button:has-text("Continue")').locator("visible=true")
+                                        cont_btn = page.locator('button:has-text("Continue"), button:has-text("Next"), button:has-text("Choose an option"), button:has-text("Submit")').locator("visible=true")
                                         if cont_btn.count() > 0 and not cont_btn.first.is_disabled(): break
                             except: pass
                             
                         try:
-                            cont_btn = page.locator('button:has-text("Continue")').locator("visible=true")
+                            cont_btn = page.locator('button:has-text("Continue"), button:has-text("Next"), button:has-text("Choose an option"), button:has-text("Submit")').locator("visible=true")
                             if cont_btn.count() > 0 and not cont_btn.first.is_disabled():
                                 box = cont_btn.first.bounding_box()
                                 if box:
                                     page.mouse.click(box["x"] + box["width"]/2, box["y"] + box["height"]/2)
                                     page.wait_for_timeout(1000)
+                            else:
+                                page.evaluate("""() => {
+                                    const btns = Array.from(document.querySelectorAll('button')).filter(b => {
+                                        const text = b.innerText.trim().toLowerCase();
+                                        return (text.includes('continue') || text.includes('next') || text.includes('choose') || text === 'submit') && !b.disabled;
+                                    });
+                                    if(btns.length > 0) btns[btns.length-1].click();
+                                }""")
+                                page.wait_for_timeout(1000)
                         except: pass
 
                     # 1.35. Xử lý popup "Chúng tôi đang cập nhật các điều khoản" (account.live.com/tou/accrue)
                     try:
-                        tiep_theo_btn = page.locator('button[data-testid="primaryButton"]')
-                        if tiep_theo_btn.count() > 0 and tiep_theo_btn.first.is_visible():
-                            btn_text = tiep_theo_btn.first.inner_text().strip().lower()
-                            has_tos = (
-                                "account.live.com/tou" in page.url or
-                                "tou/accrue" in page.url or
-                                "tiếp theo" in btn_text or
-                                "next" in btn_text
-                            )
-                            if has_tos:
+                        if "account.live.com/tou" in page.url or "tou/accrue" in page.url:
+                            tiep_theo_btn = page.locator('button[data-testid="primaryButton"], input[type="submit"][value="Tiếp theo"], input[type="submit"][value="Next"], button:has-text("Tiếp theo"), button:has-text("Next")')
+                            if tiep_theo_btn.count() > 0 and tiep_theo_btn.first.is_visible():
                                 tiep_theo_btn.first.click()
                                 print("Clicked 'Tiếp theo' on Microsoft ToS update page!")
                                 page.wait_for_timeout(2000)
+                            else:
+                                clicked = page.evaluate("""() => {
+                                    const btns = document.querySelectorAll('button, input[type="submit"]');
+                                    for(let b of btns) {
+                                        const t = (b.innerText || b.value || '').trim().toLowerCase();
+                                        if(t === 'tiếp theo' || t === 'next') {
+                                            b.click();
+                                            return true;
+                                        }
+                                    }
+                                    return false;
+                                }""")
+                                if clicked:
+                                    print("Clicked 'Tiếp theo' on Microsoft ToS via JS!")
+                                    page.wait_for_timeout(2000)
                     except: pass
 
                     page.wait_for_timeout(1000)
@@ -840,6 +885,8 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                 if login_success:
                     video_tasks[task_id] = {"status": "running", "message": "✅ Đăng nhập thành công! Đang chuẩn bị tạo video..."}
                 else:
+                    if "quiz" in page.url:
+                        raise Exception("Trình duyệt kẹt ở Quiz! Vui lòng hoàn thành Quiz bằng tay và thử lại.")
                     raise Exception("Không tìm thấy menu Settings, đăng nhập có thể đã thất bại.")
                     
             except Exception as e:
@@ -904,7 +951,27 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                     if not file_paths: return
                     try:
                         # 1. Click vào khu vực Add media (Ảnh hoặc Video)
-                        pg.locator(f'button[aria-label="{btn_aria_label}"]').click(timeout=5000)
+                        try:
+                            # Tìm nút truyền vào (bằng aria-label hoặc text)
+                            btn = pg.locator(f'button[aria-label="{btn_aria_label}" i], div[role="button"][aria-label="{btn_aria_label}" i]')
+                            if btn.count() == 0:
+                                btn = pg.locator(f'text="{btn_aria_label}"')
+                            
+                            if btn.count() > 0:
+                                btn.first.click(timeout=3000, force=True)
+                            else:
+                                raise Exception("Not found")
+                        except:
+                            print(f"  -> Không tìm thấy nút '{btn_aria_label}', thử dùng nút dự phòng...")
+                            if "image" in btn_aria_label.lower() or "character" in btn_aria_label.lower():
+                                # Dự phòng cho Ảnh
+                                fallback_btn = pg.locator('button[aria-label*="image" i], button[aria-label*="character" i], button:has-text("Add your characters"), div[role="button"]:has-text("Add your characters")')
+                            else:
+                                # Dự phòng cho Video
+                                fallback_btn = pg.locator('button[aria-label*="video" i], button:has-text("Add a reference video"), div[role="button"]:has-text("Add a reference video")')
+                            
+                            fallback_btn.first.click(timeout=5000, force=True)
+                        
                         pg.wait_for_timeout(1500)
                         handle_media_upload_modal(pg)
                 
@@ -939,7 +1006,7 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                             print("  -> Tải Video: Đang chờ popup Edit reference và nút Confirm xuất hiện...")
                             pg.wait_for_timeout(2000) # Đợi animation của popup
                             try:
-                                confirm_btn = pg.locator('button:has-text("Confirm")').locator("visible=true").last
+                                confirm_btn = pg.locator('button:has-text("Confirm"):visible').last
                                 # Thử đợi tối đa 8 giây
                                 try:
                                     confirm_btn.wait_for(state="visible", timeout=8000)
@@ -1066,6 +1133,15 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                     
                         # Xử lý popup Media upload agreement có thể hiện ra sau khi click chọn file
                         handle_media_upload_modal(pg)
+                        
+                        # 4.5. Nếu có nút Select / Apply / Add ở dưới cùng để xác nhận chọn file, thì bấm nó
+                        try:
+                            select_btn = pg.locator('button:has-text("Select"):visible, button:has-text("Apply"):visible, button:has-text("Add"):visible').first
+                            if select_btn.is_visible(timeout=1500):
+                                print("  -> Thấy nút Select/Apply/Add sau khi chọn file, tiến hành bấm...")
+                                select_btn.click(timeout=2000, force=True)
+                                pg.wait_for_timeout(1000)
+                        except: pass
                         
                         # 5. Tắt modal upload bằng nút X (nếu có, thường dành cho tải ảnh)
                         try:

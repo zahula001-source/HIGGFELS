@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>StudioRelay download card preview</title>
+    <style>
+        * { box-sizing: border-box; }
+        html, body { min-height: 100%; margin: 0; }
+        body {
+            display: grid;
+            place-items: center;
+            background:
+                radial-gradient(circle at 50% 22%, rgba(99, 102, 241, .13), transparent 34%),
+                #090a0f;
+            font-family: Inter, system-ui, sans-serif;
+        }
+        .video-card {
+            position: relative;
+            width: 168px;
+            overflow: hidden;
+            border: 1px solid rgba(148, 163, 184, .2);
+            border-radius: 10px;
+            background: #11131a;
+            box-shadow: 0 18px 50px rgba(0, 0, 0, .38);
+        }
+        .video-preview {
+            position: relative;
+            height: 222px;
+            overflow: hidden;
+            background:
+                linear-gradient(145deg, transparent 55%, rgba(15, 23, 42, .55)),
+                radial-gradient(circle at 64% 30%, #d1b69e 0 16%, transparent 17%),
+                radial-gradient(circle at 38% 38%, #6f3f53 0 15%, transparent 16%),
+                linear-gradient(155deg, #d8c9b7, #a38470 58%, #4b3540);
+        }
+        .video-preview::after {
+            position: absolute;
+            inset: auto 0 0;
+            height: 64px;
+            background: linear-gradient(transparent, rgba(0, 0, 0, .55));
+            content: "";
+        }
+        .play-mark {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            z-index: 1;
+            display: grid;
+            width: 18px;
+            height: 18px;
+            place-items: center;
+            border-radius: 999px;
+            background: rgba(15, 23, 42, .72);
+            color: white;
+            font-size: 9px;
+        }
+        .legacy-download {
+            width: 100%;
+            min-height: 64px;
+            padding: 10px;
+            border: 0;
+            border-radius: 9px;
+            background: linear-gradient(135deg, #7c3aed, #9333ea);
+            color: white;
+            font: 800 12px/1.45 Arial, sans-serif;
+            text-transform: uppercase;
+        }
+        .watermark {
+            position: absolute;
+            right: 5px;
+            bottom: 3px;
+            color: rgba(255,255,255,.5);
+            font-size: 6px;
+        }
+    </style>
+    <link rel="stylesheet" href="../dock-polish.css">
+</head>
+<body>
+    <article class="video-card">
+        <div class="video-preview">
+            <span class="play-mark">▶</span>
+        </div>
+        <button class="legacy-download" type="button">
+            <span>📹 FETCH 30s HD</span><br>
+            <span>VIDEO</span>
+        </button>
+        <span class="watermark">Dola AI</span>
+    </article>
+    <script src="../site-polish.js"></script>
+    <script>
+        window.setTimeout(() => {
+            const button = document.querySelector('.legacy-download');
+            if (button) button.textContent = '✓ Downloaded!';
+        }, 250);
+    </script>
+</body>
+</html>

@@ -1,0 +1,97 @@
+{
+    "manifest_version": 3,
+    "name": "higgsfield EX",
+    "version": "1.7",
+    "description": "Công cụ hỗ trợ quy trình làm việc Dola chuyên dụng cho Prompts, Accounts, cài đặt tự động hóa và trạng thái trang Kartar.",
+    "icons": {
+        "16": "icon16.png",
+        "48": "icon48.png",
+        "128": "icon128.png"
+    },
+    "permissions": [
+        "sidePanel",
+        "storage",
+        "cookies",
+        "downloads",
+        "offscreen",
+        "tabs",
+        "webNavigation",
+        "declarativeNetRequest",
+        "declarativeNetRequestWithHostAccess"
+    ],
+    "side_panel": {
+        "default_path": "popup.html"
+    },
+    "host_permissions": [
+        "*://*.dola.com/*",
+        "*://*.seaart.ai/*",
+        "*://*.byteintl.com/*",
+        "*://*.ibytedtos.com/*",
+        "https://dola.com/*",
+        "https://www.dola.com/*",
+        "<all_urls>"
+    ],
+    "background": {
+        "service_worker": "background.js"
+    },
+    "content_scripts": [
+        {
+            "matches": [
+                "*://*.dola.com/*",
+                "*://*.seaart.ai/*",
+                "https://dola.com/*",
+                "https://www.dola.com/*"
+            ],
+            "js": [
+                "image-attachment-main.js",
+                "without watermark/extractor.js",
+                "inject.js"
+            ],
+            "run_at": "document_start",
+            "world": "MAIN"
+        },
+        {
+            "matches": [
+                "*://*.dola.com/*",
+                "*://*.seaart.ai/*",
+                "https://dola.com/*",
+                "https://www.dola.com/*"
+            ],
+            "css": [
+                "dock-polish.css"
+            ],
+            "js": [
+                "content.js",
+                "raw-watermark-free-downloader.js",
+                "site-polish.js",
+                "verified-image-upload-content.js"
+            ],
+            "run_at": "document_start"
+        }
+    ],
+    "action": {
+        "default_title": "higgsfield EX",
+        "default_icon": {
+            "16": "icon16.png",
+            "48": "icon48.png",
+            "128": "icon128.png"
+        }
+    },
+    "web_accessible_resources": [
+        {
+            "resources": [
+                "inject.js",
+                "brand-icon.svg",
+                "icon16.png",
+                "icon48.png",
+                "icon128.png"
+            ],
+            "matches": [
+                "*://*.dola.com/*",
+                "*://*.seaart.ai/*",
+                "https://dola.com/*",
+                "https://www.dola.com/*"
+            ]
+        }
+    ]
+}

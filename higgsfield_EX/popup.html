@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <script src='popup-config.js'></script>
+    <meta charset="UTF-8">
+    <title>StudioRelay</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <div class="popup-container">
+        
+        <!-- Header -->
+        <div class="header">
+            <div class="brand">
+                <img src="brand-icon.svg" class="avatar-img" alt="StudioRelay logo">
+                <div class="brand-copy">
+                    <h1 class="title">StudioRelay</h1>
+                    <span class="version-badge">Studio version 1.7</span>
+                </div>
+            </div>
+            <div class="active-badge" id="header-active-account" title="Tài khoản đang hoạt động">
+                🟢 Mặc định
+            </div>
+        </div>
+
+        <!-- 🔒 LOCK SCREEN VIEW (Shown when unactivated) -->
+        <div class="tab-content" id="view-license-lock" style="display: none;">
+            <div class="lock-card">
+                <div class="lock-mark">
+                    <img src="brand-icon.svg" class="lock-avatar-img" alt="StudioRelay logo">
+                </div>
+                <p class="eyebrow" style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 0 0 4px 0;">Bản quyền StudioRelay</p>
+                <h2 class="lock-title">Kích hoạt thiết bị này</h2>
+                <p class="lock-sub">Bản quyền này được liên kết với thiết bị của bạn. Hãy sao chép ID thiết bị và sử dụng mã kích hoạt từ quản trị viên.</p>
+                
+                <div class="machine-id-container">
+                    <span class="machine-id-label">ID PHẦN CỨNG THIẾT BỊ CỦA BẠN:</span>
+                    <div class="machine-id-box" id="display-machine-id">ĐANG TẠO...</div>
+                    <button class="btn-copy-id" id="btn-copy-machine-id">📋 Sao chép ID Thiết bị</button>
+                </div>
+
+                <div class="key-input-container">
+                    <span class="machine-id-label">DÁN MÃ KÍCH HOẠT:</span>
+                    <input type="text" id="input-license-key" class="input-text" placeholder="CTB-VIP-XXXX-XXXX-XXXX-XXXX">
+                    <button class="btn-primary" id="btn-activate-license" style="margin-top: 8px;">
+                        ⚡ Kích hoạt Bản quyền
+                    </button>
+                    <div id="activation-error" class="activation-error"></div>
+                </div>
+
+                <div class="contact-support-box">
+                    <span>Cần mã kích hoạt? Vui lòng liên hệ quản trị viên.</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- MAIN UNLOCKED INTERFACE -->
+        <div id="main-unlocked-ui">
+            <!-- Navigation Tabs -->
+            <div class="nav-tabs">
+                <button class="nav-btn active" id="tab-prompts">📝 Lệnh (Prompts)</button>
+                <button class="nav-btn" id="tab-images" aria-controls="view-images">🖼️ Hình ảnh</button>
+                <button class="nav-btn" id="tab-accounts">👥 Tài khoản</button>
+                <button class="nav-btn" id="tab-settings">⚙️ Cài đặt</button>
+                <button class="nav-btn" id="tab-logs">📋 Nhật ký (Logs)</button>
+            </div>
+
+            <!-- TAB 2: BULK PROMPTS -->
+            <div class="tab-content" id="view-prompts">
+                <div class="section-header-row">
+                    <span class="section-title">📝 DANH SÁCH LỆNH (PROMPTS) (<span id="prompt-counter">0</span>)</span>
+                    <div style="display: flex; gap: 4px;">
+                        <input type="file" id="file-upload-prompts" accept=".csv, .txt, .text, .json" style="display: none;">
+                        <button id="btn-clear-prompts" class="btn-mini-delete" title="Xóa tất cả các lệnh">
+                            🗑️ Xóa hết
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Status Filters -->
+                <div class="search-filter-row">
+                    <div class="filter-pills-row">
+                        <button class="filter-pill active" data-filter="all">All (<span id="count-all">0</span>)</button>
+                        <button class="filter-pill" data-filter="queued">⚪ Đang chờ (<span id="count-queued">0</span>)</button>
+                        <button class="filter-pill" data-filter="done">✅ Hoàn thành (<span id="count-done">0</span>)</button>
+                    </div>
+                </div>
+
+                <!-- Fast Paste Box -->
+                <div class="prompt-input-card">
+                    <textarea id="textarea-quick-prompts" class="input-textarea" placeholder="Dán danh sách lệnh vào đây (1 dòng 1 lệnh hoặc CSV)..."></textarea>
+                    <button id="btn-add-bulk-prompts" class="btn-primary" style="margin-top: 6px; padding: 6px;">
+                        ➕ Thêm vào danh sách
+                    </button>
+                    <button id="btn-hit-create-video" class="btn-primary action-button" style="margin-top: 6px;" title="Bật chế độ đồng bộ và bấm BẤT KỲ nút nào trên trang để lặp lại hành động đó trên tất cả các tab">
+                        <span class="button-copy">
+                            <strong>Bấm nút tạo video</strong>
+                            <small>Bật chế độ đồng bộ và bấm BẤT KỲ nút nào trên trang để lặp lại hành động đó trên tất cả các tab</small>
+                        </span>
+                    </button>
+
+                    <!-- BULK DOWNLOAD MODE CARD -->
+                    <div class="bulk-mode-control-card" style="margin-top: 8px; padding: 8px 10px; background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 8px; display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                        <div style="display: flex; flex-direction: column; gap: 1px;">
+                            <div style="font-size: 11px; font-weight: 700; color: #c7d2fe; display: flex; align-items: center; gap: 4px;">
+                                <span>📦 Chế độ Tải Hàng Loạt</span>
+                            </div>
+                            <span style="font-size: 9.5px; color: #94a3b8;">Tạm dừng tự tải xuống và tải file ZIP</span>
+                        </div>
+                        <label class="switch" title="Bật/tắt chế độ tải hàng loạt">
+                            <input type="checkbox" id="toggle-bulk-mode">
+                            <span class="slider round"></span>
+                        </label>
+                    </div>
+
+                    <button id="btn-scroll-chat-videos" class="btn-primary action-button" style="margin-top: 6px; background: linear-gradient(135deg, #4f46e5, #7c3aed);" title="Auto-scroll current Dola chat to top to load and extract all past videos">
+                        <span class="button-copy">
+                            <strong>📜 Tải Tất Cả Video Trong Chat (Tự động cuộn)</strong>
+                            <small>Tự động cuộn chat lên để trích xuất các video cũ</small>
+                        </span>
+                    </button>
+                </div>
+
+                <!-- Numbered Prompts List / Clickable Dropzone -->
+                <div class="prompts-list" id="prompts-container">
+                    <div class="empty-state" id="prompts-empty-dropzone" title="Click to upload prompt file">📁 Bấm vào đây để chọn file lệnh (.txt, .csv)...</div>
+                </div>
+            </div>
+
+            <!-- TAB 3: BULK IMAGES -->
+            <div class="tab-content hidden" id="view-images" aria-hidden="true">
+                <div class="section-header-row">
+                    <span class="section-title">🖼️ DANH SÁCH HÌNH ẢNH (<span id="images-counter">0</span>)</span>
+                    <div class="image-header-actions">
+                        <input type="file" id="file-upload-images" multiple accept="image/*" hidden>
+                        <button id="btn-trigger-upload-images" class="btn-mini-primary" type="button" title="Chọn nhiều ảnh cùng lúc">
+                            📁 Chọn ảnh
+                        </button>
+                        <button id="btn-clear-images" class="btn-mini-delete" type="button" title="Xóa toàn bộ ảnh">
+                            🗑️ Xóa hết
+                        </button>
+                    </div>
+                </div>
+
+                <div class="search-filter-row">
+                    <div class="filter-pills-row" id="image-filter-pills">
+                        <button class="filter-pill active" type="button" data-image-filter="all">All (<span id="image-count-all">0</span>)</button>
+                        <button class="filter-pill" type="button" data-image-filter="queued">⚪ Đang chờ (<span id="image-count-queued">0</span>)</button>
+                        <button class="filter-pill" type="button" data-image-filter="done">✅ Hoàn thành (<span id="image-count-done">0</span>)</button>
+                    </div>
+                </div>
+
+                <div class="image-picker-card" id="image-picker-dropzone" role="button" tabindex="0" aria-label="Select or drop multiple images">
+                    <span class="image-picker-icon" aria-hidden="true">🖼️</span>
+                    <span class="image-picker-copy">
+                        <strong>Chọn hoặc kéo thả ảnh</strong>
+                        <small>JPG, PNG, WEBP, GIF hoặc AVIF · tối đa 25MB/ảnh</small>
+                    </span>
+                </div>
+
+                <button id="btn-open-image-upload-options" class="btn-primary image-queue-upload-button" type="button">
+                    <span class="button-copy">
+                        <strong>Tải lên ảnh đang chờ</strong>
+                        <small>Chọn tab hiện tại hoặc tải lần lượt lên tất cả các tab</small>
+                    </span>
+                </button>
+
+                <div id="image-upload-status" class="image-upload-status" role="status" aria-live="polite"></div>
+
+                <div class="image-gallery-drag-hint">
+                    ↗ Kéo thả ảnh bất kỳ vào Dola · bấm vào ảnh để xác nhận tải lên
+                </div>
+
+                <div class="images-list" id="images-container">
+                    <div class="empty-state" id="images-empty-dropzone">📁 Chọn nhiều ảnh cùng lúc to build the upload queue.</div>
+                </div>
+            </div>
+
+            <!-- TAB 4: BULK ACCOUNTS -->
+            <div class="tab-content hidden" id="view-accounts">
+                <div class="section-header-row">
+                    <span class="section-title">👥 QUẢN LÝ TÀI KHOẢN (<span id="accounts-counter">0</span>)</span>
+                    <div style="display: flex; gap: 4px;">
+                        <input type="file" id="file-upload-accounts" multiple accept=".json, .txt, .netscape, .csv" style="display: none;">
+                        <button id="btn-trigger-upload-accounts" class="btn-mini-primary" title="Nhập nhiều file cookie từ Máy tính">
+                            📁 Tải file lên
+                        </button>
+                        <button id="btn-capture-session" class="btn-mini-primary" title="Lưu tài khoản đang đăng nhập ở tab hiện tại">
+                            + Lưu Tab này
+                        </button>
+                        <button id="btn-clear-all-accounts" class="btn-mini-delete" title="Xóa toàn bộ tài khoản">
+                            🗑️ Xóa hết
+                        </button>
+                    </div>
+                </div>
+
+                <div class='bulk-account-opener'>
+                    <div class='bulk-account-opener-copy'>
+                        <span class='bulk-account-opener-title'>MỞ NHIỀU TÀI KHOẢN</span>
+                    </div>
+                    <div class='bulk-account-opener-controls'>
+                        <input type='number' id='input-bulk-account-count' class='bulk-account-count' min='1' step='1' value='1' inputmode='numeric' aria-label='Số lượng tab tài khoản muốn mở'>
+                        <button id='btn-open-multiple-accounts' class='btn-primary bulk-account-open-button'>Mở Tab</button>
+                    </div>
+                    <div id='bulk-account-open-status' class='bulk-account-open-status' role='status' aria-live='polite'>Đang kiểm tra tài khoản khả dụng...</div>
+                </div>
+
+                <!-- Quick Paste Box for Single/Multi Account Cookies -->
+                <div class="prompt-input-card">
+                    <input type="text" id="input-profile-name" class="input-text" placeholder="Tên tài khoản (để trống sẽ tự động tạo #01, #02...)" style="margin-bottom: 5px;">
+                    <textarea id="input-profile-cookies" class="input-textarea" placeholder="Dán mảng JSON, định dạng Netscape, hoặc cookie đa tài khoản..."></textarea>
+                    <button id="btn-import-profile" class="btn-primary" style="margin-top: 6px; padding: 6px;">
+                        ➕ Thêm / Nhập Cookie Tài khoản
+                    </button>
+                </div>
+
+                <!-- Numbered & Styled Accounts List -->
+                <div class="profiles-list" id="profiles-container">
+                    <div class="empty-state">Chưa có tài khoản nào được lưu. Bấm "Tải file lên" hoặc "Lưu Tab này" ở trên.</div>
+                </div>
+            </div>
+
+            <!-- TAB 5: SETTINGS -->
+            <div class="tab-content hidden" id="view-settings">
+                <div class="settings-list">
+                    <div class="setting-item" style="flex-direction: column; align-items: flex-start; gap: 4px; background: rgba(99, 102, 241, 0.08); border-color: rgba(99, 102, 241, 0.3);">
+                        <div style="font-size: 11px; font-weight: bold; color: #818cf8;">💎 TRẠNG THÁI BẢN QUYỀN STUDIO RELAY</div>
+                        <div id="settings-license-info" style="font-size: 11px; color: #d4d4d8;">Đã kích hoạt (StudioRelay Pro Trọn đời)</div>
+                    </div>
+                    <label class="setting-item">
+                        <span>Bắt buộc Độ dài Video</span>
+                        <select id="sel-duration" class="select-box">
+                            <option value="60">60 Giây (Ultra HD VIP)</option>
+                            <option value="30" selected>30 Giây (Max HD)</option>
+                            <option value="25">25 Giây (Super HD)</option>
+                            <option value="20">20 Giây (Pro HD)</option>
+                            <option value="15">15 Giây (Fast HD)</option>
+                            <option value="10">10 Seconds (Standard Mặc định)</option>
+                        </select>
+                    </label>
+                    <label class="setting-item">
+                        <span>Giới hạn Hằng ngày - Tự động Đổi Tài khoản</span>
+                        <input type="checkbox" id="chk-autorotate" checked>
+                    </label>
+                    <label class="setting-item">
+                        <span>Tự động Chuyển lệnh tiếp theo khi Gửi</span>
+                        <input type="checkbox" id="chk-autonext" checked>
+                    </label>
+                    <label class="setting-item">
+                        <span>Tự động Tải xuống Video hoàn thành</span>
+                        <input type="checkbox" id="chk-auto-dl" checked>
+                    </label>
+                    <label class="setting-item">
+                        <span>📦 Chế độ Tải Hàng Loạt (Auto-Pause & ZIP)</span>
+                        <input type="checkbox" id="chk-bulk-mode">
+                    </label>
+                    <label class="setting-item">
+                        <span>Tự động Xóa từ khóa thương hiệu (Sanitizer)</span>
+                        <input type="checkbox" id="chk-safety" checked>
+                    </label>
+                </div>
+            </div>
+
+            <!-- TAB 6: LOGS -->
+            <div class="tab-content hidden" id="view-logs">
+                <div class="terminal" id="terminal">
+                    [Sẵn sàng] Khởi tạo StudioRelay v1.6.<br>
+                    [Bản quyền] 💎 Đã xác thực & kích hoạt phần cứng thiết bị.<br>
+                    [Durations] ⚡ 10s Mặc định, 15s, 20s, 25s, 30s, 60s HD enabled.<br>
+                    [Tải nhanh] 📹 Tính năng lấy luồng stream Dola đang hoạt động.<br>
+                    [Tài khoản] 👥 Tính năng nhập nhiều file Cookie & Tìm kiếm đang hoạt động.
+                </div>
+            </div>
+        <!-- Footer -->
+        <footer class="app-footer">
+            <a
+                class="footer-community-link"
+                id="whatsapp-channel-link"
+                href="https://whatsapp.com/channel/0029VbDkJSq1CYoXFhiE9g1Y"
+                target="_blank"
+                rel="noopener noreferrer"
+                referrerpolicy="no-referrer"
+                aria-label="Join WhatsApp Channel"
+            >
+                <svg viewBox="0 0 24 24" aria-hidden="true" style="width: 14px; height: 14px; display: inline-block; vertical-align: middle;">
+                    <path d="M20 11.5a8 8 0 0 1-11.8 7L4 20l1.5-4A8 8 0 1 1 20 11.5Z"/>
+                    <path d="M9 8.5c.4 2.5 2 4.1 4.5 4.8M9.2 8.2l1.2 2-1 .8M13.7 13.4l1-1 2 .9"/>
+                </svg>
+                <span>Tham gia Kênh WhatsApp Chính thức</span>
+            </a>
+            <div class="footer-social-row">
+                <a
+                    class="footer-community-link footer-community-link--telegram"
+                    id="telegram-channel-link"
+                    href="https://t.me/kartarverse"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    referrerpolicy="no-referrer"
+                    aria-label="Join Kênh Telegram"
+                >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M21 4 3.7 10.7c-1.2.5-1.2 1.2-.2 1.5l4.4 1.4 1.7 5.1c.2.6.1.8.8.8.5 0 .8-.2 1-.4l2.4-2.3 5 3.7c.9.5 1.6.3 1.8-.9L23.8 5c.3-1.4-.5-2-1.6-1.5Z"/>
+                    </svg>
+                    <span>Kênh Telegram</span>
+                </a>
+                <a
+                    class="footer-community-link footer-community-link--facebook"
+                    id="facebook-page-link"
+                    href="https://www.facebook.com/Kartar.fb"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    referrerpolicy="no-referrer"
+                    aria-label="Open Trang Facebook"
+                >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M14 8h3V4h-3c-3.3 0-5 2-5 5v2H6v4h3v7h4v-7h3.3l.7-4h-4V9c0-.7.3-1 1-1Z"/>
+                    </svg>
+                    <span>Trang Facebook</span>
+                </a>
+            </div>
+        </footer>
+
+        <!-- CUSTOM THEME CONFIRM DIALOG MODAL -->
+        <dialog class="confirm-dialog" id="confirm-dialog" aria-labelledby="confirm-dialog-title" aria-describedby="confirm-dialog-description">
+            <div class="confirm-dialog-icon" aria-hidden="true">⚠️</div>
+            <div class="confirm-dialog-body">
+                <h2 id="confirm-dialog-title">Xác nhận Hành động</h2>
+                <p id="confirm-dialog-description">Hành động này không thể hoàn tác.</p>
+            </div>
+            <div class="confirm-dialog-actions">
+                <button class="btn-secondary" id="confirm-dialog-cancel" type="button">Hủy</button>
+                <button class="btn-danger" id="confirm-dialog-accept" type="button">Tiếp tục</button>
+            </div>
+        </dialog>
+
+        <dialog class="image-upload-dialog" id="image-upload-dialog" aria-labelledby="image-upload-dialog-title" aria-describedby="image-upload-dialog-description">
+            <div class="image-upload-dialog-preview-wrap">
+                <img id="image-upload-dialog-preview" class="image-upload-dialog-preview" alt="Selected image preview">
+            </div>
+            <div class="image-upload-dialog-copy">
+                <h2 id="image-upload-dialog-title">Tải ảnh lên</h2>
+                <p id="image-upload-dialog-name"></p>
+                <p id="image-upload-dialog-description">Chọn nơi tải danh sách ảnh này lên.</p>
+            </div>
+            <div class="image-upload-dialog-actions">
+                <button class="btn-secondary" id="image-upload-dialog-cancel" type="button">Hủy</button>
+                <button class="btn-secondary image-upload-one" id="image-upload-active-tab" type="button">Tab hiện tại</button>
+                <button class="btn-primary image-upload-all" id="image-upload-all-tabs" type="button">Lần lượt tất cả các tab</button>
+            </div>
+        </dialog>
+    </div>
+    <script src="popup.js"></script>
+    <script src='popup-bulk-accounts.js'></script>
+    <script src='popup-paragraph-prompts.js'></script>
+    <script src="ui-polish.js"></script>
+    <script src="popup-image-uploads.js"></script>
+    <script src="popup-chat-scroll.js"></script>
+</body>
+</html>
