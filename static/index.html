@@ -184,6 +184,7 @@ body{background:#0b0e14;color:#e5e7eb;min-height:100vh;}
         </div>
       </div>
       <button class="btn btn-ghost" onclick="openImportBundleModal()" style="background:#0c2340; border:1px solid #1d4ed8; color:#93c5fd;">📥 Nhập Cookie Bundle</button>
+      <button class="btn btn-ghost" onclick="openBulkDeleteModal()" style="background:#450a0a; border:1px solid #dc2626; color:#fca5a5;">🗑️ Xóa Hàng Loạt</button>
       <button class="btn btn-ghost" onclick="manageExtensions(null)" style="background:#0f172a; border: 1px solid #475569;">🧩 Tiện Ích</button>
 
       <div style="display:flex; align-items:center; gap:8px; margin-left: 20px; border: 1px solid #334155; padding: 6px 12px; border-radius: 8px; background: #1e293b; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
@@ -390,6 +391,23 @@ body{background:#0b0e14;color:#e5e7eb;min-height:100vh;}
       <button class="btn btn-ghost" onclick="closeExportSelectModal()">Hủy</button>
       <button class="btn btn-ghost" style="background:#0f3460;border:1px solid #1d4ed8;color:#93c5fd;" onclick="doCopySelected()">📋 Copy JSON</button>
       <button class="btn btn-primary" onclick="doExportSelected()">📤 Xuất File</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Xóa Nhiều Profile -->
+<div id="bulkDeleteModal" class="modal-overlay" onclick="if(event.target==this) closeBulkDeleteModal()">
+  <div class="modal lg">
+    <h2>🗑️ Xóa Nhiều Profile</h2>
+    <p style="font-size:12px;color:#fca5a5;margin-bottom:12px;">Chọn các profile muốn xóa vĩnh viễn khỏi hệ thống.</p>
+    <label style="display:flex; align-items:center; gap:8px; cursor:pointer; color:#fff; font-weight:bold; margin-bottom: 12px; background: #450a0a; padding: 10px; border-radius: 8px; border:1px solid #7f1d1d;">
+      <input type="checkbox" id="bulkDeleteSelectAll" style="width:16px;height:16px;" onchange="toggleBulkDeleteSelectAll(this.checked)"> Chọn tất cả
+    </label>
+    <div id="bulkDeleteList" style="max-height:300px; overflow-y:auto; background:#0f172a; border-radius:8px; border:1px solid #1e2535; padding:10px; display:flex; flex-direction:column; gap:8px;">
+    </div>
+    <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;">
+      <button class="btn btn-ghost" onclick="closeBulkDeleteModal()">Hủy</button>
+      <button class="btn btn-primary" style="background:#dc2626;border:none;" onclick="doBulkDeleteSelected()">🗑️ Xóa Đã Chọn</button>
     </div>
   </div>
 </div>
@@ -818,6 +836,37 @@ async function doExportSelected() {
     alert(`✅ Đã xuất ${data.count} profiles ra file JSON!`);
   } catch(e) { alert("Lỗi: " + e.message); }
 }
+function openBulkDeleteModal() {
+  const list = document.getElementById("bulkDeleteList");
+  list.innerHTML = allProfiles.map(p => `
+    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:8px;border-radius:6px;background:#1e293b;border:1px solid #334155;">
+      <input type="checkbox" class="bulk-delete-cb" value="${p.id}" style="width:15px;height:15px;">
+      <span style="color:#e2e8f0;font-size:13px;">💻 ${esc(p.name)} <span style="color:#64748b;font-size:11px;">#${p.id}</span>${p.ms_email ? ` <span style="color:#38bdf8;font-size:11px;">📧${esc(p.ms_email)}</span>` : ''}</span>
+    </label>`).join("");
+  document.getElementById("bulkDeleteSelectAll").checked = false;
+  document.getElementById("bulkDeleteModal").classList.add("active");
+}
+function closeBulkDeleteModal() { document.getElementById("bulkDeleteModal").classList.remove("active"); }
+function toggleBulkDeleteSelectAll(checked) {
+  document.querySelectorAll(".bulk-delete-cb").forEach(cb => cb.checked = checked);
+}
+async function doBulkDeleteSelected() {
+  const ids = [...document.querySelectorAll(".bulk-delete-cb:checked")].map(cb => cb.value);
+  if (!ids.length) { alert("Chưa chọn thẻ nào để xóa!"); return; }
+  if (!confirm(`⚠️ CẢNH BÁO: Bạn có chắc chắn muốn XÓA VĨNH VIỄN ${ids.length} profiles đã chọn không?\n\nHành động này không thể hoàn tác!`)) return;
+  
+  closeBulkDeleteModal();
+  let count = 0;
+  for (const id of ids) {
+    try {
+      const res = await fetch(`/api/profiles/${id}`, {method: "DELETE"});
+      if (res.ok) count++;
+    } catch(e) { console.error("Lỗi xóa id", id, e); }
+  }
+  alert(`✅ Đã xóa thành công ${count} profiles!`);
+  loadProfiles();
+}
+
 async function doCopySelected() {
   const ids = [...document.querySelectorAll(".export-select-cb:checked")].map(cb => cb.value);
   if (!ids.length) { alert("Chưa chọn thẻ nào!"); return; }
