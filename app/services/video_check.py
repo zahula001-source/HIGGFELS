@@ -193,11 +193,20 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                     video_tasks[task_id] = {"status": "running", "message": "Đang thao tác Cancel & Gen lại..."}
                     
                     try:
-                        # 1. Ấn vào text chứa — MAN, the replacement MAN
+                        # 1. Hover vào tỷ lệ (21:9) để hiện nút copy prompt
                         page.evaluate("""() => {
-                            const textElements = Array.from(document.querySelectorAll('span, p, div'));
-                            const target = textElements.find(el => el.innerText && el.innerText.includes('— MAN, the replacement MAN'));
-                            if (target) target.click();
+                            const textNodes = Array.from(document.querySelectorAll('span, p, div, button'));
+                            const ratioEl = textNodes.reverse().find(el => el.innerText && (el.innerText.includes(':9') || el.innerText.includes('1:1') || el.innerText.includes('3:4') || el.innerText.includes('9:16')));
+                            if (ratioEl) {
+                                ratioEl.dispatchEvent(new MouseEvent('mouseover', {bubbles: true}));
+                            }
+                        }""")
+                        page.wait_for_timeout(1000)
+                        
+                        # Click nút Use as Prompt (có icon copy)
+                        page.evaluate("""() => {
+                            const copyBtn = document.querySelector('button[data-component="model"][data-job-set="hf_mult_motion_control"], button.button-xs.button-secondary[data-component="model"]');
+                            if (copyBtn) copyBtn.click();
                         }""")
                         page.wait_for_timeout(2000)
                         
@@ -227,7 +236,12 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                         }""")
                         page.wait_for_timeout(4000)
                         
-                        # 4. Check Use free gens
+                        # 4. Tải lại trang theo yêu cầu
+                        page.reload()
+                        page.wait_for_load_state('domcontentloaded')
+                        page.wait_for_timeout(5000)
+                        
+                        # 5. Check Use free gens
                         page.evaluate("""() => {
                             const labels = Array.from(document.querySelectorAll('label'));
                             const freeLabel = labels.find(l => l.innerText && l.innerText.includes('Use free gens'));
@@ -238,7 +252,7 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                         }""")
                         page.wait_for_timeout(1000)
                         
-                        # 5. Click Generate
+                        # 6. Click Generate
                         page.evaluate("""() => {
                             const btns = Array.from(document.querySelectorAll('button'));
                             const genBtn = btns.find(b => b.innerText && (b.innerText.trim() === 'Generate' || b.innerText.trim() === 'Tạo video'));
