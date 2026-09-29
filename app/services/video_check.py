@@ -187,9 +187,9 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                         video_tasks[task_id]["message"] = "🛑 Đã dừng theo yêu cầu!"
                         try: context.close()
                         except: pass
-                    with pw_lock:
-                        p.stop()
-                    return
+                        with pw_lock:
+                            p.stop()
+                        return
                     if video_tasks.get(task_id, {}).get("cancel_and_gen_requested"):
                         print(f"--- Task {task_id} (Check) nhận lệnh Cancel + Gen. Thực thi thao tác...")
                         video_tasks[task_id]["cancel_and_gen_requested"] = False
