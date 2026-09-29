@@ -1600,7 +1600,10 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
 
             mins = i // 60
             secs = i % 60
-            video_tasks[task_id]["message"] = f"Đang chờ higgsfield.ai tạo video... {mins:02d}:{secs:02d}"
+            if video_tasks[task_id].get("message", "").startswith("✅ Đã Cancel"):
+                video_tasks[task_id]["message"] = f"✅ Đã Cancel & Gen! Đang chờ video... {mins:02d}:{secs:02d}"
+            else:
+                video_tasks[task_id]["message"] = f"Đang chờ higgsfield.ai tạo video... {mins:02d}:{secs:02d}"
 
         if video_urls:
             out_dir = Path(save_path)
