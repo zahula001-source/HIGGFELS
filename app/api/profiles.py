@@ -295,7 +295,14 @@ def import_bundle(payload: dict = Body(...)):
                 notes=entry.get("notes", ""),
                 fingerprint_preset=True
             )
-            new_p = manager.create_profile(pc)
+            new_p = manager.create_profile(
+                name=pc.name,
+                os=pc.os,
+                browser=pc.browser,
+                proxy=pc.proxy,
+                notes=pc.notes,
+                fingerprint_preset=pc.fingerprint_preset
+            )
             
             # Lưu ms_account.txt
             if entry.get("ms_account"):
