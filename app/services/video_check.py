@@ -190,237 +190,220 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                     with pw_lock:
                         p.stop()
                     return
-                if video_tasks.get(task_id, {}).get("cancel_and_gen_requested"):
-                    print(f"--- Task {task_id} (Check) nhận lệnh Cancel + Gen. Thực thi thao tác...")
-                    video_tasks[task_id]["cancel_and_gen_requested"] = False
-                    video_tasks[task_id] = {"status": "running", "message": "Đang thao tác Cancel & Gen lại..."}
+                    if video_tasks.get(task_id, {}).get("cancel_and_gen_requested"):
+                        print(f"--- Task {task_id} (Check) nhận lệnh Cancel + Gen. Thực thi thao tác...")
+                        video_tasks[task_id]["cancel_and_gen_requested"] = False
+                        video_tasks[task_id] = {"status": "running", "message": "Đang thao tác Cancel & Gen lại..."}
                     
-                    try:
-                        # 1. Click Copy
-                        print(f"--- Task {task_id} (Cancel+Gen): Đang tìm thẻ Processing và ép hiện nút Copy/Cancel...")
-                        page.evaluate("""() => {
-                            const procSpans = Array.from(document.querySelectorAll('span, div'));
-                            const proc = procSpans.find(el => el.innerText && el.innerText.trim() === 'Processing');
-                            if (proc) {
-                                let card = proc.closest('div.group\\\\/card');
-                                if (!card) card = proc.closest('section');
-                                if (!card) card = proc.closest('.v_list_row');
-                                if (card) {
-                                    // Ép hiển thị thanh công cụ
-                                    const style = document.createElement('style');
-                                    style.innerHTML = 'div[id^="action-panel"], div[class*="opacity-0"] { opacity: 1 !important; pointer-events: auto !important; }';
-                                    document.head.appendChild(style);
-                                    
-                                    const actionPanel = card.querySelector('#action-panel-bottom');
-                                    if (actionPanel) {
-                                        // Tìm tất cả các nút button bên trong bảng action-panel-bottom
-                                        const btns = actionPanel.querySelectorAll('button');
-                                        // Theo HTML user: btns[0] là Cancel, btns[1] là Copy, btns[2] là Trash
-                                        if (btns.length >= 2) {
-                                            const copyBtn = btns[1];
-                                            copyBtn.dispatchEvent(new MouseEvent('mouseover', {bubbles: true}));
-                                            copyBtn.dispatchEvent(new PointerEvent('pointerdown', {bubbles: true}));
-                                            copyBtn.dispatchEvent(new PointerEvent('pointerup', {bubbles: true}));
-                                            copyBtn.click();
-                                        }
-                                    }
-                                }
-                            }
-                        }""")
-                        print(f"--- Task {task_id} (Cancel+Gen): Đã click Copy prompt, đang đợi 3s để web nhận thông số...")
-                        page.wait_for_timeout(3000)
-                        
-                        # 2. Click Cancel
-                        print(f"--- Task {task_id} (Cancel+Gen): Đang click Cancel tiến trình...")
-                        page.evaluate("""() => {
-                            const procSpans = Array.from(document.querySelectorAll('span, div'));
-                            const proc = procSpans.find(el => el.innerText && el.innerText.trim() === 'Processing');
-                            if (proc) {
-                                let card = proc.closest('div.group\\\\/card');
-                                if (!card) card = proc.closest('section');
-                                if (!card) card = proc.closest('.v_list_row');
-                                if (card) {
-                                    const actionPanel = card.querySelector('#action-panel-bottom');
-                                    if (actionPanel) {
-                                        const btns = actionPanel.querySelectorAll('button');
-                                        if (btns.length >= 1) {
-                                            const cancelBtn = btns[0];
-                                            cancelBtn.dispatchEvent(new PointerEvent('pointerdown', {bubbles: true}));
-                                            cancelBtn.dispatchEvent(new PointerEvent('pointerup', {bubbles: true}));
-                                            cancelBtn.click();
-                                        }
-                                    }
-                                }
-                            }
-                        }""")
-                        page.wait_for_timeout(2000)
-                        
-                        # 3. Click Confirm
-                        print(f"--- Task {task_id} (Cancel+Gen): Đang click Confirm xác nhận huỷ...")
-                        page.evaluate("""() => {
-                            const btns = Array.from(document.querySelectorAll('button'));
-                            const confirm = btns.find(b => b.innerText && b.innerText.includes('Confirm'));
-                            if (confirm) confirm.click();
-                        }""")
-                        page.wait_for_timeout(4000)
-                        
-                        # 4. Tải lại trang, Check Free Gens, và Click Generate (Có retry)
-                        for retry_gen in range(3):
-                            print(f"--- Task {task_id} (Cancel+Gen): Đang reload lại trang (Lần {retry_gen + 1}/3)...")
-                            page.reload()
-                            page.wait_for_load_state('domcontentloaded')
-                            print(f"--- Task {task_id} (Cancel+Gen): Đợi thêm 5s sau khi reload cho web load hẳn...")
-                            page.wait_for_timeout(5000)
-                            
-                            # 5. Check Use free gens
-                            print(f"--- Task {task_id} (Cancel+Gen): Kiểm tra công tắc 'Use free gens'...")
+                        try:
+                            # 1. Click Copy
+                            print(f"--- Task {task_id} (Cancel+Gen): Đang tìm thẻ Processing và ép hiện nút Copy/Cancel...")
                             page.evaluate("""() => {
-                                const switches = Array.from(document.querySelectorAll('button[role="switch"]'));
-                                for (const sw of switches.reverse()) {
-                                    let parent = sw.parentElement;
-                                    let text = '';
-                                    while (parent && parent.tagName !== 'BODY') {
-                                        text = parent.innerText || '';
-                                        if (text.includes('Use free gens')) {
-                                            if (sw.getAttribute('aria-checked') !== 'true') {
-                                                sw.dispatchEvent(new PointerEvent('pointerdown', {bubbles: true}));
-                                                sw.dispatchEvent(new PointerEvent('pointerup', {bubbles: true}));
-                                                sw.click();
+                                const procSpans = Array.from(document.querySelectorAll('span, div'));
+                                const proc = procSpans.find(el => el.innerText && el.innerText.trim() === 'Processing');
+                                if (proc) {
+                                    let card = proc.closest('div.group\\\\/card');
+                                    if (!card) card = proc.closest('section');
+                                    if (!card) card = proc.closest('.v_list_row');
+                                    if (card) {
+                                        // Ép hiển thị thanh công cụ
+                                        const style = document.createElement('style');
+                                        style.innerHTML = 'div[id^="action-panel"], div[class*="opacity-0"] { opacity: 1 !important; pointer-events: auto !important; }';
+                                        document.head.appendChild(style);
+                                    
+                                        const actionPanel = card.querySelector('#action-panel-bottom');
+                                        if (actionPanel) {
+                                            // Tìm tất cả các nút button bên trong bảng action-panel-bottom
+                                            const btns = actionPanel.querySelectorAll('button');
+                                            // Theo HTML user: btns[0] là Cancel, btns[1] là Copy, btns[2] là Trash
+                                            if (btns.length >= 2) {
+                                                const copyBtn = btns[1];
+                                                copyBtn.dispatchEvent(new MouseEvent('mouseover', {bubbles: true}));
+                                                copyBtn.dispatchEvent(new PointerEvent('pointerdown', {bubbles: true}));
+                                                copyBtn.dispatchEvent(new PointerEvent('pointerup', {bubbles: true}));
+                                                copyBtn.click();
                                             }
-                                            return;
                                         }
-                                        parent = parent.parentElement;
+                                    }
+                                }
+                            }""")
+                            print(f"--- Task {task_id} (Cancel+Gen): Đã click Copy prompt, đang đợi 3s để web nhận thông số...")
+                            page.wait_for_timeout(3000)
+                        
+                            # 2. Click Cancel
+                            print(f"--- Task {task_id} (Cancel+Gen): Đang click Cancel tiến trình...")
+                            page.evaluate("""() => {
+                                const procSpans = Array.from(document.querySelectorAll('span, div'));
+                                const proc = procSpans.find(el => el.innerText && el.innerText.trim() === 'Processing');
+                                if (proc) {
+                                    let card = proc.closest('div.group\\\\/card');
+                                    if (!card) card = proc.closest('section');
+                                    if (!card) card = proc.closest('.v_list_row');
+                                    if (card) {
+                                        const actionPanel = card.querySelector('#action-panel-bottom');
+                                        if (actionPanel) {
+                                            const btns = actionPanel.querySelectorAll('button');
+                                            if (btns.length >= 1) {
+                                                const cancelBtn = btns[0];
+                                                cancelBtn.dispatchEvent(new PointerEvent('pointerdown', {bubbles: true}));
+                                                cancelBtn.dispatchEvent(new PointerEvent('pointerup', {bubbles: true}));
+                                                cancelBtn.click();
+                                            }
+                                        }
                                     }
                                 }
                             }""")
                             page.wait_for_timeout(2000)
-                            
-                            # 6. Click Generate
-                            print(f"--- Task {task_id} (Cancel+Gen): Đang bấm nút Generate và chuyển về chế độ chờ...")
+                        
+                            # 3. Click Confirm
+                            print(f"--- Task {task_id} (Cancel+Gen): Đang click Confirm xác nhận huỷ...")
                             page.evaluate("""() => {
                                 const btns = Array.from(document.querySelectorAll('button'));
-                                const genBtn = btns.find(b => b.innerText && (b.innerText.includes('Generate') || b.innerText.includes('Tạo video')));
-                                if (genBtn && !genBtn.disabled) {
-                                    genBtn.dispatchEvent(new PointerEvent('pointerdown', {bubbles: true}));
-                                    genBtn.dispatchEvent(new PointerEvent('pointerup', {bubbles: true}));
-                                    genBtn.click();
-                                }
+                                const confirm = btns.find(b => b.innerText && b.innerText.includes('Confirm'));
+                                if (confirm) confirm.click();
                             }""")
                             page.wait_for_timeout(4000)
+                        
+                            # 4. Tải lại trang, Check Free Gens, và Click Generate (Có retry)
+                            for retry_gen in range(3):
+                                print(f"--- Task {task_id} (Cancel+Gen): Đang reload lại trang (Lần {retry_gen + 1}/3)...")
+                                page.reload()
+                                page.wait_for_load_state('domcontentloaded')
+                                print(f"--- Task {task_id} (Cancel+Gen): Đợi thêm 5s sau khi reload cho web load hẳn...")
+                                page.wait_for_timeout(5000)
                             
-                            # Kiểm tra xem có Processing chưa
-                            has_processing = page.evaluate("""() => {
-                                const spans = Array.from(document.querySelectorAll('span, div'));
-                                return spans.some(el => el.innerText && el.innerText.trim() === 'Processing');
-                            }""")
+                                # 5. Check Use free gens
+                                print(f"--- Task {task_id} (Cancel+Gen): Kiểm tra công tắc 'Use free gens'...")
+                                page.evaluate("""() => {
+                                    const switches = Array.from(document.querySelectorAll('button[role="switch"]'));
+                                    for (const sw of switches.reverse()) {
+                                        let parent = sw.parentElement;
+                                        let text = '';
+                                        while (parent && parent.tagName !== 'BODY') {
+                                            text = parent.innerText || '';
+                                            if (text.includes('Use free gens')) {
+                                                if (sw.getAttribute('aria-checked') !== 'true') {
+                                                    sw.dispatchEvent(new PointerEvent('pointerdown', {bubbles: true}));
+                                                    sw.dispatchEvent(new PointerEvent('pointerup', {bubbles: true}));
+                                                    sw.click();
+                                                }
+                                                return;
+                                            }
+                                            parent = parent.parentElement;
+                                        }
+                                    }
+                                }""")
+                                page.wait_for_timeout(2000)
                             
-                            if has_processing:
-                                print(f"--- Task {task_id} (Cancel+Gen): ✅ Đã thấy thẻ Processing xuất hiện, quá trình tạo bắt đầu thành công!")
-                                break
-                            else:
-                                print(f"--- Task {task_id} (Cancel+Gen): ❌ Chưa thấy thẻ Processing, thử lại quá trình tải trang và ấn Generate...")
+                                # 6. Click Generate
+                                print(f"--- Task {task_id} (Cancel+Gen): Đang bấm nút Generate và chuyển về chế độ chờ...")
+                                page.evaluate("""() => {
+                                    const btns = Array.from(document.querySelectorAll('button'));
+                                    const genBtn = btns.find(b => b.innerText && (b.innerText.includes('Generate') || b.innerText.includes('Tạo video')));
+                                    if (genBtn && !genBtn.disabled) {
+                                        genBtn.dispatchEvent(new PointerEvent('pointerdown', {bubbles: true}));
+                                        genBtn.dispatchEvent(new PointerEvent('pointerup', {bubbles: true}));
+                                        genBtn.click();
+                                    }
+                                }""")
+                                page.wait_for_timeout(4000)
+                            
+                                # Kiểm tra xem có Processing chưa
+                                has_processing = page.evaluate("""() => {
+                                    const spans = Array.from(document.querySelectorAll('span, div'));
+                                    return spans.some(el => el.innerText && el.innerText.trim() === 'Processing');
+                                }""")
+                            
+                                if has_processing:
+                                    print(f"--- Task {task_id} (Cancel+Gen): ✅ Đã thấy thẻ Processing xuất hiện, quá trình tạo bắt đầu thành công!")
+                                    break
+                                else:
+                                    print(f"--- Task {task_id} (Cancel+Gen): ❌ Chưa thấy thẻ Processing, thử lại quá trình tải trang và ấn Generate...")
                                 
-                        video_tasks[task_id] = {"status": "running", "message": "✅ Đã Cancel và Generate lại! Đang chờ..."}
-                    except Exception as ex:
-                        print(f"Lỗi khi thực thi Cancel + Gen trong Check: {ex}")
-                        video_tasks[task_id] = {"status": "running", "message": f"⚠️ Lỗi Cancel + Gen: {str(ex)}"}
+                            video_tasks[task_id] = {"status": "running", "message": "✅ Đã Cancel và Generate lại! Đang chờ..."}
+                        except Exception as ex:
+                            print(f"Lỗi khi thực thi Cancel + Gen trong Check: {ex}")
+                            video_tasks[task_id] = {"status": "running", "message": f"⚠️ Lỗi Cancel + Gen: {str(ex)}"}
                     
-                    continue
-                
-                # Lấy trạng thái hiện tại
-                status_info = page.evaluate("""() => {
-                    // Kiểm tra Processing
-                    let spans = document.querySelectorAll('span');
-                    for(let s of spans) {
-                        if(s.innerText && s.innerText.trim() === 'Processing') return 'processing';
-                    }
-                    // Kiểm tra Generating
-                    for(let s of spans) {
-                        if(s.innerText && s.innerText.trim() === 'Generating') return 'generating';
-                    }
-                    // Kiểm tra video đã xong chưa (trong assets-grid)
-                    let grid = document.getElementById('assets-grid');
-                    if(grid) {
-                        let completed = grid.querySelector('[data-job-status="completed"] video');
-                        if(completed && completed.src && completed.src.includes('http')) return 'done';
-                    }
-                    return 'unknown';
-                }""")
-                
-                now = time.time()
-                
-                if status_info == 'processing':
-                    if processing_start_time is None:
-                        processing_start_time = now
-                    elapsed_proc = now - processing_start_time
-                    generating_start_time = None
-                    generating_countdown_done = False
-                    buffer_countdown_done = False
-                    
-                    if elapsed_proc >= 480:  # 8 minutes
-                        print(f"--- Task {task_id}: Đã chờ Processing 8 phút, tải lại trang để kiểm tra...")
-                        video_tasks[task_id]["message"] = "⏳ Đã chờ 8 phút, đang tải lại trang..."
-                        try:
-                            page.reload()
-                            page.wait_for_load_state('domcontentloaded')
-                            page.wait_for_timeout(5000)
-                        except: pass
-                        processing_start_time = time.time()
                         continue
-                        
-                    if video_tasks[task_id].get("message", "").startswith("✅ Đã Cancel"):
-                        video_tasks[task_id]["message"] = f"✅ Đã Cancel & Gen! Đang chờ Processing ({int(elapsed_proc)}s)..."
-                    else:
-                        video_tasks[task_id]["message"] = f"Đang chờ video tạo xong (Processing... {int(elapsed_proc)}s)"
-                    
-                    p_obj = manager.get_profile(profile_id)
-                    if p_obj and p_obj.notes != "free gen":
-                        p_obj.notes = "free gen"
-                        manager._save()
-                        
-                    page.wait_for_timeout(3000)
-                    
-                elif status_info == 'generating':
-                    # Trạng thái Generating → bắt đầu đếm ngược
-                    if generating_start_time is None:
-                        generating_start_time = now
-                        generating_countdown_done = False
-                        buffer_countdown_done = False
-                    
-                    elapsed = now - generating_start_time
-                    
-                    if not generating_countdown_done:
-                        # Đếm ngược 15 phút (900 giây)
-                        remaining = max(0, 900 - elapsed)
-                        mins = int(remaining // 60)
-                        secs = int(remaining % 60)
-                        video_tasks[task_id]["message"] = f"⏳ Sắp ra rồi! Còn khoảng {mins} phút {secs} giây nữa..."
-                        if elapsed >= 900:
-                            generating_countdown_done = True
-                    else:
-                        video_tasks[task_id]["message"] = f"⏳ Đang chờ video... (Đã chờ {int(elapsed // 60)} phút)"
-                    
-                    page.wait_for_timeout(3000)
-                    
-                elif status_info == 'done':
-                    # Video đã xong!
-                    video_tasks[task_id]["message"] = "✅ Video đã sẵn sàng, đang tải xuống..."
-                    p_obj = manager.get_profile(profile_id)
-                    if p_obj:
-                        p_obj.notes = "không free"
-                        manager._save()
-                    break
-                else:
-                    # Không rõ trạng thái → kiểm tra thêm xem có video chưa
-                    has_video = page.evaluate("""() => {
+                
+                    # Lấy trạng thái hiện tại
+                    status_info = page.evaluate("""() => {
+                        // Kiểm tra Processing
+                        let spans = document.querySelectorAll('span');
+                        for(let s of spans) {
+                            if(s.innerText && s.innerText.trim() === 'Processing') return 'processing';
+                        }
+                        // Kiểm tra Generating
+                        for(let s of spans) {
+                            if(s.innerText && s.innerText.trim() === 'Generating') return 'generating';
+                        }
+                        // Kiểm tra video đã xong chưa (trong assets-grid)
                         let grid = document.getElementById('assets-grid');
                         if(grid) {
                             let completed = grid.querySelector('[data-job-status="completed"] video');
-                            if(completed && completed.src && completed.src.includes('http')) return true;
+                            if(completed && completed.src && completed.src.includes('http')) return 'done';
                         }
-                        return false;
+                        return 'unknown';
                     }""")
-                    if has_video:
+                
+                    now = time.time()
+                
+                    if status_info == 'processing':
+                        if processing_start_time is None:
+                            processing_start_time = now
+                        elapsed_proc = now - processing_start_time
+                        generating_start_time = None
+                        generating_countdown_done = False
+                        buffer_countdown_done = False
+                    
+                        if elapsed_proc >= 480:  # 8 minutes
+                            print(f"--- Task {task_id}: Đã chờ Processing 8 phút, tải lại trang để kiểm tra...")
+                            video_tasks[task_id]["message"] = "⏳ Đã chờ 8 phút, đang tải lại trang..."
+                            try:
+                                page.reload()
+                                page.wait_for_load_state('domcontentloaded')
+                                page.wait_for_timeout(5000)
+                            except: pass
+                            processing_start_time = time.time()
+                            continue
+                        
+                        if video_tasks[task_id].get("message", "").startswith("✅ Đã Cancel"):
+                            video_tasks[task_id]["message"] = f"✅ Đã Cancel & Gen! Đang chờ Processing ({int(elapsed_proc)}s)..."
+                        else:
+                            video_tasks[task_id]["message"] = f"Đang chờ video tạo xong (Processing... {int(elapsed_proc)}s)"
+                    
+                        p_obj = manager.get_profile(profile_id)
+                        if p_obj and p_obj.notes != "free gen":
+                            p_obj.notes = "free gen"
+                            manager._save()
+                        
+                        page.wait_for_timeout(3000)
+                    
+                    elif status_info == 'generating':
+                        # Trạng thái Generating → bắt đầu đếm ngược
+                        if generating_start_time is None:
+                            generating_start_time = now
+                            generating_countdown_done = False
+                            buffer_countdown_done = False
+                    
+                        elapsed = now - generating_start_time
+                    
+                        if not generating_countdown_done:
+                            # Đếm ngược 15 phút (900 giây)
+                            remaining = max(0, 900 - elapsed)
+                            mins = int(remaining // 60)
+                            secs = int(remaining % 60)
+                            video_tasks[task_id]["message"] = f"⏳ Sắp ra rồi! Còn khoảng {mins} phút {secs} giây nữa..."
+                            if elapsed >= 900:
+                                generating_countdown_done = True
+                        else:
+                            video_tasks[task_id]["message"] = f"⏳ Đang chờ video... (Đã chờ {int(elapsed // 60)} phút)"
+                    
+                        page.wait_for_timeout(3000)
+                    
+                    elif status_info == 'done':
+                        # Video đã xong!
                         video_tasks[task_id]["message"] = "✅ Video đã sẵn sàng, đang tải xuống..."
                         p_obj = manager.get_profile(profile_id)
                         if p_obj:
@@ -428,8 +411,25 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                             manager._save()
                         break
                     else:
-                        video_tasks[task_id]["message"] = "Đang chờ video tạo xong..."
-                        page.wait_for_timeout(3000)
+                        # Không rõ trạng thái → kiểm tra thêm xem có video chưa
+                        has_video = page.evaluate("""() => {
+                            let grid = document.getElementById('assets-grid');
+                            if(grid) {
+                                let completed = grid.querySelector('[data-job-status="completed"] video');
+                                if(completed && completed.src && completed.src.includes('http')) return true;
+                            }
+                            return false;
+                        }""")
+                        if has_video:
+                            video_tasks[task_id]["message"] = "✅ Video đã sẵn sàng, đang tải xuống..."
+                            p_obj = manager.get_profile(profile_id)
+                            if p_obj:
+                                p_obj.notes = "không free"
+                                manager._save()
+                            break
+                        else:
+                            video_tasks[task_id]["message"] = "Đang chờ video tạo xong..."
+                            page.wait_for_timeout(3000)
                         
                 except Exception as ex:
                     err_str = str(ex)
