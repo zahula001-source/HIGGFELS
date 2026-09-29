@@ -1466,19 +1466,22 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                 video_tasks[task_id] = {"status": "running", "message": "Đang thao tác Cancel & Gen lại..."}
                 
                 try:
-                    # 1. Hover vào tỷ lệ (21:9) để hiện nút copy prompt
+                    # 1. Hover vào thẻ lịch sử chứa năm 2026 hoặc tỷ lệ khung hình
                     page.evaluate("""() => {
                         const textNodes = Array.from(document.querySelectorAll('span, p, div, button'));
-                        const ratioEl = textNodes.reverse().find(el => el.innerText && (el.innerText.includes(':9') || el.innerText.includes('1:1') || el.innerText.includes('3:4') || el.innerText.includes('9:16')));
-                        if (ratioEl) {
-                            ratioEl.dispatchEvent(new MouseEvent('mouseover', {bubbles: true}));
+                        const hoverTarget = textNodes.reverse().find(el => el.innerText && (el.innerText.includes('2026') || el.innerText.includes(':9') || el.innerText.includes('1:1') || el.innerText.includes('3:4') || el.innerText.includes('9:16')));
+                        if (hoverTarget) {
+                            hoverTarget.dispatchEvent(new MouseEvent('mouseover', {bubbles: true}));
+                            const card = hoverTarget.closest('div, section');
+                            if (card) card.dispatchEvent(new MouseEvent('mouseover', {bubbles: true}));
                         }
                     }""")
                     page.wait_for_timeout(1000)
                     
-                    # Click nút Use as Prompt (có icon copy)
+                    # Click nút Use as Prompt (nhận dạng qua mã SVG chính xác mà user cung cấp)
                     page.evaluate("""() => {
-                        const copyBtn = document.querySelector('button[data-component="model"][data-job-set="hf_mult_motion_control"], button.button-xs.button-secondary[data-component="model"]');
+                        const btns = Array.from(document.querySelectorAll('button'));
+                        const copyBtn = btns.find(b => b.innerHTML.includes('M19.25 7.75C19.25') || (b.getAttribute('data-component') === 'model' && b.getAttribute('data-job-set') === 'hf_mult_motion_control'));
                         if (copyBtn) copyBtn.click();
                     }""")
                     page.wait_for_timeout(2000)
