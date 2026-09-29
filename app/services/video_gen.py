@@ -1466,13 +1466,12 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                 video_tasks[task_id] = {"status": "running", "message": "Đang thao tác Cancel & Gen lại..."}
                 
                 try:
-                    # 1 & 2. Tìm thẻ đang Processing -> Ép hiện thanh công cụ -> Click Copy -> Đợi 2s -> Click Cancel
+                    # CHẾ ĐỘ DEBUG: Ép hiện thanh công cụ và ĐỨNG IM
                     page.evaluate("""() => {
                         const procSpans = Array.from(document.querySelectorAll('span, div'));
                         const proc = procSpans.find(el => el.innerText && el.innerText.trim() === 'Processing');
                         if (proc) {
-                            // Tìm thẻ card chứa chữ Processing
-                            let card = proc.closest('div.group\\\\/card'); // Thử selector group/card trước
+                            let card = proc.closest('div.group\\\\/card');
                             if (!card) card = proc.closest('section');
                             if (!card) card = proc.closest('.v_list_row');
                             
@@ -1481,22 +1480,13 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                                 const style = document.createElement('style');
                                 style.innerHTML = 'div[id^="action-panel"], div[class*="opacity-0"] { opacity: 1 !important; pointer-events: auto !important; }';
                                 document.head.appendChild(style);
-                                
-                                card.dispatchEvent(new MouseEvent('mouseover', {bubbles: true}));
-                                
-                                // Tìm nút Copy
-                                const btns = Array.from(card.querySelectorAll('button'));
-                                const copyBtn = btns.find(b => b.innerHTML.includes('M19.25 7.75C19.25') || (b.getAttribute('data-job-set') === 'hf_mult_motion_control'));
-                                if (copyBtn) {
-                                    copyBtn.dispatchEvent(new MouseEvent('mouseover', {bubbles: true}));
-                                    copyBtn.dispatchEvent(new MouseEvent('mousedown', {bubbles: true}));
-                                    copyBtn.dispatchEvent(new MouseEvent('mouseup', {bubbles: true}));
-                                    copyBtn.click();
-                                }
                             }
                         }
                     }""")
-                    page.wait_for_timeout(3000)
+                    video_tasks[task_id] = {"status": "running", "message": "🛑 DEBUG: Nút đã hiện! Hãy F12 copy HTML gửi tôi..."}
+                    print("🛑 ĐANG Ở CHẾ ĐỘ DEBUG: Đứng im 60 giây để user lấy code HTML...")
+                    page.wait_for_timeout(60000)
+                    continue # Bỏ qua các bước sau để user có thời gian copy
                     
                     # Click Cancel trên chính thẻ Processing
                     page.evaluate("""() => {
