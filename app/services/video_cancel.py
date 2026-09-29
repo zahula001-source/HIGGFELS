@@ -24,13 +24,19 @@ def run_cancel_gen_automation(profile_id: str, is_headless: bool, task_id: str):
         if engine == "cloakbrowser":
             # Nếu dùng cloakbrowser, kết nối qua CDP hoặc launch
             port_file = Path(profile.user_data_dir) / "cdp_port.txt"
+            connected = False
             if port_file.exists():
                 latest_port = int(port_file.read_text().strip())
-                with sync_playwright() as p:
-                    browser = p.chromium.connect_over_cdp(f"http://localhost:{latest_port}")
-                    context = browser.contexts[0]
-                    _do_cancel(context, task_id)
-            else:
+                try:
+                    with sync_playwright() as p:
+                        browser = p.chromium.connect_over_cdp(f"http://localhost:{latest_port}")
+                        context = browser.contexts[0]
+                        _do_cancel(context, task_id)
+                        connected = True
+                except Exception as cdp_err:
+                    print(f"Lỗi connect CDP (Cancel gen): {cdp_err}")
+            
+            if not connected:
                 from cloakbrowser import launch_persistent_context
                 cloak_kwargs = {
                     "user_data_dir": profile.user_data_dir,
