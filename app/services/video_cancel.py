@@ -6,7 +6,7 @@ from pathlib import Path
 
 from app.core.state import video_tasks
 from app.manager import manager
-from app.browser import browser_launch_options
+from app.browser_settings import browser_launch_options
 
 def run_cancel_gen_automation(profile_id: str, is_headless: bool, task_id: str):
     import time
