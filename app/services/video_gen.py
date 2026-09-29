@@ -336,7 +336,7 @@ def _send_video_to_telegram(video_path, token, chat_id):
     except Exception as e:
         print(f"Lỗi gửi Telegram: {e}")
 
-def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is_headless=False, enable_ext=False, enable_ext_btn2=False, tg_enabled=False, tg_token="", tg_chat_id=""):
+def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is_headless=False, enable_ext=False, enable_ext_btn2=False, tg_enabled=False, tg_token="", tg_chat_id="", gen_mode="motion_transfer"):
     """Background thread: mở higgsfield.ai, đăng nhập Microsoft, upload ảnh, nhập prompt và tạo video."""
     from playwright.sync_api import sync_playwright
     import urllib.parse
@@ -1159,14 +1159,22 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                         print(f"Lỗi upload {btn_aria_label}: {e}")
                         raise e
 
-                # 1. Upload Ảnh (Có cơ chế Retry riêng)
+                # 1. Chuyển sang Tab đúng dựa trên gen_mode
+                try:
+                    if gen_mode == "objects_swap":
+                        tab = page.locator('button[role="tab"]:has-text("Objects swap")').first
+                    else:
+                        tab = page.locator('button[role="tab"]:has-text("Motion transfer")').first
+                        
+                    if tab.is_visible(timeout=2000):
+                        tab.click(timeout=3000)
+                        page.wait_for_timeout(1000)
+                except: pass
+                
+                # 2. Upload Ảnh (Có cơ chế Retry riêng)
                 if images_to_upload:
                     for attempt in range(3):
                         try:
-                            objects_tab = page.locator('button[role="tab"]:has-text("Objects swap")').first
-                            if objects_tab.is_visible(timeout=2000):
-                                objects_tab.click(timeout=3000)
-                                page.wait_for_timeout(1000)
                             print(f"=== BẮT ĐẦU UPLOAD ẢNH ({len(images_to_upload)} file) (Lần {attempt+1}) ===")
                             video_tasks[task_id] = {"status": "running", "message": f"Đang tải {len(images_to_upload)} ảnh lên..."}
                             # Web tự hiển thị ảnh mới nhất lên đầu (đảo ngược thứ tự)
@@ -1186,21 +1194,13 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                                 raise e
                             raise e
 
-                # 2. Upload Video (Có cơ chế Retry riêng)
+                # 3. Upload Video (Có cơ chế Retry riêng)
                 if videos_to_upload:
                     for attempt in range(3):
                         try:
-                            if images_to_upload:
-                                # Nếu có ảnh, ta đang ở tab Objects swap -> nút upload video là "Add a reference video to edit"
+                            if gen_mode == "objects_swap":
                                 video_btn_label = "Add a reference video to edit"
                             else:
-                                # Nếu không có ảnh, về tab Motion transfer -> nút upload video là "Add a reference video to extract motion"
-                                try:
-                                    motion_tab = page.locator('button[role="tab"]:has-text("Motion transfer")').first
-                                    if motion_tab.is_visible(timeout=2000):
-                                        motion_tab.click(timeout=3000)
-                                        page.wait_for_timeout(1000)
-                                except: pass
                                 video_btn_label = "Add a reference video to extract motion"
                         
                             print(f"=== BẮT ĐẦU UPLOAD VIDEO ({len(videos_to_upload)} file) (Lần {attempt+1}) ===")
@@ -1484,9 +1484,11 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                     // 3. Click thẳng vào nút Play hoặc ảnh đại diện để ÉP nó tải luồng video (Bắt buộc phải Play mới lấy được link)
                     const playBtns = document.querySelectorAll('.play-icon-gWzeeV, .xg-icon-play, [aria-label="play"], .video-hover-button-group-container-mh06XY, .image-box-grid-EYaIcP img');
                     playBtns.forEach(b => {
+                        if (b.dataset.clicked) return; // Tránh spam click làm crash browser
                         try { 
                             b.dispatchEvent(new MouseEvent('mouseover', {bubbles: true})); 
                             b.click(); // Phải CLICK thì xgplayer mới bơm link vào thẻ <video>
+                            b.dataset.clicked = "true";
                         } catch(e){}
                     });
                 }""")

@@ -54,8 +54,9 @@ async def create_video(request: Request):
     telegram_enabled = form.get("telegram_enabled", "false")
     telegram_token = form.get("telegram_token", "")
     telegram_chat_id = form.get("telegram_chat_id", "")
+    gen_mode = form.get("gen_mode", "motion_transfer")
 
-    # Lß║Ñy danh s├ích c├íc profile ─æang bß║¡n
+    # Lấy danh sách các profile đang bận
     used_profiles = set()
     for task in video_tasks.values():
         if task.get("status") in ["running", "pending"]:
@@ -121,11 +122,12 @@ async def create_video(request: Request):
             "enable_ext_btn2": (enable_ext_btn2.lower() == "true"),
             "tg_enabled": (telegram_enabled.lower() == "true"),
             "tg_token": telegram_token,
-            "tg_chat_id": telegram_chat_id
+            "tg_chat_id": telegram_chat_id,
+            "gen_mode": gen_mode
         }
     }
     
-    t = threading.Thread(target=run_video_automation, args=(task_id, prompt, saved_paths, profile_id, save_path, headless_bool, (enable_ext.lower() == "true"), (enable_ext_btn2.lower() == "true"), (telegram_enabled.lower() == "true"), telegram_token, telegram_chat_id), daemon=True)
+    t = threading.Thread(target=run_video_automation, args=(task_id, prompt, saved_paths, profile_id, save_path, headless_bool, (enable_ext.lower() == "true"), (enable_ext_btn2.lower() == "true"), (telegram_enabled.lower() == "true"), telegram_token, telegram_chat_id, gen_mode), daemon=True)
     t.start()
     
     return {"ok": True, "task_id": task_id, "profile_id": profile_id}

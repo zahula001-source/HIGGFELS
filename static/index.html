@@ -127,7 +127,7 @@ body{background:#0b0e14;color:#e5e7eb;min-height:100vh;}
       <button class="tab-btn active" id="tabBtnProfiles" onclick="switchTab('profiles')">🖥️ Profiles</button>
       <button class="tab-btn" id="tabBtnVideo" onclick="switchTab('video')">🎬 Tạo Video (BFL.AI)</button>
       <button id="addVideoBtn" onclick="addVideoForm()" style="display:none; align-items:center; justify-content:center; background:none; border:1px solid #10b981; color:#10b981; border-radius:6px; cursor:pointer; font-size:18px; line-height:1; width:28px; height:28px; transition:0.2s; padding:0;" onmouseover="this.style.background='#10b981';this.style.color='#fff'" onmouseout="this.style.background='none';this.style.color='#10b981'" title="Mở thẻ trống mới để điền">+</button>
-      <button id="loadSessionBtn" onclick="loadUnfinishedUIState()" style="display:none; align-items:center; justify-content:center; background:none; border:1px solid #f59e0b; color:#f59e0b; border-radius:6px; cursor:pointer; font-size:12px; padding:0 8px; height:28px; transition:0.2s; margin-left:6px;" onmouseover="this.style.background='#f59e0b';this.style.color='#fff'" onmouseout="this.style.background='none';this.style.color='#f59e0b'" title="Khôi phục lại các thẻ bị lỗi hoặc đang chạy dở">Khôi phục Thẻ Lỗi/Chưa Xong</button>
+
       <button id="checkVideoBtn" onclick="openCheckVideoModal()" style="display:none; align-items:center; justify-content:center; background:none; border:1px solid #3b82f6; color:#3b82f6; border-radius:6px; cursor:pointer; font-size:12px; padding:0 8px; height:28px; transition:0.2s; margin-left:6px;" onmouseover="this.style.background='#3b82f6';this.style.color='#fff'" onmouseout="this.style.background='none';this.style.color='#3b82f6'" title="Kiểm tra trạng thái video của nhiều Profile">🔍 Check Video</button>
       <button id="stopCheckVideoBtn" onclick="stopAllCheckVideo()" style="display:none; align-items:center; justify-content:center; background:none; border:1px solid #ef4444; color:#ef4444; border-radius:6px; cursor:pointer; font-size:12px; padding:0 8px; height:28px; transition:0.2s; margin-left:4px;" onmouseover="this.style.background='#ef4444';this.style.color='#fff'" onmouseout="this.style.background='none';this.style.color='#ef4444'" title="Dừng tất cả tiến trình đang kiểm tra video">🛑 Dừng Check</button>
     </div>
@@ -1345,6 +1345,9 @@ async function addVideoForm(force_fId = null) {
               <button class="btn btn-ghost" style="height:40px;padding:0 8px;font-size:11px;font-weight:bold;border:1px solid #10b981;color:#10b981;" onclick="let p = document.getElementById('videoProfileId_'+${fId}).value; if(p) launchProfile(p); else alert('Chọn Profile trước!');" title="Mở Chrome thủ công">
                 🌐 Mở Chrome
               </button>
+              <button class="btn btn-ghost" style="height:40px;padding:0 8px;font-size:11px;font-weight:bold;border:1px solid #eab308;color:#eab308;" onclick="submitCheckVideoForFid(${fId})" title="Kiểm tra trạng thái Video">
+                👀 Check
+              </button>
             </div>
           </div>
 
@@ -1352,6 +1355,15 @@ async function addVideoForm(force_fId = null) {
           <div class="form-group" style="margin:0;">
             <label>📝 Prompt mô tả video</label>
             <textarea id="videoPrompt_${fId}" class="textarea" rows="2" style="min-height:52px;resize:none;" placeholder="VD: video mèo cute..."></textarea>
+          </div>
+
+          <!-- Setting: Gen Mode -->
+          <div class="form-group" style="margin:0;">
+            <label>⚙️ Tính năng</label>
+            <select id="videoGenMode_${fId}" class="select" style="height:36px;font-size:12px;padding:4px 8px;">
+              <option value="motion_transfer" selected>Motion transfer (Mặc định)</option>
+              <option value="objects_swap">Objects swap</option>
+            </select>
           </div>
 
           <!-- Setting (Model, Duration, Ratio) - Ẩn đi theo yêu cầu -->
@@ -1614,6 +1626,7 @@ async function startVideoCreationDynamic(fId) {
   
   formData.append("video_duration", document.getElementById(`videoDuration_${fId}`).value);
   formData.append("video_ratio", document.getElementById(`videoRatio_${fId}`).value);
+  formData.append("gen_mode", document.getElementById(`videoGenMode_${fId}`).value);
   
   const savePath = document.getElementById("globalVideoSavePath") ? document.getElementById("globalVideoSavePath").value.trim() : "";
   formData.append("save_path", savePath);
@@ -1626,6 +1639,9 @@ async function startVideoCreationDynamic(fId) {
   formData.append('telegram_enabled', localStorage.getItem('tgEnable') === "true" ? "true" : "false");
   formData.append('telegram_token', localStorage.getItem('tgToken') || "");
   formData.append('telegram_chat_id', localStorage.getItem('tgChatId') || "");
+  
+  const genMode = document.getElementById(`videoGenMode_${fId}`) ? document.getElementById(`videoGenMode_${fId}`).value : "motion_transfer";
+  formData.append("gen_mode", genMode);
   
   const enableExt = document.getElementById(`enableExt_${fId}`) ? document.getElementById(`enableExt_${fId}`).checked : false;
   formData.append("enable_ext", enableExt);
@@ -2459,10 +2475,15 @@ async function sendChatMessage() {
       <button class="btn btn-ghost" style="padding:4px 8px;" onclick="closeCheckVideoModal()">✕</button>
     </div>
     
-    <div style="margin-bottom:16px;">
+    <div style="margin-bottom:16px; display:flex; justify-content:space-between; align-items:center;">
       <label style="display:flex; align-items:center; gap:8px; cursor:pointer; color:#94a3b8; font-size:14px; user-select:none;">
         <input type="checkbox" id="checkVideoSelectAll" onchange="toggleCheckVideoSelectAll(this)" style="width:16px; height:16px; accent-color:#3b82f6;">
         <span style="font-weight:bold; color:#e2e8f0;">Chọn tất cả</span>
+      </label>
+      
+      <label style="display:flex; align-items:center; gap:8px; cursor:pointer; color:#f59e0b; font-size:13px; user-select:none;" title="Tích vào đây để quá trình check chạy ngầm, không hiện cửa sổ Chrome lên">
+        <input type="checkbox" id="checkVideoHeadless" style="width:16px; height:16px; accent-color:#f59e0b;">
+        <span style="font-weight:bold;">Chạy ẩn Chrome</span>
       </label>
     </div>
     
@@ -2751,11 +2772,11 @@ async function submitCheckVideo() {
           vform.style.boxShadow = "0 0 0 1px rgba(59,130,246,0.2)";
       }
       
-      const globalHeadless = document.getElementById('globalHeadless').checked;
+      const isHeadless = document.getElementById('checkVideoHeadless') ? document.getElementById('checkVideoHeadless').checked : false;
       fetch('/api/video/check', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ profile_id: pId, is_headless: globalHeadless })
+          body: JSON.stringify({ profile_id: pId, is_headless: isHeadless })
       })
       .then(res => res.json())
       .then(data => {
