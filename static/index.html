@@ -789,7 +789,7 @@ async function launchProfile(id){
   if(autoSignup && data.ok && data.pid) {
     setTimeout(async () => {
       try {
-        const r = await fetch(`/api/profiles/${id}/auto-signup?keep_open=true`, {method:"POST"});
+        const r = await fetch(`/api/profiles/${id}/auto-signup`, {method:"POST"});
         const d = await r.json();
         if(!r.ok) console.warn("Auto signup err:", d);
       } catch(e) { console.warn("Auto signup exception:", e); }
