@@ -470,9 +470,10 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
         except:
             pass
 
-        def check_age_popup(pg):
+        def check_popups(pg):
             try:
                 pg.evaluate("""() => {
+                    // Xóa popup Confirm Age
                     const btns = Array.from(document.querySelectorAll('button, div[role="button"], span'));
                     const confirmBtn = btns.reverse().find(el => el.innerText && (
                         el.innerText.trim() === 'Confirm' || 
@@ -482,7 +483,12 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                     ));
                     if (confirmBtn) {
                         confirmBtn.click();
-                        console.log("Clicked Confirm Age popup!");
+                    }
+                    
+                    // Xóa popup Upgrade Ads
+                    const adsCloseBtn = document.querySelector('button.fixed.z-40.rounded-full');
+                    if (adsCloseBtn) {
+                        adsCloseBtn.click();
                     }
                 }""")
             except:
@@ -741,7 +747,7 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                     except: pass
                     
                     # 1. Quét xem có dialog xác nhận tuổi không, nếu có thì click
-                    check_age_popup(page)
+                    check_popups(page)
                     
                     # 1.2 Xử lý Cloudflare Turnstile
                     try:
@@ -1219,7 +1225,7 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                 if "from_logout=1" in page.url or page.evaluate("() => Array.from(document.querySelectorAll('button')).some(b => b.innerText && b.innerText.includes('Continue with Microsoft'))"):
                     raise Exception("Tài khoản higgsfield bị văng (Logout) giữa chừng. Vui lòng tắt và CHẠY LẠI profile này!")
             
-                check_age_popup(page)
+                check_popups(page)
                 # ── BƯỚC 9: Bật công tắc Prompt và điền ──────────────
                 if prompt:
                     print(f"=== ĐIỀN PROMPT: {prompt[:30]}... ===")
@@ -1448,7 +1454,7 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
             if "from_logout=1" in page.url:
                 raise Exception("higgsfield_logout")
                 
-            check_age_popup(page)
+            check_popups(page)
                 
             if video_tasks.get(task_id, {}).get("force_stop"):
                 print(f"--- Task {task_id} bị force_stop. Thoát vòng lặp chờ video.")
