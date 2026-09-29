@@ -1568,8 +1568,12 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                     print(f"--- Task {task_id} (Cancel+Gen): Đang bấm nút Generate và chuyển về chế độ chờ...")
                     page.evaluate("""() => {
                         const btns = Array.from(document.querySelectorAll('button'));
-                        const genBtn = btns.find(b => b.innerText && (b.innerText.trim() === 'Generate' || b.innerText.trim() === 'Tạo video'));
-                        if (genBtn && !genBtn.disabled) genBtn.click();
+                        const genBtn = btns.find(b => b.innerText && (b.innerText.includes('Generate') || b.innerText.includes('Tạo video')));
+                        if (genBtn && !genBtn.disabled) {
+                            genBtn.dispatchEvent(new PointerEvent('pointerdown', {bubbles: true}));
+                            genBtn.dispatchEvent(new PointerEvent('pointerup', {bubbles: true}));
+                            genBtn.click();
+                        }
                     }""")
                     page.wait_for_timeout(2000)
                     
