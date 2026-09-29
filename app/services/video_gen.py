@@ -1467,6 +1467,7 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                 
                 try:
                     # 1. Click Copy
+                    print(f"--- Task {task_id} (Cancel+Gen): Đang tìm thẻ Processing và ép hiện nút Copy/Cancel...")
                     page.evaluate("""() => {
                         const procSpans = Array.from(document.querySelectorAll('span, div'));
                         const proc = procSpans.find(el => el.innerText && el.innerText.trim() === 'Processing');
@@ -1496,9 +1497,11 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                             }
                         }
                     }""")
+                    print(f"--- Task {task_id} (Cancel+Gen): Đã click Copy prompt, đang đợi 3s để web nhận thông số...")
                     page.wait_for_timeout(3000)
                     
                     # 2. Click Cancel
+                    print(f"--- Task {task_id} (Cancel+Gen): Đang click Cancel tiến trình...")
                     page.evaluate("""() => {
                         const procSpans = Array.from(document.querySelectorAll('span, div'));
                         const proc = procSpans.find(el => el.innerText && el.innerText.trim() === 'Processing');
@@ -1523,6 +1526,7 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                     page.wait_for_timeout(2000)
                     
                     # 3. Click Confirm
+                    print(f"--- Task {task_id} (Cancel+Gen): Đang click Confirm xác nhận huỷ...")
                     page.evaluate("""() => {
                         const btns = Array.from(document.querySelectorAll('button'));
                         const confirm = btns.find(b => b.innerText && b.innerText.includes('Confirm'));
@@ -1531,11 +1535,14 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                     page.wait_for_timeout(4000)
                     
                     # 4. Tải lại trang theo yêu cầu
+                    print(f"--- Task {task_id} (Cancel+Gen): Đang reload lại trang...")
                     page.reload()
                     page.wait_for_load_state('domcontentloaded')
+                    print(f"--- Task {task_id} (Cancel+Gen): Đợi thêm 5s sau khi reload cho web load hẳn...")
                     page.wait_for_timeout(5000)
                     
                     # 5. Check Use free gens
+                    print(f"--- Task {task_id} (Cancel+Gen): Kiểm tra công tắc 'Use free gens'...")
                     page.evaluate("""() => {
                         const labels = Array.from(document.querySelectorAll('label'));
                         const freeLabel = labels.find(l => l.innerText && l.innerText.includes('Use free gens'));
@@ -1547,11 +1554,13 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                     page.wait_for_timeout(1000)
                     
                     # 6. Click Generate
+                    print(f"--- Task {task_id} (Cancel+Gen): Đang bấm nút Generate và chuyển về chế độ chờ...")
                     page.evaluate("""() => {
                         const btns = Array.from(document.querySelectorAll('button'));
                         const genBtn = btns.find(b => b.innerText && (b.innerText.trim() === 'Generate' || b.innerText.trim() === 'Tạo video'));
                         if (genBtn && !genBtn.disabled) genBtn.click();
                     }""")
+                    page.wait_for_timeout(2000)
                     
                     video_tasks[task_id] = {"status": "running", "message": "✅ Đã Cancel và Generate lại! Đang chờ..."}
                 except Exception as ex:
