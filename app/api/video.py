@@ -149,16 +149,12 @@ def api_check_video(req: CheckVideoReq):
     t.start()
     return {"ok": True, "task_id": task_id}
 
-@router.post("/api/video/cancel_gen")
-def api_cancel_gen(req: CancelGenReq):
-    import uuid
-    from app.services.video_cancel import run_cancel_gen_automation
-    task_id = str(uuid.uuid4())[:8]
-    video_tasks[task_id] = {"status": "starting", "message": "Đang khởi tạo Cancel & Gen..."}
-    t = threading.Thread(target=run_cancel_gen_automation, args=(req.profile_id, req.is_headless, task_id))
-    t.daemon = True
-    t.start()
-    return {"ok": True, "task_id": task_id}
+@router.post("/api/video/cancel_gen/{task_id}")
+def api_cancel_gen_task(task_id: str):
+    if task_id in video_tasks:
+        video_tasks[task_id]["cancel_and_gen_requested"] = True
+        return {"ok": True, "message": "Đã gửi lệnh Cancel + Gen cho tiến trình"}
+    return {"ok": False, "message": "Không tìm thấy tiến trình đang chạy!"}
 
 @router.post("/api/video/check/stop_all")
 def api_stop_all_check_video():

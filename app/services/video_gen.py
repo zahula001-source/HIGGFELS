@@ -1459,6 +1459,73 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
             if video_tasks.get(task_id, {}).get("force_stop"):
                 print(f"--- Task {task_id} bị force_stop. Thoát vòng lặp chờ video.")
                 break
+                
+            if video_tasks.get(task_id, {}).get("cancel_and_gen_requested"):
+                print(f"--- Task {task_id} nhận lệnh Cancel + Gen. Thực thi thao tác...")
+                video_tasks[task_id]["cancel_and_gen_requested"] = False
+                video_tasks[task_id] = {"status": "running", "message": "Đang thao tác Cancel & Gen lại..."}
+                
+                try:
+                    # 1. Ấn vào text chứa — MAN, the replacement MAN
+                    page.evaluate("""() => {
+                        const textElements = Array.from(document.querySelectorAll('span, p, div'));
+                        const target = textElements.find(el => el.innerText && el.innerText.includes('— MAN, the replacement MAN'));
+                        if (target) target.click();
+                    }""")
+                    page.wait_for_timeout(2000)
+                    
+                    # 2. Hover Processing và click Cancel
+                    page.evaluate("""() => {
+                        const procSpans = Array.from(document.querySelectorAll('span'));
+                        const proc = procSpans.find(el => el.innerText && el.innerText.trim() === 'Processing');
+                        if (proc) {
+                            const card = proc.closest('section');
+                            if (card) {
+                                card.dispatchEvent(new MouseEvent('mouseover', {bubbles: true}));
+                                setTimeout(() => {
+                                    const btns = Array.from(card.querySelectorAll('button'));
+                                    const cancelBtn = btns.find(b => b.innerText && b.innerText.includes('Cancel') || b.getAttribute('aria-label') === 'Cancel');
+                                    if(cancelBtn) cancelBtn.click();
+                                }, 500);
+                            }
+                        }
+                    }""")
+                    page.wait_for_timeout(2000)
+                    
+                    # 3. Click Confirm
+                    page.evaluate("""() => {
+                        const btns = Array.from(document.querySelectorAll('button'));
+                        const confirm = btns.find(b => b.innerText && b.innerText.includes('Confirm'));
+                        if (confirm) confirm.click();
+                    }""")
+                    page.wait_for_timeout(4000)
+                    
+                    # 4. Check Use free gens
+                    page.evaluate("""() => {
+                        const labels = Array.from(document.querySelectorAll('label'));
+                        const freeLabel = labels.find(l => l.innerText && l.innerText.includes('Use free gens'));
+                        if (freeLabel) {
+                            const toggle = freeLabel.parentElement.querySelector('button[role="switch"]');
+                            if (toggle && toggle.getAttribute('aria-checked') !== 'true') toggle.click();
+                        }
+                    }""")
+                    page.wait_for_timeout(1000)
+                    
+                    # 5. Click Generate
+                    page.evaluate("""() => {
+                        const btns = Array.from(document.querySelectorAll('button'));
+                        const genBtn = btns.find(b => b.innerText && (b.innerText.trim() === 'Generate' || b.innerText.trim() === 'Tạo video'));
+                        if (genBtn && !genBtn.disabled) genBtn.click();
+                    }""")
+                    
+                    video_tasks[task_id] = {"status": "running", "message": "✅ Đã Cancel và Generate lại! Đang chờ..."}
+                except Exception as ex:
+                    print(f"Lỗi khi thực thi Cancel + Gen: {ex}")
+                    video_tasks[task_id] = {"status": "running", "message": f"⚠️ Lỗi Cancel + Gen: {str(ex)}"}
+                
+                # Reset i (bộ đếm thời gian) về 0 để chờ thêm 10 phút nữa
+                i = 0
+                continue
             
             try:
                 # Quét xem có popup Log In bất ngờ hiện lên không

@@ -1614,36 +1614,28 @@ const videoTaskPolls = {};  // fId -> intervalId
 const fIdToTaskId = {}; // map fId to actual task_id
 
 async function startCancelAndGen(fId) {
-  const profileId = document.getElementById(`videoProfileId_${fId}`).value;
-  if (!profileId) { alert("Vui lòng chọn profile Chrome trước!"); return; }
+  const taskId = fIdToTaskId[fId];
+  if (!taskId) { 
+      alert("Không tìm thấy tiến trình đang chạy cho thẻ này!"); 
+      return; 
+  }
 
   const btn = document.getElementById(`cancelGenBtn_${fId}`);
   btn.disabled = true;
   btn.textContent = "⏳...";
-
-  const globalHeadless = document.getElementById('globalHeadless') ? document.getElementById('globalHeadless').checked : false;
   
   const statusBar = document.getElementById(`vtask_status_${fId}`);
   if(statusBar) {
       statusBar.style.display = 'flex';
       statusBar.className = 'status-bar running';
-      statusBar.innerHTML = `<div class="spinner" style="flex-shrink:0;"></div> <div style="font-size:11px;flex:1;">⏳ Bắt đầu Cancel + Gen...</div>`;
+      statusBar.innerHTML = `<div class="spinner" style="flex-shrink:0;"></div> <div style="font-size:11px;flex:1;">⏳ Đang ra lệnh Cancel + Gen...</div>`;
   }
 
   try {
-    const res = await fetch('/api/video/cancel_gen', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ profile_id: profileId, is_headless: globalHeadless })
-    });
+    const res = await fetch(`/api/video/cancel_gen/${taskId}`, { method: 'POST' });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || data.message || "Lỗi không xác định");
     
-    if (data.ok && data.task_id) {
-        fIdToTaskId[fId] = data.task_id;
-        if (videoTaskPolls[fId]) clearInterval(videoTaskPolls[fId]);
-        videoTaskPolls[fId] = setInterval(() => pollTaskStatusDynamic(fId, data.task_id), 2000);
-    }
   } catch(e) {
     alert("❌ Lỗi: " + e.message);
     if(statusBar) {
@@ -1651,8 +1643,10 @@ async function startCancelAndGen(fId) {
         statusBar.innerHTML = `❌ Lỗi: ${e.message}`;
     }
   } finally {
-    btn.disabled = false;
-    btn.textContent = "🛑 Cancel + gen";
+    setTimeout(() => {
+        btn.disabled = false;
+        btn.textContent = "🛑 Cancel + gen";
+    }, 2000);
   }
 }
 
