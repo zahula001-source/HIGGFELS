@@ -1433,15 +1433,11 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False):
                 if profile_id in _running_signups:
                     _running_signups.remove(profile_id)
             try:
-                if not keep_open:
-                    p.stop()
+                p.stop()
             except: pass
             try:
-                if not keep_open:
-                    close_profile(profile.id)
-                    print(f"Đã đóng Chrome cho profile {profile.name} sau khi hoàn tất kiểm tra.")
-                else:
-                    print(f"Giữ Chrome mở cho profile {profile.name} theo yêu cầu.")
+                close_profile(profile.id)
+                print(f"Đã đóng Chrome cho profile {profile.name} sau khi hoàn tất cập nhật.")
             except: pass
 
     threading.Thread(target=run_auto_signup, daemon=True).start()
