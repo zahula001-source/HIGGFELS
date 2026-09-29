@@ -271,14 +271,25 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                         # 5. Check Use free gens
                         print(f"--- Task {task_id} (Cancel+Gen): Kiểm tra công tắc 'Use free gens'...")
                         page.evaluate("""() => {
-                            const labels = Array.from(document.querySelectorAll('label'));
-                            const freeLabel = labels.find(l => l.innerText && l.innerText.includes('Use free gens'));
-                            if (freeLabel) {
-                                const toggle = freeLabel.parentElement.querySelector('button[role="switch"]');
-                                if (toggle && toggle.getAttribute('aria-checked') !== 'true') toggle.click();
+                            const switches = Array.from(document.querySelectorAll('button[role="switch"]'));
+                            for (const sw of switches.reverse()) {
+                                let parent = sw.parentElement;
+                                let text = '';
+                                while (parent && parent.tagName !== 'BODY') {
+                                    text = parent.innerText || '';
+                                    if (text.includes('Use free gens')) {
+                                        if (sw.getAttribute('aria-checked') !== 'true') {
+                                            sw.dispatchEvent(new PointerEvent('pointerdown', {bubbles: true}));
+                                            sw.dispatchEvent(new PointerEvent('pointerup', {bubbles: true}));
+                                            sw.click();
+                                        }
+                                        return;
+                                    }
+                                    parent = parent.parentElement;
+                                }
                             }
                         }""")
-                        page.wait_for_timeout(1000)
+                        page.wait_for_timeout(2000)
                         
                         # 6. Click Generate
                         print(f"--- Task {task_id} (Cancel+Gen): Đang bấm nút Generate và chuyển về chế độ chờ...")
