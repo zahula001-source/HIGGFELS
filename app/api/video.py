@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse
 
 from app.core.state import pw_lock, video_tasks, video_tasks_chat, check_video_task_ids, MAX_RETRIES
 from app.core.config import BASE_DIR, STATIC_DIR, DATA_DIR, PROFILES_FILE
-from app.models import ProfileCreate, LaunchRequest, CheckVideoReq
+from app.models import ProfileCreate, LaunchRequest, CheckVideoReq, CancelGenReq
 from app.manager import manager
 from app.browser import launch_profile_with_fallback, close_profile, is_running, list_running
 from app.browser_settings import browser_launch_options
@@ -146,6 +146,17 @@ def api_check_video(req: CheckVideoReq):
         finally:
             check_video_task_ids.discard(task_id)
     t = threading.Thread(target=_run_and_cleanup, args=(task_id, req.profile_id, req.is_headless), daemon=True)
+    t.start()
+    return {"ok": True, "task_id": task_id}
+
+@router.post("/api/video/cancel_gen")
+def api_cancel_gen(req: CancelGenReq):
+    import uuid
+    from app.services.video_cancel import run_cancel_gen_automation
+    task_id = str(uuid.uuid4())[:8]
+    video_tasks[task_id] = {"status": "starting", "message": "Đang khởi tạo Cancel & Gen..."}
+    t = threading.Thread(target=run_cancel_gen_automation, args=(req.profile_id, req.is_headless, task_id))
+    t.daemon = True
     t.start()
     return {"ok": True, "task_id": task_id}
 

@@ -49,3 +49,7 @@ class LaunchRequest(BaseModel):
 class CheckVideoReq(BaseModel):
     profile_id: str
     is_headless: bool = False
+
+class CancelGenReq(BaseModel):
+    profile_id: str
+    is_headless: bool = False

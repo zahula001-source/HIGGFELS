@@ -1441,6 +1441,9 @@ async function addVideoForm(force_fId = null) {
             <button class="btn btn-primary" style="height:40px;flex:1;font-size:14px;justify-content:center;background:linear-gradient(135deg,#7c3aed,#db2777);white-space:nowrap;padding:0;" onclick="startVideoCreationDynamic(${fId})" id="createVideoBtn_${fId}">
               ▶️ Tạo Video
             </button>
+            <button class="btn btn-secondary" style="height:40px;flex:1;font-size:14px;justify-content:center;background:linear-gradient(135deg,#f59e0b,#ef4444);white-space:nowrap;padding:0;color:white;border:none;" onclick="startCancelAndGen(${fId})" id="cancelGenBtn_${fId}" title="Reload prompt, click Cancel, rồi Generate lại">
+              🛑 Cancel + gen
+            </button>
           </div>
           
           <!-- Kết quả Video nằm chung luôn -->
@@ -1609,6 +1612,49 @@ function dataURLtoBlob(dataurl) {
 // ===== VIDEO: ĐA LUỒNG (nhiều task song song) =====
 const videoTaskPolls = {};  // fId -> intervalId
 const fIdToTaskId = {}; // map fId to actual task_id
+
+async function startCancelAndGen(fId) {
+  const profileId = document.getElementById(`videoProfileId_${fId}`).value;
+  if (!profileId) { alert("Vui lòng chọn profile Chrome trước!"); return; }
+
+  const btn = document.getElementById(`cancelGenBtn_${fId}`);
+  btn.disabled = true;
+  btn.textContent = "⏳...";
+
+  const globalHeadless = document.getElementById('globalHeadless') ? document.getElementById('globalHeadless').checked : false;
+  
+  const statusBar = document.getElementById(`vtask_status_${fId}`);
+  if(statusBar) {
+      statusBar.style.display = 'flex';
+      statusBar.className = 'status-bar running';
+      statusBar.innerHTML = `<div class="spinner" style="flex-shrink:0;"></div> <div style="font-size:11px;flex:1;">⏳ Bắt đầu Cancel + Gen...</div>`;
+  }
+
+  try {
+    const res = await fetch('/api/video/cancel_gen', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profile_id: profileId, is_headless: globalHeadless })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || data.message || "Lỗi không xác định");
+    
+    if (data.ok && data.task_id) {
+        fIdToTaskId[fId] = data.task_id;
+        if (videoTaskPolls[fId]) clearInterval(videoTaskPolls[fId]);
+        videoTaskPolls[fId] = setInterval(() => pollTaskStatusDynamic(fId, data.task_id), 2000);
+    }
+  } catch(e) {
+    alert("❌ Lỗi: " + e.message);
+    if(statusBar) {
+        statusBar.className = 'status-bar error';
+        statusBar.innerHTML = `❌ Lỗi: ${e.message}`;
+    }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "🛑 Cancel + gen";
+  }
+}
 
 async function startVideoCreationDynamic(fId) {
   const prompt = document.getElementById(`videoPrompt_${fId}`).value.trim();
