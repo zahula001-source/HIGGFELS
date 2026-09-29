@@ -37,16 +37,26 @@ def run_cancel_gen_automation(profile_id: str, is_headless: bool, task_id: str):
                     print(f"Lỗi connect CDP (Cancel gen): {cdp_err}")
             
             if not connected:
-                from cloakbrowser import launch_persistent_context
-                cloak_kwargs = {
-                    "user_data_dir": profile.user_data_dir,
-                    "headless": is_headless,
-                    "args": [],
-                    "accept_downloads": True,
-                    "downloads_path": str(Path.home() / "Downloads")
-                }
-                with launch_persistent_context(**cloak_kwargs) as context:
-                    _do_cancel(context, task_id)
+                from app.browser import launch_profile_with_fallback, close_profile
+                from app.models import LaunchRequest
+                import time
+                
+                print(f"[{profile_id}] Đóng trình duyệt cũ và mở lại qua CDP...")
+                close_profile(profile_id)
+                
+                launch_req = LaunchRequest(headless=is_headless)
+                launch_profile_with_fallback(profile, launch_req)
+                
+                time.sleep(2) # Chờ Chrome khởi động xong và ghi file port
+                
+                if port_file.exists():
+                    latest_port = int(port_file.read_text().strip())
+                    with sync_playwright() as p:
+                        browser = p.chromium.connect_over_cdp(f"http://localhost:{latest_port}")
+                        context = browser.contexts[0]
+                        _do_cancel(context, task_id)
+                else:
+                    raise Exception("Không thể khởi động lại trình duyệt (Không thấy file port CDP).")
         else:
             with sync_playwright() as p:
                 context = p.chromium.launch_persistent_context(
