@@ -234,7 +234,8 @@ body{background:#0b0e14;color:#e5e7eb;min-height:100vh;}
     <h2>Tao Profile Chrome Moi Hoan Toan</h2>
     <div class="form-group" style="background:#1e293b; padding:10px; border-radius:8px; border:1px dashed #475569; margin-bottom: 12px;">
       <label style="color:#60a5fa;">⚡ Dán Nhanh (email|password|token|guid)</label>
-      <textarea id="f_quick_paste" class="textarea" style="min-height:80px;" placeholder="Dán thông tin tài khoản vào đây: email|password|token|guid...&#10;Sẽ được tự động lưu vào Thông Tin Tài Khoản của profile và điền Tên profile (nếu trống)." oninput="handleQuickPaste()"></textarea>
+      <textarea id="f_quick_paste" class="textarea" style="min-height:80px;" placeholder="Dán thông tin 1 hoặc nhiều tài khoản vào đây: email|password|token|guid...&#10;Mỗi dòng = 1 tài khoản. Dán nhiều dòng sẽ được hỏi tạo nhiều profile cùng lúc." oninput="handleQuickPaste()"></textarea>
+      <div id="f_quick_paste_info" style="display:none;font-size:12px;margin-top:6px;background:#0f3460;border:1px solid #1d4ed8;padding:8px 12px;border-radius:6px;color:#93c5fd;"></div>
     </div>
     <div class="form-group">
       <label>Ten Profile *</label>
@@ -632,6 +633,28 @@ function handleQuickPaste() {
   const text = document.getElementById("f_quick_paste").value;
   if (!text) return;
   
+  const lines = text.trim().split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  
+  // Nếu có nhiều dòng (mỗi dòng 1 tài khoản)
+  if (lines.length > 1) {
+    const firstLine = lines[0];
+    const parts = firstLine.split('|');
+    if (parts[0] && (parts[0].includes('@') || parts.length >= 2)) {
+      // Hiện ra thông báo gợi ý tạo nhiều profile
+      const infoEl = document.getElementById('f_quick_paste_info');
+      if (infoEl) {
+        infoEl.innerHTML = `ℹ️ Phát hiện <b>${lines.length} tài khoản</b>. 
+          <a href="#" onclick="createBulkProfiles(); return false;" style="color:#60a5fa;font-weight:bold;">Tạo ${lines.length} Profile Cùng Lúc</a> 
+          hoặc điền tên dưới rồi bấm Tạo để chỉ tạo 1.`;
+        infoEl.style.display = 'block';
+      }
+      return;
+    }
+  }
+
+  const infoEl = document.getElementById('f_quick_paste_info');
+  if (infoEl) infoEl.style.display = 'none';
+  
   const fName = document.getElementById("f_name");
   
   // Chỉ tự động điền nếu Tên Profile đang trống
@@ -643,6 +666,58 @@ function handleQuickPaste() {
       fName.value = text.trim().substring(0, 50);
     }
   }
+}
+
+async function createBulkProfiles() {
+  const text = document.getElementById("f_quick_paste").value.trim();
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  if (!lines.length) return;
+  
+  const os = document.getElementById("f_os").value;
+  const proxyRaw = document.getElementById("f_proxy").value.trim();
+  const notes = document.getElementById("f_notes").value.trim();
+  const preset = document.getElementById("f_preset").value == "true";
+  let proxy = parseProxyInput(proxyRaw);
+  
+  if (proxyRaw && !proxy) { alert("Proxy sai format. Dùng ip:port hoặc ip:port:user:pass"); return; }
+  
+  const infoEl = document.getElementById('f_quick_paste_info');
+  if (infoEl) infoEl.innerHTML = `⏳ Đang tạo ${lines.length} profiles...`;
+  
+  let created = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    const parts = line.split('|');
+    const nameFromEmail = parts[0] && parts[0].includes('@') ? parts[0].trim() : `Profile Batch ${Date.now()}-${i}`;
+    const profileName = nameFromEmail;
+    const payload = { name: profileName, os, browser: 'chromium', proxy, notes, fingerprint_preset: preset };
+    try {
+      const res = await fetch("/api/profiles", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload) });
+      if (!res.ok) throw new Error(await res.text());
+      const profile = await res.json();
+      // Lưu ms_account
+      if (line && profile.id) {
+        try {
+          await fetch(`/api/profiles/${profile.id}/set-ms-account`, {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({raw: line})
+          });
+        } catch(e) { console.warn("save ms_account err:", e); }
+      }
+      created++;
+      if (infoEl) infoEl.innerHTML = `⏳ Đã tạo ${created}/${lines.length} profiles...`;
+    } catch(e) { console.warn("create profile err:", e); }
+  }
+  
+  closeModal();
+  document.getElementById("f_name").value = "";
+  document.getElementById("f_proxy").value = "";
+  document.getElementById("f_notes").value = "";
+  document.getElementById("f_quick_paste").value = "";
+  await loadProfiles();
+  alert(`✅ Đã tạo thành công ${created} profiles!`);
 }
 
 async function createProfile(){
@@ -1455,7 +1530,7 @@ async function addVideoForm(force_fId = null) {
               <!-- NÚT TRÁI: Tải nhiều ảnh (max 10) -->
               <div style="flex:1;">
                 <div class="img-drop-zone" style="height:64px;cursor:pointer;position:relative;" onclick="document.getElementById('imgInputMulti_${fId}').click()">
-                  <div id="imgMultiGallery_${fId}" style="display:flex;gap:4px;width:100%;height:100%;overflow-x:auto;align-items:center;padding:4px;flex-wrap:nowrap;">
+                  <div id="imgMultiGallery_${fId}" style="display:flex;gap:4px;width:100%;height:100%;overflow-x:auto;overflow-y:hidden;align-items:center;padding:4px;flex-wrap:nowrap;box-sizing:border-box;">
                     <div id="imgMultiEmpty_${fId}" class="dz-label" style="font-size:10px;flex-shrink:0;text-align:center;min-width:60px;">
                       <div style="font-size:18px;">🖼️</div>
                       <div>Tải Ảnh Lên</div>
@@ -1571,10 +1646,10 @@ function previewImgMulti(event, fId) {
     reader.onload = e => {
       const wrapper = document.createElement('div');
       wrapper.className = 'multi-img-thumb';
-      wrapper.style.cssText = 'position:relative;flex-shrink:0;width:50px;height:50px;border-radius:6px;overflow:hidden;border:1px solid #374151;';
+      wrapper.style.cssText = 'position:relative;flex-shrink:0;width:44px;height:44px;border-radius:5px;overflow:hidden;border:1px solid #374151;';
       const img = document.createElement('img');
       img.src = e.target.result;
-      img.style.cssText = 'width:100%;height:100%;object-fit:cover;';
+      img.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;';
       const delBtn = document.createElement('button');
       delBtn.textContent = '✕';
       delBtn.style.cssText = 'position:absolute;top:1px;right:1px;background:rgba(239,68,68,0.9);color:#fff;border:none;border-radius:3px;font-size:9px;width:14px;height:14px;cursor:pointer;padding:0;line-height:1;display:flex;align-items:center;justify-content:center;';
