@@ -789,7 +789,7 @@ async function launchProfile(id){
   if(autoSignup && data.ok && data.pid) {
     setTimeout(async () => {
       try {
-        const r = await fetch(`/api/profiles/${id}/auto-signup`, {method:"POST"});
+        const r = await fetch(`/api/profiles/${id}/auto-signup?keep_open=true`, {method:"POST"});
         const d = await r.json();
         if(!r.ok) console.warn("Auto signup err:", d);
       } catch(e) { console.warn("Auto signup exception:", e); }
@@ -1188,7 +1188,8 @@ async function autoSignup(id) {
                     auto_random_fp: autoFp,
                     startup_urls: startupUrls,
                     startup_mode: startupMode,
-                    enable_ext: enableExt
+                    enable_ext: enableExt,
+                    keep_open_after_check: false
                 })
             });
             const data = await res.json();
@@ -1199,11 +1200,23 @@ async function autoSignup(id) {
             }
             setTimeout(loadProfiles, 1000);
             
-            // Đợi 8 giây cho Chrome mở xong rồi mới gọi auto signup
-            setTimeout(async () => {
-                loadingMsg.remove();
-                await callAutoSignupApi(id, false); // Nút tạo tài khoản thì đóng lại
-            }, 8000);
+            // Backend will trigger autoSignup with keep_open=false automatically.
+            loadingMsg.remove();
+            
+            // Hiện thông báo thành công
+            const msg = document.createElement("div");
+            msg.textContent = "✅ Đã bắt đầu Tự động tạo acc + login (Chrome sẽ tự đóng khi xong)!";
+            msg.style.position = "fixed";
+            msg.style.bottom = "20px";
+            msg.style.right = "20px";
+            msg.style.background = "#10b981";
+            msg.style.color = "white";
+            msg.style.padding = "12px 20px";
+            msg.style.borderRadius = "8px";
+            msg.style.zIndex = "9999";
+            msg.style.boxShadow = "0 4px 6px rgba(0,0,0,0.1)";
+            document.body.appendChild(msg);
+            setTimeout(() => msg.remove(), 3000);
             return;
         } catch(e) {
             alert("Lỗi: " + e.message);
