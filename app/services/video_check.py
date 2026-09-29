@@ -177,13 +177,16 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
             generating_start_time = None  # Thời điểm bắt đầu Generating
             generating_countdown_done = False  # Đã qua 15 phút chưa
             buffer_countdown_done = False  # Đã qua 5 phút bù chưa
+            processing_start_time = None
             
             while True:
-                # Kiểm tra cờ dừng
-                if video_tasks.get(task_id, {}).get("force_stop"):
-                    video_tasks[task_id]["status"] = "error"
-                    video_tasks[task_id]["message"] = "🛑 Đã dừng theo yêu cầu!"
-                    context.close()
+                try:
+                    # Kiểm tra cờ dừng
+                    if video_tasks.get(task_id, {}).get("force_stop"):
+                        video_tasks[task_id]["status"] = "error"
+                        video_tasks[task_id]["message"] = "🛑 Đã dừng theo yêu cầu!"
+                        try: context.close()
+                        except: pass
                     with pw_lock:
                         p.stop()
                     return
@@ -347,16 +350,29 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                 now = time.time()
                 
                 if status_info == 'processing':
-                    # Trạng thái Processing → chờ
-                    generating_start_time = None  # Reset nếu quay lại processing
+                    if processing_start_time is None:
+                        processing_start_time = now
+                    elapsed_proc = now - processing_start_time
+                    generating_start_time = None
                     generating_countdown_done = False
                     buffer_countdown_done = False
-                    if video_tasks[task_id].get("message", "").startswith("✅ Đã Cancel"):
-                        video_tasks[task_id]["message"] = "✅ Đã Cancel & Gen! Đang chờ (Processing)..."
-                    else:
-                        video_tasks[task_id]["message"] = "Đang chờ video tạo xong (Processing)..."
                     
-                    # Cập nhật thẻ thành 'free gen'
+                    if elapsed_proc >= 480:  # 8 minutes
+                        print(f"--- Task {task_id}: Đã chờ Processing 8 phút, tải lại trang để kiểm tra...")
+                        video_tasks[task_id]["message"] = "⏳ Đã chờ 8 phút, đang tải lại trang..."
+                        try:
+                            page.reload()
+                            page.wait_for_load_state('domcontentloaded')
+                            page.wait_for_timeout(5000)
+                        except: pass
+                        processing_start_time = time.time()
+                        continue
+                        
+                    if video_tasks[task_id].get("message", "").startswith("✅ Đã Cancel"):
+                        video_tasks[task_id]["message"] = f"✅ Đã Cancel & Gen! Đang chờ Processing ({int(elapsed_proc)}s)..."
+                    else:
+                        video_tasks[task_id]["message"] = f"Đang chờ video tạo xong (Processing... {int(elapsed_proc)}s)"
+                    
                     p_obj = manager.get_profile(profile_id)
                     if p_obj and p_obj.notes != "free gen":
                         p_obj.notes = "free gen"
@@ -381,18 +397,8 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                         video_tasks[task_id]["message"] = f"⏳ Sắp ra rồi! Còn khoảng {mins} phút {secs} giây nữa..."
                         if elapsed >= 900:
                             generating_countdown_done = True
-                    elif not buffer_countdown_done:
-                        # Hết 15 phút, đếm thêm 5 phút bù
-                        extra_elapsed = elapsed - 900
-                        remaining = max(0, 300 - extra_elapsed)
-                        mins = int(remaining // 60)
-                        secs = int(remaining % 60)
-                        video_tasks[task_id]["message"] = f"⏳ Thêm chút nữa thôi! Bù giờ còn {mins} phút {secs} giây..."
-                        if extra_elapsed >= 300:
-                            buffer_countdown_done = True
                     else:
-                        # Đã qua 20 phút vẫn chưa ra → vẫn chờ
-                        video_tasks[task_id]["message"] = "⏳ Đang chờ video... (có thể mất thêm chút thời gian)"
+                        video_tasks[task_id]["message"] = f"⏳ Đang chờ video... (Đã chờ {int(elapsed // 60)} phút)"
                     
                     page.wait_for_timeout(3000)
                     
@@ -424,7 +430,22 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                     else:
                         video_tasks[task_id]["message"] = "Đang chờ video tạo xong..."
                         page.wait_for_timeout(3000)
-                    
+                        
+                except Exception as ex:
+                    err_str = str(ex)
+                    if "Execution context was destroyed" in err_str:
+                        page.wait_for_timeout(3000)
+                        continue
+                    elif "Target closed" in err_str or "Browser closed" in err_str or "has been closed" in err_str:
+                        print(f"--- Task {task_id}: Trình duyệt đã bị đóng, ngưng chờ video.")
+                        video_tasks[task_id]["status"] = "error"
+                        video_tasks[task_id]["message"] = "🛑 Trình duyệt đã bị đóng, ngưng chờ video!"
+                        return
+                    else:
+                        print(f"--- Task {task_id}: Lỗi khi kiểm tra video: {ex}")
+                        page.wait_for_timeout(3000)
+                        continue
+                        
             page.wait_for_timeout(2000)
             
             # Get Video URLs - CHỈ LẤY VIDEO TRONG assets-grid (video kết quả thật)
