@@ -261,49 +261,62 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                         }""")
                         page.wait_for_timeout(4000)
                         
-                        # 4. Tải lại trang theo yêu cầu
-                        print(f"--- Task {task_id} (Cancel+Gen): Đang reload lại trang...")
-                        page.reload()
-                        page.wait_for_load_state('domcontentloaded')
-                        print(f"--- Task {task_id} (Cancel+Gen): Đợi thêm 5s sau khi reload cho web load hẳn...")
-                        page.wait_for_timeout(5000)
-                        
-                        # 5. Check Use free gens
-                        print(f"--- Task {task_id} (Cancel+Gen): Kiểm tra công tắc 'Use free gens'...")
-                        page.evaluate("""() => {
-                            const switches = Array.from(document.querySelectorAll('button[role="switch"]'));
-                            for (const sw of switches.reverse()) {
-                                let parent = sw.parentElement;
-                                let text = '';
-                                while (parent && parent.tagName !== 'BODY') {
-                                    text = parent.innerText || '';
-                                    if (text.includes('Use free gens')) {
-                                        if (sw.getAttribute('aria-checked') !== 'true') {
-                                            sw.dispatchEvent(new PointerEvent('pointerdown', {bubbles: true}));
-                                            sw.dispatchEvent(new PointerEvent('pointerup', {bubbles: true}));
-                                            sw.click();
+                        # 4. Tải lại trang, Check Free Gens, và Click Generate (Có retry)
+                        for retry_gen in range(3):
+                            print(f"--- Task {task_id} (Cancel+Gen): Đang reload lại trang (Lần {retry_gen + 1}/3)...")
+                            page.reload()
+                            page.wait_for_load_state('domcontentloaded')
+                            print(f"--- Task {task_id} (Cancel+Gen): Đợi thêm 5s sau khi reload cho web load hẳn...")
+                            page.wait_for_timeout(5000)
+                            
+                            # 5. Check Use free gens
+                            print(f"--- Task {task_id} (Cancel+Gen): Kiểm tra công tắc 'Use free gens'...")
+                            page.evaluate("""() => {
+                                const switches = Array.from(document.querySelectorAll('button[role="switch"]'));
+                                for (const sw of switches.reverse()) {
+                                    let parent = sw.parentElement;
+                                    let text = '';
+                                    while (parent && parent.tagName !== 'BODY') {
+                                        text = parent.innerText || '';
+                                        if (text.includes('Use free gens')) {
+                                            if (sw.getAttribute('aria-checked') !== 'true') {
+                                                sw.dispatchEvent(new PointerEvent('pointerdown', {bubbles: true}));
+                                                sw.dispatchEvent(new PointerEvent('pointerup', {bubbles: true}));
+                                                sw.click();
+                                            }
+                                            return;
                                         }
-                                        return;
+                                        parent = parent.parentElement;
                                     }
-                                    parent = parent.parentElement;
                                 }
-                            }
-                        }""")
-                        page.wait_for_timeout(2000)
-                        
-                        # 6. Click Generate
-                        print(f"--- Task {task_id} (Cancel+Gen): Đang bấm nút Generate và chuyển về chế độ chờ...")
-                        page.evaluate("""() => {
-                            const btns = Array.from(document.querySelectorAll('button'));
-                            const genBtn = btns.find(b => b.innerText && (b.innerText.includes('Generate') || b.innerText.includes('Tạo video')));
-                            if (genBtn && !genBtn.disabled) {
-                                genBtn.dispatchEvent(new PointerEvent('pointerdown', {bubbles: true}));
-                                genBtn.dispatchEvent(new PointerEvent('pointerup', {bubbles: true}));
-                                genBtn.click();
-                            }
-                        }""")
-                        page.wait_for_timeout(2000)
-                        
+                            }""")
+                            page.wait_for_timeout(2000)
+                            
+                            # 6. Click Generate
+                            print(f"--- Task {task_id} (Cancel+Gen): Đang bấm nút Generate và chuyển về chế độ chờ...")
+                            page.evaluate("""() => {
+                                const btns = Array.from(document.querySelectorAll('button'));
+                                const genBtn = btns.find(b => b.innerText && (b.innerText.includes('Generate') || b.innerText.includes('Tạo video')));
+                                if (genBtn && !genBtn.disabled) {
+                                    genBtn.dispatchEvent(new PointerEvent('pointerdown', {bubbles: true}));
+                                    genBtn.dispatchEvent(new PointerEvent('pointerup', {bubbles: true}));
+                                    genBtn.click();
+                                }
+                            }""")
+                            page.wait_for_timeout(4000)
+                            
+                            # Kiểm tra xem có Processing chưa
+                            has_processing = page.evaluate("""() => {
+                                const spans = Array.from(document.querySelectorAll('span, div'));
+                                return spans.some(el => el.innerText && el.innerText.trim() === 'Processing');
+                            }""")
+                            
+                            if has_processing:
+                                print(f"--- Task {task_id} (Cancel+Gen): ✅ Đã thấy thẻ Processing xuất hiện, quá trình tạo bắt đầu thành công!")
+                                break
+                            else:
+                                print(f"--- Task {task_id} (Cancel+Gen): ❌ Chưa thấy thẻ Processing, thử lại quá trình tải trang và ấn Generate...")
+                                
                         video_tasks[task_id] = {"status": "running", "message": "✅ Đã Cancel và Generate lại! Đang chờ..."}
                     except Exception as ex:
                         print(f"Lỗi khi thực thi Cancel + Gen trong Check: {ex}")
