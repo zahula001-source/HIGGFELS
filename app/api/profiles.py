@@ -286,7 +286,6 @@ def import_bundle(payload: dict = Body(...)):
         try:
             name = entry.get("name", "Profile")
             from app.models import ProfileCreate
-            from app.fingerprint import Fingerprint
             
             pc = ProfileCreate(
                 name=name,
