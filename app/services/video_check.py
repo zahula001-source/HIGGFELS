@@ -139,7 +139,7 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                     # Kiểm tra xem task auto-signup đã báo login xong chưa
                     # (profile sẽ được đóng Chrome sau khi auto-signup xong)
                     p_obj = manager.get_profile(profile_id)
-                    if p_obj and getattr(p_obj, 'notes', None) in ("không free", "free gen"):
+                    if p_obj and getattr(p_obj, 'notes', None) in ("không free", "free gen", "đã ra video"):
                         # Profile đã được cập nhật → login xong
                         break
                     # Cũng thoát nếu bị force stop
@@ -407,7 +407,7 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                         video_tasks[task_id]["message"] = "✅ Video đã sẵn sàng, đang tải xuống..."
                         p_obj = manager.get_profile(profile_id)
                         if p_obj:
-                            p_obj.notes = "không free"
+                            p_obj.notes = "đã ra video"
                             manager._save()
                         break
                     else:
@@ -424,7 +424,7 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                             video_tasks[task_id]["message"] = "✅ Video đã sẵn sàng, đang tải xuống..."
                             p_obj = manager.get_profile(profile_id)
                             if p_obj:
-                                p_obj.notes = "không free"
+                                p_obj.notes = "đã ra video"
                                 manager._save()
                             break
                         else:
@@ -513,6 +513,11 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                     video_tasks[task_id]["result_urls"] = all_result_urls
                     video_tasks[task_id]["status"] = "success"
                     video_tasks[task_id]["message"] = "Đã tải xong!"
+                    # Cập nhật tag thành 'đã ra video' sau khi tải thành công
+                    p_obj = manager.get_profile(profile_id)
+                    if p_obj:
+                        p_obj.notes = "đã ra video"
+                        manager._save()
                 except Exception as e:
                     video_tasks[task_id] = {"status": "error", "message": f"Lỗi khi tải video: {e}"}
             else:

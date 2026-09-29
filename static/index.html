@@ -517,7 +517,7 @@ function renderProfiles(profiles){
     const proxyBadge = hasProxy ? `🟢 ${p.proxy.host} 🇻🇳` : "IP that";
     return `
     <div class="card ${running?'running':''}" style="position: relative; overflow: hidden;">
-      ${p.notes && p.notes.startsWith('free gen') ? `<div style="position:absolute;top:0;right:0;background:#10b981;color:#fff;font-size:10px;font-weight:bold;padding:4px 12px;border-bottom-left-radius:8px;z-index:10;box-shadow:-2px 2px 4px rgba(0,0,0,0.2);">${esc(p.notes)}</div>` : (p.notes === 'không free' ? `<div style="position:absolute;top:0;right:0;background:#f59e0b;color:#fff;font-size:10px;font-weight:bold;padding:4px 12px;border-bottom-left-radius:8px;z-index:10;box-shadow:-2px 2px 4px rgba(0,0,0,0.2);">không free</div>` : '')}
+      ${p.notes && p.notes.startsWith('free gen') ? `<div style="position:absolute;top:0;right:0;background:#10b981;color:#fff;font-size:10px;font-weight:bold;padding:4px 12px;border-bottom-left-radius:8px;z-index:10;box-shadow:-2px 2px 4px rgba(0,0,0,0.2);">${esc(p.notes)}</div>` : (p.notes === 'không free' ? `<div style="position:absolute;top:0;right:0;background:#f59e0b;color:#fff;font-size:10px;font-weight:bold;padding:4px 12px;border-bottom-left-radius:8px;z-index:10;box-shadow:-2px 2px 4px rgba(0,0,0,0.2);">không free</div>` : (p.notes === 'đã ra video' ? `<div style="position:absolute;top:0;right:0;background:linear-gradient(135deg,#7c3aed,#2563eb);color:#fff;font-size:10px;font-weight:bold;padding:4px 12px;border-bottom-left-radius:8px;z-index:10;box-shadow:-2px 2px 8px rgba(124,58,237,0.5);">✅ đã ra video</div>` : ''))}
       <div class="card-header" ondblclick="editProfileName('${p.id}', '${esc(p.name)}', this.querySelector('.card-title'))" title="Ấn đúp vào vùng này để đổi tên" style="cursor: pointer;">
         <div class="card-title" style="font-size: 18px; font-weight: bold;"><span class="dot ${running?'running':''}"></span>${esc(p.name)}</div>
         <div style="font-size:10px;color:#64748b;">#${p.id} ID:${p.fingerprint?.random_id||''}</div>
@@ -1612,7 +1612,7 @@ function populateVideoProfiles() {
     const cur = sel.value;
     sel.innerHTML = '<option value="">-- Chọn profile đã đăng nhập --</option>';
     (allProfiles || []).forEach(p => {
-      if (p.notes !== "không free") {
+      if (p.notes !== "không free" && p.notes !== "đã ra video") {
         sel.innerHTML += `<option value="${p.id}" ${p.id === cur ? 'selected' : ''}>${p.name} (${p.os})</option>`;
       }
     });
@@ -2706,6 +2706,9 @@ function openCheckVideoModal() {
           } else if (notes === 'không free' || notes === 'khong free') {
               label.style.color = '#eab308'; // Vàng
               div.style.borderLeft = '3px solid #eab308';
+          } else if (notes === 'đã ra video') {
+              label.style.color = '#a78bfa';
+              div.style.borderLeft = '3px solid #7c3aed';
           } else if (notes.includes('lỗi') || notes.includes('loi') || notes.includes('login')) {
               label.style.color = '#94a3b8'; // Xám - giữ nguyên
               div.style.borderLeft = '3px solid #475569';
