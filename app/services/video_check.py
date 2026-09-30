@@ -240,6 +240,9 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
             buffer_countdown_done = False  # Đã qua 5 phút bù chưa
             processing_start_time = None
             
+            import random, time
+            next_reload_time = time.time() + random.randint(240, 420)
+            
             while True:
                 try:
                     # Kiểm tra cờ dừng
@@ -389,6 +392,19 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                         continue
                 
                     # Lấy trạng thái hiện tại
+                    # Kiểm tra thời gian để tải lại trang định kỳ
+                    if time.time() > next_reload_time:
+                        print(f"--- Task {task_id}: Đã đến giờ reload định kỳ (Random +- 5 phút)...")
+                        video_tasks[task_id]["message"] = f"🔄 Đang tải lại trang web để cập nhật tiến trình..."
+                        try:
+                            page.reload(timeout=30000)
+                            page.wait_for_load_state('domcontentloaded')
+                            page.wait_for_timeout(5000)
+                        except: pass
+                        next_reload_time = time.time() + random.randint(240, 420)
+                        processing_start_time = time.time()
+                        continue
+                        
                     status_info = page.evaluate("""() => {
                         // Kiểm tra Processing
                         let spans = document.querySelectorAll('span');
@@ -418,17 +434,6 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                         generating_countdown_done = False
                         buffer_countdown_done = False
                     
-                        if elapsed_proc >= 480:  # 8 minutes
-                            print(f"--- Task {task_id}: Đã chờ Processing 8 phút, tải lại trang để kiểm tra...")
-                            video_tasks[task_id]["message"] = "⏳ Đã chờ 8 phút, đang tải lại trang..."
-                            try:
-                                page.reload()
-                                page.wait_for_load_state('domcontentloaded')
-                                page.wait_for_timeout(5000)
-                            except: pass
-                            processing_start_time = time.time()
-                            continue
-                        
                         if video_tasks[task_id].get("message", "").startswith("✅ Đã Cancel"):
                             video_tasks[task_id]["message"] = f"✅ Đã Cancel & Gen! Đang chờ Processing ({int(elapsed_proc)}s)..."
                         else:
