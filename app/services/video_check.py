@@ -105,6 +105,18 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                     downloads_path=str(Path.home() / "Downloads"),
                     **b_opts
                 )
+                
+                try:
+                    import time
+                    for _ in range(20):
+                        active_port_file = Path(profile.user_data_dir) / "DevToolsActivePort"
+                        if active_port_file.exists():
+                            lines_port = active_port_file.read_text().splitlines()
+                            if lines_port:
+                                Path(profile.user_data_dir, "cdp_port.txt").write_text(lines_port[0])
+                                break
+                        time.sleep(0.5)
+                except: pass
             
             # Tìm tab higgsfield.ai đã mở sẵn, nếu không có thì lấy tab đầu tiên
             page = None

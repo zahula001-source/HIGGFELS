@@ -113,6 +113,18 @@ def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False
 
     # Chrome tự xử lý download 100% native - Không chặn, không xử lý bằng Playwright để tránh crash/lỗi .crdownload
 
+    try:
+        import time
+        for _ in range(20):
+            active_port_file = Path(profile.user_data_dir) / "DevToolsActivePort"
+            if active_port_file.exists():
+                lines_port = active_port_file.read_text().splitlines()
+                if lines_port:
+                    Path(profile.user_data_dir, "cdp_port.txt").write_text(lines_port[0])
+                    break
+            time.sleep(0.5)
+    except: pass
+
 
     return context
 
