@@ -1049,24 +1049,21 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                     try:
                         # 1. Click vào khu vực Add media (Ảnh hoặc Video)
                         try:
-                            # Tìm nút dựa vào từ khóa chính (tránh nhầm nút Upgrade/Pricing)
                             keyword = "extract motion" if "video" in btn_aria_label.lower() or "edit" in btn_aria_label.lower() else "Add your characters"
                             
-                            # Cố tìm bằng aria-label trước hoặc tìm chính xác cái thẻ chứa chữ đó
-                            btn = pg.locator(
-                                f'[aria-label*="{keyword}" i], '
-                                f'[aria-label="{btn_aria_label}" i], '
-                                f'text="{keyword}", '
-                                f'text="{btn_aria_label}"'
-                            )
-                                
+                            # Xây dựng các locator riêng lẻ để ghép lại bằng .or_()
+                            loc1 = pg.locator(f'[aria-label*="{keyword}" i]')
+                            loc2 = pg.locator(f'[aria-label="{btn_aria_label}" i]')
+                            loc3 = pg.locator(f'text="{keyword}"')
+                            loc4 = pg.locator(f'text="{btn_aria_label}"')
+                            
+                            btn = loc1.or_(loc2).or_(loc3).or_(loc4)
                             btn.first.wait_for(state="attached", timeout=4000)
                             btn_to_click = btn.first
                         except:
                             print(f"  -> Không tìm thấy nút '{btn_aria_label}', thử dùng nút dự phòng...")
-                            # Tuyệt đối không dùng từ khoá "video" vì dễ bấm nhầm nút Pricing
                             if "image" in btn_aria_label.lower() or "character" in btn_aria_label.lower():
-                                fallback_btn = pg.locator('text="Add your characters", text="Add reference images"')
+                                fallback_btn = pg.locator('text="Add your characters"').or_(pg.locator('text="Add reference images"'))
                             else:
                                 fallback_btn = pg.locator('text="extract motion"')
                             
