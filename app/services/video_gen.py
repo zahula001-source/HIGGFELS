@@ -80,6 +80,16 @@ def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False
     except Exception as e:
         pass
         
+    args.append("--remote-debugging-port=0")
+    
+    # Xoá file port cũ để tránh đọc nhầm
+    try:
+        active_port_file = Path(profile.user_data_dir) / "DevToolsActivePort"
+        if active_port_file.exists(): active_port_file.unlink()
+        cdp_file = Path(profile.user_data_dir) / "cdp_port.txt"
+        if cdp_file.exists(): cdp_file.unlink()
+    except: pass
+        
     engine = os.environ.get("HIGGSFIELD_BROWSER_ENGINE", "chrome").lower()
     if engine == "cloakbrowser":
         from cloakbrowser import launch_persistent_context

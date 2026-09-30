@@ -95,6 +95,16 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                 except:
                     b_opts = {}
 
+                args.append("--remote-debugging-port=0")
+                
+                # Xoá file port cũ để tránh đọc nhầm
+                try:
+                    active_port_file = Path(profile.user_data_dir) / "DevToolsActivePort"
+                    if active_port_file.exists(): active_port_file.unlink()
+                    cdp_file = Path(profile.user_data_dir) / "cdp_port.txt"
+                    if cdp_file.exists(): cdp_file.unlink()
+                except: pass
+
                 context = p.chromium.launch_persistent_context(
                     profile.user_data_dir,
                     headless=False,
