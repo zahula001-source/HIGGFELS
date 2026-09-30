@@ -1471,10 +1471,10 @@ async function addVideoForm(force_fId = null) {
         <div class="video-form-grid" style="display:flex;flex-direction:column;gap:12px;margin-top:24px;">
           <!-- Profile & Buttons (Đưa lên đầu) -->
           <div class="form-group" style="margin:0;">
-            <label style="display:flex; justify-content:space-between; align-items:center;">
-              <span ondblclick="quickRenameProfile(${fId})" style="cursor:pointer; user-select:none;" title="Click đúp để đổi tên Profile đang chọn">👤 Profile Chrome</span>
+            <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px; font-weight:600; color:#9ca3af; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.05em;">
+              <span ondblclick="quickRenameProfile(${fId})" style="cursor:pointer; user-select:none; color:#46c8ff; text-decoration: underline;" title="Click đúp để đổi tên Profile đang chọn">👤 Profile Chrome ✏️</span>
               <button class="btn btn-ghost" style="padding:0 4px; color:#ef4444; font-size:12px; height:auto; line-height:1; border: 1px solid #ef4444; border-radius:4px;" onclick="quickDeleteProfile(${fId})" title="Xóa Profile đang chọn">🗑️</button>
-            </label>
+            </div>
             <div style="display:flex; gap:6px;">
               <select id="videoProfileId_${fId}" class="select" style="height:40px;flex:1;">
                 <option value="">-- Chọn profile --</option>
@@ -1629,7 +1629,17 @@ function populateVideoProfiles() {
     sel.innerHTML = '<option value="">-- Chọn profile đã đăng nhập --</option>';
     (allProfiles || []).forEach(p => {
       if (p.notes !== "không free" && p.notes !== "đã ra video") {
-        sel.innerHTML += `<option value="${p.id}" ${p.id === cur ? 'selected' : ''}>${p.name} (${p.os})</option>`;
+        let optStyle = '';
+        const notes = (p.notes || '').toLowerCase();
+        if (p.running) optStyle = 'color: #10b981; font-weight: bold;'; 
+        else if (notes.includes('lỗi') || notes.includes('loi') || notes.includes('login')) optStyle = 'color: #ef4444;';
+        else if (p.os === 'linux') optStyle = 'color: #60a5fa;'; 
+        else if (p.os === 'windows') optStyle = 'color: #fbbf24;'; 
+        
+        const statusText = p.running ? ' (Đang mở)' : '';
+        const noteText = p.notes ? ` - [${p.notes}]` : '';
+        const text = `${p.name} (${p.os})${statusText}${noteText}`;
+        sel.innerHTML += `<option value="${p.id}" style="${optStyle}" ${p.id === cur ? 'selected' : ''}>${text}</option>`;
       }
     });
   });
@@ -3011,7 +3021,11 @@ async function quickRenameProfile(fId) {
         return;
     }
     const profileId = sel.value;
-    const oldName = sel.options[sel.selectedIndex].text.replace(" (Đang mở)", "").replace(" (Đã Login)", "").trim();
+    
+    // Extract base name by removing suffix parts that might have been added
+    let oldName = sel.options[sel.selectedIndex].text;
+    oldName = oldName.replace(/ \((linux|windows)\).*/i, '').trim();
+    
     const newName = prompt("Nhập tên mới cho Profile:", oldName);
     if (!newName || newName.trim() === "" || newName === oldName) return;
     
@@ -3039,7 +3053,10 @@ async function quickDeleteProfile(fId) {
         return;
     }
     const profileId = sel.value;
-    const profileName = sel.options[sel.selectedIndex].text.replace(" (Đang mở)", "").replace(" (Đã Login)", "").trim();
+    
+    // Extract base name by removing suffix parts that might have been added
+    let profileName = sel.options[sel.selectedIndex].text;
+    profileName = profileName.replace(/ \((linux|windows)\).*/i, '').trim();
     
     if (!confirm(`Bạn có CHẮC CHẮN muốn XÓA Profile "${profileName}" không?\nHành động này không thể hoàn tác!`)) {
         return;
