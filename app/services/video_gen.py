@@ -1048,6 +1048,7 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                     if not file_paths: return
                     try:
                         # 1. Click vào khu vực Add media (Ảnh hoặc Video)
+                        btn_to_click = None
                         try:
                             # Tìm nút truyền vào (bằng aria-label hoặc text)
                             btn = pg.locator(f'button[aria-label="{btn_aria_label}" i], div[role="button"][aria-label="{btn_aria_label}" i]')
@@ -1055,7 +1056,7 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                                 btn = pg.locator(f'text="{btn_aria_label}"')
                             
                             if btn.count() > 0:
-                                btn.first.click(timeout=3000, force=True)
+                                btn_to_click = btn.first
                             else:
                                 raise Exception("Not found")
                         except:
@@ -1067,36 +1068,48 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                                 # Dự phòng cho Video
                                 fallback_btn = pg.locator('button[aria-label*="video" i], button:has-text("Add a reference video"), div[role="button"]:has-text("Add a reference video")')
                             
-                            fallback_btn.first.click(timeout=5000, force=True)
+                            btn_to_click = fallback_btn.first
                         
-                        pg.wait_for_timeout(1500)
-                        handle_media_upload_modal(pg)
-                
-                        # 2. Click nút Upload media
-                        upload_btn = pg.locator('button[aria-label="Upload media"]').last
-                        if not upload_btn.is_visible():
-                            upload_btn = pg.locator('button[aria-label="Upload media"]').last
-                
+                        # Thử click với expect_file_chooser xem nó có mở trực tiếp không (giao diện mới)
                         try:
-                            with pg.expect_file_chooser(timeout=3000) as fc_info:
-                                upload_btn.click(timeout=5000, force=True)
+                            with pg.expect_file_chooser(timeout=2500) as fc_info:
+                                btn_to_click.click(timeout=3000, force=True)
                             fc_info.value.set_files(file_paths)
-                            
-                            # CỰC KỲ QUAN TRỌNG: Đợi 1s và check xem có popup "I agree" chắn ngang ngay sau khi set file không!
                             pg.wait_for_timeout(1000)
                             handle_media_upload_modal(pg)
-                            
+                            print("  -> Tải file thành công trực tiếp từ nút ban đầu!")
                         except:
-                            # Có thể do modal "I agree" hiện ra lúc vừa bấm nút upload thay vì file dialog
-                            print("  -> Intercept file chooser failed. Handling modal...")
+                            # Nếu timeout, tức là nó chỉ mở Modal (giao diện cũ) hoặc modal agreement
+                            print("  -> Nút ban đầu không mở trực tiếp chọn file. Có thể đã mở Modal, tìm nút 'Upload media' bên trong...")
                             handle_media_upload_modal(pg)
-                            # Thử lại
-                            with pg.expect_file_chooser(timeout=8000) as fc_info:
-                                upload_btn.click(timeout=5000, force=True)
-                            fc_info.value.set_files(file_paths)
-                            
                             pg.wait_for_timeout(1000)
-                            handle_media_upload_modal(pg)
+                            
+                            upload_btn = pg.locator('button[aria-label="Upload media"], button:has-text("Upload media")').last
+                            try:
+                                upload_btn.wait_for(state="visible", timeout=2000)
+                            except:
+                                # Fallback UI mới: nút '+' trong grid (không có text)
+                                grid_add_btn = pg.locator('div[style*="grid-template-columns"] button').first
+                                try:
+                                    grid_add_btn.wait_for(state="visible", timeout=2000)
+                                    print("  -> Thấy nút '+' trong grid, dùng nút này để upload...")
+                                    upload_btn = grid_add_btn
+                                except: pass
+                            
+                            try:
+                                with pg.expect_file_chooser(timeout=3000) as fc_info:
+                                    upload_btn.click(timeout=5000, force=True)
+                                fc_info.value.set_files(file_paths)
+                                pg.wait_for_timeout(1000)
+                                handle_media_upload_modal(pg)
+                            except:
+                                print("  -> Intercept file chooser failed (lần 2). Handling modal...")
+                                handle_media_upload_modal(pg)
+                                with pg.expect_file_chooser(timeout=8000) as fc_info:
+                                    upload_btn.click(timeout=5000, force=True)
+                                fc_info.value.set_files(file_paths)
+                                pg.wait_for_timeout(1000)
+                                handle_media_upload_modal(pg)
                     
                         # CỰC KỲ QUAN TRỌNG: Với Video, popup "Edit reference" hiện ra ngay lúc tải lên để bắt Confirm trước!
                         if "video" in btn_aria_label.lower():
