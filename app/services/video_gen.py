@@ -1556,8 +1556,25 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
         # ── BƯỚC 11: Đợi video xuất hiện (tối đa 30 phút) ───────────────
         video_url = None
         video_urls = []
+        
+        import random
+        # Random thời gian reload lần tiếp theo (từ 4 đến 7 phút -> 240 đến 420 giây)
+        next_reload_target = random.randint(240, 420)
+        
         for i in range(1800):
             page.wait_for_timeout(1000)
+            
+            # Kiểm tra thời gian để tải lại trang định kỳ
+            if i > 0 and i >= next_reload_target:
+                print(f"--- Task {task_id}: Đã chờ {i}s, tiến hành reload trang để chống kẹt (Random +- 5 phút)...")
+                video_tasks[task_id]["message"] = f"🔄 Đang tải lại trang web để cập nhật tiến trình..."
+                try:
+                    page.reload(timeout=30000)
+                    page.wait_for_timeout(5000)
+                except Exception as ex:
+                    print(f"Lỗi reload định kỳ: {ex}")
+                # Đặt lại mục tiêu reload tiếp theo (thêm 240-420s tính từ i hiện tại)
+                next_reload_target = i + random.randint(240, 420)
             
             # Cập nhật log chat
             sync_chat(page)
