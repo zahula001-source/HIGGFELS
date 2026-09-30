@@ -1050,30 +1050,27 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                         # 1. Click vào khu vực Add media (Ảnh hoặc Video)
                         btn_to_click = None
                         try:
-                            # Tìm nút truyền vào (bằng aria-label hoặc text)
-                            btn = pg.locator(f'button[aria-label="{btn_aria_label}" i], div[role="button"][aria-label="{btn_aria_label}" i]')
-                            if btn.count() == 0:
-                                btn = pg.locator(f'text="{btn_aria_label}"')
-                            
-                            if btn.count() > 0:
-                                btn_to_click = btn.first
-                            else:
-                                raise Exception("Not found")
+                            # Tìm nút truyền vào (bằng aria-label hoặc text), chờ tối đa 4s
+                            btn = pg.locator(f'button[aria-label="{btn_aria_label}" i]:visible, div[role="button"][aria-label="{btn_aria_label}" i]:visible, button:has-text("{btn_aria_label}"):visible, div[role="button"]:has-text("{btn_aria_label}"):visible')
+                            btn.first.wait_for(state="visible", timeout=4000)
+                            btn_to_click = btn.first
                         except:
                             print(f"  -> Không tìm thấy nút '{btn_aria_label}', thử dùng nút dự phòng...")
                             if "image" in btn_aria_label.lower() or "character" in btn_aria_label.lower():
                                 # Dự phòng cho Ảnh
-                                fallback_btn = pg.locator('button[aria-label*="image" i], button[aria-label*="character" i], button:has-text("Add your characters"), div[role="button"]:has-text("Add your characters")')
+                                fallback_btn = pg.locator('button[aria-label*="image" i]:visible, button[aria-label*="character" i]:visible, button:has-text("Add your characters"):visible, div[role="button"]:has-text("Add your characters"):visible')
                             else:
                                 # Dự phòng cho Video
-                                fallback_btn = pg.locator('button[aria-label*="video" i], button:has-text("Add a reference video"), div[role="button"]:has-text("Add a reference video")')
+                                fallback_btn = pg.locator('button[aria-label*="video" i]:visible, button:has-text("Add a reference video"):visible, div[role="button"]:has-text("Add a reference video"):visible')
                             
+                            try: fallback_btn.first.wait_for(state="visible", timeout=3000)
+                            except: pass
                             btn_to_click = fallback_btn.first
                         
                         # Thử click với expect_file_chooser xem nó có mở trực tiếp không (giao diện mới)
                         try:
-                            with pg.expect_file_chooser(timeout=2500) as fc_info:
-                                btn_to_click.click(timeout=3000, force=True)
+                            with pg.expect_file_chooser(timeout=5000) as fc_info:
+                                btn_to_click.click(timeout=5000, force=True)
                             fc_info.value.set_files(file_paths)
                             pg.wait_for_timeout(1000)
                             handle_media_upload_modal(pg)
