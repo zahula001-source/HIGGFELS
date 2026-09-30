@@ -554,20 +554,34 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False):
                             import time
                             if page.url.startswith("https://higgsfield.ai") or "account.live.com" in page.url or "fido" in page.url: 
                                 raise ValueError("Already logged in or stuck on protection page, skipping email")
-                            email_input = page.locator('input[type="email"], input[name="loginfmt"]:not([type="hidden"]), input[id="i0116"]:not([type="hidden"])').first
-                            email_input.wait_for(state="visible", timeout=10000)
-                            email_input.click()
-                            time.sleep(0.3)
-                            email_input.fill(ms_email)
-                            page.wait_for_timeout(500)
-                            print(f"Filled email: {ms_email}")
                             
-                            # Click nút Tiếp theo / Next
-                            next_btn = page.locator('input[type="submit"][value="Tiếp theo"], input[type="submit"][value="Next"], input#idSIButton9, button:has-text("Tiếp theo"), button:has-text("Next")')
-                            if next_btn.count() > 0:
-                                next_btn.first.click()
-                            else:
-                                page.keyboard.press("Enter")
+                            # Đợi input xuất hiện
+                            page.wait_for_selector('#i0116:not([type="hidden"])', state='visible', timeout=10000)
+                            
+                            # Dùng JavaScript để set giá trị và trigger Knockout binding (trang MS dùng Knockout.js)
+                            filled = page.evaluate("""(email) => {
+                                const el = document.getElementById('i0116');
+                                if (!el) return false;
+                                el.focus();
+                                // Set native input value
+                                const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                                nativeInputValueSetter.call(el, email);
+                                // Trigger all necessary events for Knockout
+                                el.dispatchEvent(new Event('input', { bubbles: true }));
+                                el.dispatchEvent(new Event('change', { bubbles: true }));
+                                el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+                                return el.value === email;
+                            }""", ms_email)
+                            
+                            page.wait_for_timeout(800)
+                            print(f"Filled email via JS: {ms_email} | success={filled}")
+                            
+                            # Click nút Tiếp theo / Next bằng JS trực tiếp
+                            page.evaluate("""() => {
+                                const btn = document.getElementById('idSIButton9');
+                                if (btn) { btn.click(); return true; }
+                                return false;
+                            }""")
                             print("Clicked Next after email")
                             page.wait_for_timeout(3000)
                             
@@ -614,21 +628,38 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False):
                         try:
                             if page.url.startswith("https://higgsfield.ai") or "account.live.com" in page.url or "fido" in page.url: 
                                 raise ValueError("Already logged in or stuck on protection page, skipping password")
-                            pwd_input = page.locator('input[type="password"], input[name="passwd"], input[id="i0118"], input#passwordEntry')
-                            pwd_input.wait_for(state="visible", timeout=10000)
-                            pwd_input.click()
-                            import time
-                            time.sleep(0.3)
-                            pwd_input.fill(ms_password)
-                            page.wait_for_timeout(500)
-                            print(f"Filled password")
                             
-                            # Click nút Tiếp theo / Sign in
-                            signin_btn = page.locator('input[type="submit"][value="Tiếp theo"], input[type="submit"][value="Sign in"], input#idSIButton9, button:has-text("Tiếp theo"), button:has-text("Sign in")')
-                            if signin_btn.count() > 0:
-                                signin_btn.first.click()
-                            else:
-                                page.keyboard.press("Enter")
+                            # Đợi ô password xuất hiện
+                            page.wait_for_selector('input[type="password"]', state='visible', timeout=10000)
+                            
+                            # Dùng JavaScript để set giá trị và trigger Knockout binding
+                            filled_pwd = page.evaluate("""(pwd) => {
+                                // Thử từng selector
+                                const sel = ['#i0118', 'input[name="passwd"]', 'input[type="password"]:not(.moveOffScreen)', '#passwordEntry'];
+                                let el = null;
+                                for (const s of sel) {
+                                    const found = document.querySelector(s);
+                                    if (found && found.offsetParent !== null) { el = found; break; }
+                                }
+                                if (!el) return false;
+                                el.focus();
+                                const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                                nativeInputValueSetter.call(el, pwd);
+                                el.dispatchEvent(new Event('input', { bubbles: true }));
+                                el.dispatchEvent(new Event('change', { bubbles: true }));
+                                el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+                                return el.value.length > 0;
+                            }""", ms_password)
+                            
+                            page.wait_for_timeout(800)
+                            print(f"Filled password via JS | success={filled_pwd}")
+                            
+                            # Click Sign in bằng JS
+                            page.evaluate("""() => {
+                                const btn = document.getElementById('idSIButton9');
+                                if (btn) { btn.click(); return true; }
+                                return false;
+                            }""")
                             print("Clicked Sign in after password")
                             page.wait_for_timeout(4000)
                         except Exception as e:
@@ -1156,20 +1187,60 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False):
                             continue
                             
                     # 3. Form nhập email lại (nếu có)
-                    email_input = page.locator('input[type="email"], input[name="loginfmt"]:not([type="hidden"]), input[id="i0116"]:not([type="hidden"])').first
-                    if email_input.count() > 0:
-                        email_input.first.fill(ms_email)
-                        page.keyboard.press("Enter")
-                        print("Filled email again")
-                        continue
+                    try:
+                        email_el_exists = page.evaluate("""() => {
+                            const el = document.getElementById('i0116');
+                            return el && el.offsetParent !== null;
+                        }""")
+                        if email_el_exists:
+                            page.evaluate("""(email) => {
+                                const el = document.getElementById('i0116');
+                                el.focus();
+                                const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                                setter.call(el, email);
+                                el.dispatchEvent(new Event('input', { bubbles: true }));
+                                el.dispatchEvent(new Event('change', { bubbles: true }));
+                                const btn = document.getElementById('idSIButton9');
+                                if (btn) btn.click();
+                            }""", ms_email)
+                            print("Filled email again via JS")
+                            page.wait_for_timeout(3000)
+                            continue
+                    except Exception as e:
+                        print(f"Error re-filling email: {e}")
                         
                     # 4. Form nhập password lại (nếu có)
-                    pwd_input = page.locator('input[type="password"]:not([type="hidden"]), input[name="passwd"]:not([type="hidden"])').first
-                    if pwd_input.count() > 0:
-                        pwd_input.first.fill(ms_password)
-                        page.keyboard.press("Enter")
-                        print("Filled password again")
-                        continue
+                    try:
+                        pwd_el_exists = page.evaluate("""() => {
+                            const sels = ['#i0118', 'input[name="passwd"]', 'input[type="password"]:not(.moveOffScreen)', '#passwordEntry'];
+                            for (const s of sels) {
+                                const el = document.querySelector(s);
+                                if (el && el.offsetParent !== null) return true;
+                            }
+                            return false;
+                        }""")
+                        if pwd_el_exists:
+                            page.evaluate("""(pwd) => {
+                                const sels = ['#i0118', 'input[name="passwd"]', 'input[type="password"]:not(.moveOffScreen)', '#passwordEntry'];
+                                let el = null;
+                                for (const s of sels) {
+                                    const found = document.querySelector(s);
+                                    if (found && found.offsetParent !== null) { el = found; break; }
+                                }
+                                if (!el) return;
+                                el.focus();
+                                const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                                setter.call(el, pwd);
+                                el.dispatchEvent(new Event('input', { bubbles: true }));
+                                el.dispatchEvent(new Event('change', { bubbles: true }));
+                                const btn = document.getElementById('idSIButton9');
+                                if (btn) btn.click();
+                            }""", ms_password)
+                            print("Filled password again via JS")
+                            page.wait_for_timeout(4000)
+                            continue
+                    except Exception as e:
+                        print(f"Error re-filling password: {e}")
                         
                     # 5. Trang thiết lập Security Key (bảng đen FIDO2) -> Bấm Hủy (Cancel)
                     if "fido" in cur_url or "fido/create" in cur_url:
