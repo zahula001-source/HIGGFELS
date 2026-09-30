@@ -576,13 +576,20 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False):
                             page.wait_for_timeout(800)
                             print(f"Filled email via JS: {ms_email} | success={filled}")
                             
-                            # Click nút Tiếp theo / Next bằng JS trực tiếp
-                            page.evaluate("""() => {
-                                const btn = document.getElementById('idSIButton9');
-                                if (btn) { btn.click(); return true; }
-                                return false;
+                            # Click nút Tiếp theo / Next bằng JS - thử cả 2 kiểu button MS cũ và mới
+                            clicked = page.evaluate("""() => {
+                                // Trang cũ: input#idSIButton9
+                                const btn1 = document.getElementById('idSIButton9');
+                                if (btn1) { btn1.click(); return 'idSIButton9'; }
+                                // Trang mới Fluent UI: button[data-testid=primaryButton]
+                                const btn2 = document.querySelector('button[data-testid="primaryButton"]');
+                                if (btn2) { btn2.click(); return 'primaryButton'; }
+                                // Fallback: bất kỳ nút submit
+                                const btn3 = document.querySelector('button[type="submit"], input[type="submit"]');
+                                if (btn3) { btn3.click(); return 'submit'; }
+                                return null;
                             }""")
-                            print("Clicked Next after email")
+                            print(f"Clicked Next after email via: {clicked}")
                             page.wait_for_timeout(3000)
                             
                         except Exception as e:
@@ -654,13 +661,20 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False):
                             page.wait_for_timeout(800)
                             print(f"Filled password via JS | success={filled_pwd}")
                             
-                            # Click Sign in bằng JS
-                            page.evaluate("""() => {
-                                const btn = document.getElementById('idSIButton9');
-                                if (btn) { btn.click(); return true; }
-                                return false;
+                            # Click Sign in bằng JS - thử cả 2 kiểu button MS cũ và mới
+                            clicked_signin = page.evaluate("""() => {
+                                // Trang cũ: input#idSIButton9
+                                const btn1 = document.getElementById('idSIButton9');
+                                if (btn1) { btn1.click(); return 'idSIButton9'; }
+                                // Trang mới Fluent UI: button[data-testid=primaryButton]
+                                const btn2 = document.querySelector('button[data-testid="primaryButton"]');
+                                if (btn2) { btn2.click(); return 'primaryButton'; }
+                                // Fallback
+                                const btn3 = document.querySelector('button[type="submit"], input[type="submit"]');
+                                if (btn3) { btn3.click(); return 'submit'; }
+                                return null;
                             }""")
-                            print("Clicked Sign in after password")
+                            print(f"Clicked Sign in after password via: {clicked_signin}")
                             page.wait_for_timeout(4000)
                         except Exception as e:
                             print(f"Error filling password: {e}")
@@ -1233,8 +1247,13 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False):
                                 setter.call(el, pwd);
                                 el.dispatchEvent(new Event('input', { bubbles: true }));
                                 el.dispatchEvent(new Event('change', { bubbles: true }));
-                                const btn = document.getElementById('idSIButton9');
-                                if (btn) btn.click();
+                                // Click nút submit - thử cả kiểu cũ và mới
+                                const btn1 = document.getElementById('idSIButton9');
+                                if (btn1) { btn1.click(); return; }
+                                const btn2 = document.querySelector('button[data-testid="primaryButton"]');
+                                if (btn2) { btn2.click(); return; }
+                                const btn3 = document.querySelector('button[type="submit"], input[type="submit"]');
+                                if (btn3) btn3.click();
                             }""", ms_password)
                             print("Filled password again via JS")
                             page.wait_for_timeout(4000)
