@@ -1481,7 +1481,7 @@ async function addVideoForm(force_fId = null, forceProfileId = null) {
               <select id="videoProfileId_${fId}" class="select" style="height:40px;flex:1;" onchange="updateVideoCardTitle(${fId}, this)">
                 <option value="">-- Chọn profile --</option>
               </select>
-              <button class="btn btn-ghost" style="height:40px;padding:0 8px;font-size:11px;font-weight:bold;border:1px solid #46c8ff;color:#46c8ff;" onclick="window.location.reload()" title="Tải lại trang">
+              <button class="btn btn-ghost" style="height:40px;padding:0 8px;font-size:11px;font-weight:bold;border:1px solid #46c8ff;color:#46c8ff;" onclick="reloadChromeTab(${fId})" title="Tải lại trang">
                 🔄 Load
               </button>
               <button class="btn btn-ghost" style="height:40px;padding:0 8px;font-size:11px;font-weight:bold;border:1px solid #10b981;color:#10b981;" onclick="let p = document.getElementById('videoProfileId_'+${fId}).value; if(p) launchProfile(p); else alert('Chọn Profile trước!');" title="Mở Chrome thủ công">
@@ -1666,6 +1666,25 @@ function updateVideoCardTitle(fId, selectEl) {
         titleDiv.textContent = `# Thẻ ${fId} - ${emoji} ${name}`;
     } else {
         titleDiv.textContent = `# Thẻ ${fId}`;
+    }
+}
+
+async function reloadChromeTab(fId) {
+    const profileId = document.getElementById(`videoProfileId_${fId}`).value;
+    if (!profileId) {
+        alert("Vui lòng chọn profile trước!");
+        return;
+    }
+    try {
+        const res = await fetch(`/api/profiles/${profileId}/reload_tab`, { method: "POST" });
+        const data = await res.json();
+        if (data.ok) {
+            console.log("Đã ra lệnh reload tab cho profile", profileId);
+        } else {
+            console.log("Không thể reload:", data.message);
+        }
+    } catch (e) {
+        console.error("Lỗi reload tab", e);
     }
 }
 

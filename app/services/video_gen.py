@@ -43,8 +43,8 @@ def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False
     ]
     if os.environ.get("HIGGSFIELD_BROWSER_ENGINE") == "cloakbrowser":
         args.append("--fingerprint=" + str(profile.fingerprint.get("random_id", 123456)))
-    # Bỏ tải extension mặc định
-    ignore_args = []
+    # Bỏ tải extension mặc định của Playwright bằng cách đưa vào ignore_args
+    ignore_args = ["--disable-extensions"]
     
     # Tao extension doi ten tab
     try:
@@ -66,6 +66,7 @@ def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False
         (name_ext_dir / "content.js").write_text(js_code, encoding="utf-8")
         
         # Thêm extension vào args thay vì dùng arg --disable-extensions
+        args.append(f"--disable-extensions-except={name_ext_dir}")
         args.append(f"--load-extension={name_ext_dir}")
     except Exception as e:
         print(f"Err creating name tab ext: {e}")

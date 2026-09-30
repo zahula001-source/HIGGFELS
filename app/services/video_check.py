@@ -56,7 +56,7 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                 if os.environ.get("HIGGSFIELD_BROWSER_ENGINE") == "cloakbrowser":
                     args.append("--fingerprint=" + str(profile.fingerprint.get("random_id", 123456)))
                 
-                ignore_args = []
+                ignore_args = ["--disable-extensions"]
                 
                 # Tao extension doi ten tab
                 try:
@@ -78,6 +78,7 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                     js_code = "setInterval(() => { if (!document.title.startsWith('[' + " + repr(profile.name) + " + ']')) { document.title = '[' + " + repr(profile.name) + " + '] ' + document.title.replace(/^\\\\[.*?\\\\]\\\\s*/, ''); } }, 1000);"
                     (name_ext_dir / "content.js").write_text(js_code, encoding="utf-8")
                     
+                    args.append(f"--disable-extensions-except={name_ext_dir}")
                     args.append(f"--load-extension={name_ext_dir}")
                 except Exception as e:
                     print(f"Err creating name tab ext: {e}")

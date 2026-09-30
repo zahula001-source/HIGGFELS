@@ -1619,3 +1619,36 @@ def rename_profile(profile_id: str, payload: dict = Body(...)):
         raise HTTPException(404, "Profile not found")
     return {"ok": True, "name": name}
 
+
+
+@router.post('/api/profiles/{profile_id}/reload_tab')
+def reload_profile_tab(profile_id: str):
+    p = manager.get_profile(profile_id)
+    if not p:
+        raise HTTPException(404, 'Not found')
+    port_file = Path(p.user_data_dir) / 'cdp_port.txt'
+    if not port_file.exists():
+        return {'ok': False, 'message': 'Chrome chua mo'}
+    port = port_file.read_text().strip()
+    if not port:
+        return {'ok': False, 'message': 'Chrome chua mo'}
+    def _do_reload():
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as pw:
+            try:
+                browser = pw.chromium.connect_over_cdp(f'http://localhost:{port}')
+                ctx = browser.contexts[0]
+                target_page = None
+                for page in ctx.pages:
+                    if 'higgsfield.ai' in page.url:
+                        target_page = page
+                        break
+                if not target_page and ctx.pages:
+                    target_page = ctx.pages[0]
+                if target_page:
+                    target_page.reload(timeout=15000)
+            except Exception as e:
+                print('Loi reload CDP:', e)
+    import threading
+    threading.Thread(target=_do_reload, daemon=True).start()
+    return {'ok': True}
