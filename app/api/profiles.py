@@ -753,6 +753,11 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False):
                     # Đóng popup quảng cáo Higgsfield "Plans with up to..." (nút X góc trên phải)
                     try:
                         promo_closed = page.evaluate("""() => {
+                            // Chỉ tìm và click nút X nếu có chữ "Plans with up to" trên màn hình
+                            if (!document.body.innerText.includes('Plans with up to')) {
+                                return false;
+                            }
+                            
                             // Tìm nút X đóng popup (chứa SVG với path chéo X)
                             const btns = document.querySelectorAll('button, [role="button"]');
                             for (const btn of btns) {

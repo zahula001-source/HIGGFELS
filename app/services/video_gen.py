@@ -916,6 +916,11 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
         # Đóng popup quảng cáo "Plans with up to..." nếu có
         try:
             promo_closed = page.evaluate("""() => {
+                // Chỉ tìm và click nút X nếu có chữ "Plans with up to" trên màn hình
+                if (!document.body.innerText.includes('Plans with up to')) {
+                    return false;
+                }
+                
                 const btns = document.querySelectorAll('button, [role="button"]');
                 for (const btn of btns) {
                     const svg = btn.querySelector('svg');
