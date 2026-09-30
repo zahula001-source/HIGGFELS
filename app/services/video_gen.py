@@ -1051,19 +1051,19 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                         btn_to_click = None
                         try:
                             # Tìm nút truyền vào (bằng aria-label hoặc text), chờ tối đa 4s
-                            btn = pg.locator(f'button[aria-label="{btn_aria_label}" i]:visible, div[role="button"][aria-label="{btn_aria_label}" i]:visible, button:has-text("{btn_aria_label}"):visible, div[role="button"]:has-text("{btn_aria_label}"):visible')
-                            btn.first.wait_for(state="visible", timeout=4000)
+                            btn = pg.locator(f'button[aria-label="{btn_aria_label}" i], div[role="button"][aria-label="{btn_aria_label}" i], button:has-text("{btn_aria_label}"), div[role="button"]:has-text("{btn_aria_label}")')
+                            btn.first.wait_for(state="attached", timeout=4000)
                             btn_to_click = btn.first
                         except:
                             print(f"  -> Không tìm thấy nút '{btn_aria_label}', thử dùng nút dự phòng...")
                             if "image" in btn_aria_label.lower() or "character" in btn_aria_label.lower():
                                 # Dự phòng cho Ảnh
-                                fallback_btn = pg.locator('button[aria-label*="image" i]:visible, button[aria-label*="character" i]:visible, button:has-text("Add your characters"):visible, div[role="button"]:has-text("Add your characters"):visible')
+                                fallback_btn = pg.locator('button[aria-label*="image" i], button[aria-label*="character" i], button:has-text("Add your characters"), div[role="button"]:has-text("Add your characters")')
                             else:
                                 # Dự phòng cho Video
-                                fallback_btn = pg.locator('button[aria-label*="video" i]:visible, button:has-text("Add a reference video"):visible, div[role="button"]:has-text("Add a reference video"):visible')
+                                fallback_btn = pg.locator('button[aria-label*="video" i], button:has-text("Add a reference video"), div[role="button"]:has-text("Add a reference video")')
                             
-                            try: fallback_btn.first.wait_for(state="visible", timeout=3000)
+                            try: fallback_btn.first.wait_for(state="attached", timeout=3000)
                             except: pass
                             btn_to_click = fallback_btn.first
                         
