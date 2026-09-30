@@ -1053,7 +1053,12 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                             keyword = "extract motion" if "video" in btn_aria_label.lower() or "edit" in btn_aria_label.lower() else "Add your characters"
                             
                             # Cố tìm bằng aria-label trước hoặc tìm chính xác cái thẻ chứa chữ đó
-                            btn = pg.locator(f'button[aria-label*="{keyword}" i], button[aria-label="{btn_aria_label}" i], text="{keyword}"')
+                            btn = pg.locator(
+                                f'[aria-label*="{keyword}" i], '
+                                f'[aria-label="{btn_aria_label}" i], '
+                                f'text="{keyword}", '
+                                f'text="{btn_aria_label}"'
+                            )
                                 
                             btn.first.wait_for(state="attached", timeout=4000)
                             btn_to_click = btn.first
@@ -1061,9 +1066,9 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                             print(f"  -> Không tìm thấy nút '{btn_aria_label}', thử dùng nút dự phòng...")
                             # Tuyệt đối không dùng từ khoá "video" vì dễ bấm nhầm nút Pricing
                             if "image" in btn_aria_label.lower() or "character" in btn_aria_label.lower():
-                                fallback_btn = pg.locator('div[role="button"]:has-text("Add your characters"), button:has-text("Add your characters")')
+                                fallback_btn = pg.locator('text="Add your characters", text="Add reference images"')
                             else:
-                                fallback_btn = pg.locator('div[role="button"]:has-text("extract motion"), button:has-text("extract motion")')
+                                fallback_btn = pg.locator('text="extract motion"')
                             
                             try: fallback_btn.first.wait_for(state="attached", timeout=3000)
                             except: pass
