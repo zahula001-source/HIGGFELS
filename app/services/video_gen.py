@@ -1440,6 +1440,13 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                            page.locator('text="source video"').is_visible(timeout=1000):
                             print("  -> LỖI TẠO VIDEO: Web báo thiếu 'Add one source video'!")
                             raise Exception("ReloadRequired")
+                            
+                        if page.locator('text="Something went wrong"').is_visible(timeout=1000) or \
+                           page.locator('text="please try again"').is_visible(timeout=1000):
+                            print("  -> LỖI TẠO VIDEO: Web báo 'Something went wrong, please try again'!")
+                            # Break vòng lặp để rơi xuống block reload trang ngay lập tức
+                            generate_success = False
+                            break
                     
                         # 5. Kiểm tra xem có thấy "Processing" không
                         try:
