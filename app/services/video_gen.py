@@ -813,12 +813,12 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                                         page.mouse.click(box["x"] + box["width"]/2, box["y"] + box["height"]/2)
                                         page.quiz_clicked_options.add(q_text)
                                         page.wait_for_timeout(500)
-                                        cont_btn = page.locator('button:has-text("Continue"), button:has-text("Next"), button:has-text("Choose an option"), button:has-text("Submit")').locator("visible=true")
+                                        cont_btn = page.locator('button:has-text("Continue"), button:has-text("Next"), button:has-text("Choose an option"), button:has-text("Submit")').first
                                         if cont_btn.count() > 0 and not cont_btn.first.is_disabled(): break
                             except: pass
                             
                         try:
-                            cont_btn = page.locator('button:has-text("Continue"), button:has-text("Next"), button:has-text("Choose an option"), button:has-text("Submit")').locator("visible=true")
+                            cont_btn = page.locator('button:has-text("Continue"), button:has-text("Next"), button:has-text("Choose an option"), button:has-text("Submit")').first
                             if cont_btn.count() > 0 and not cont_btn.first.is_disabled():
                                 box = cont_btn.first.bounding_box()
                                 if box:
@@ -1076,7 +1076,7 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                         items = pg.locator('div[data-assets-picker-selectable-card="true"]')
                         if items.count() == 0:
                             # Thử locator khác nếu UI thay đổi
-                            items = pg.locator('button:has(img), div[role="button"]:has(img), div[role="button"]:has(video), img[alt="Asset"]').locator("visible=true")
+                            items = pg.locator('button:has(img), div[role="button"]:has(img), div[role="button"]:has(video), img[alt="Asset"]').first
                     
                         count = items.count()
                         print(f"  -> Tìm thấy {count} phần tử có thể chọn trong thư viện.")

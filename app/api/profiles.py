@@ -554,7 +554,7 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False):
                             import time
                             if page.url.startswith("https://higgsfield.ai") or "account.live.com" in page.url or "fido" in page.url: 
                                 raise ValueError("Already logged in or stuck on protection page, skipping email")
-                            email_input = page.locator('input[type="email"], input[name="loginfmt"]:not([type="hidden"]), input[id="i0116"]:not([type="hidden"])').locator("visible=true").first
+                            email_input = page.locator('input[type="email"], input[name="loginfmt"]:not([type="hidden"]), input[id="i0116"]:not([type="hidden"])').first
                             email_input.wait_for(state="visible", timeout=10000)
                             email_input.click()
                             time.sleep(0.3)
@@ -812,7 +812,7 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False):
                         # 1.5 Kiểm tra trang Claim Username (Bước cuối cùng)
                         try:
                             if page.locator('text="Claim your username"').count() > 0:
-                                terms_label = page.locator('label:has-text("I agree to the Terms of Use")').locator("visible=true")
+                                terms_label = page.locator('label:has-text("I agree to the Terms of Use")').first
                                 if terms_label.count() > 0:
                                     # Click checkbox
                                     terms_box = terms_label.first.bounding_box()
@@ -873,14 +873,14 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False):
                                         global_quiz_clicked_options.add(q_text)
                                         page.wait_for_timeout(800)
                                         
-                                        cont_btn = page.locator('button:has-text("Continue"), button:has-text("Next"), button:has-text("Choose an option"), button:has-text("Submit")').locator("visible=true")
+                                        cont_btn = page.locator('button:has-text("Continue"), button:has-text("Next"), button:has-text("Choose an option"), button:has-text("Submit")').first
                                         if cont_btn.count() > 0 and not cont_btn.first.is_disabled():
                                             break
                             except: pass
                                 
                         # 3. Bấm Continue sau khi đã chọn xong
                         try:
-                            cont_btn = page.locator('button:has-text("Continue"), button:has-text("Next"), button:has-text("Choose an option"), button:has-text("Submit")').locator("visible=true")
+                            cont_btn = page.locator('button:has-text("Continue"), button:has-text("Next"), button:has-text("Choose an option"), button:has-text("Submit")').first
                             if cont_btn.count() > 0 and not cont_btn.first.is_disabled():
                                 cont_btn.first.scroll_into_view_if_needed()
                                 page.wait_for_timeout(200)
@@ -1156,7 +1156,7 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False):
                             continue
                             
                     # 3. Form nhập email lại (nếu có)
-                    email_input = page.locator('input[type="email"], input[name="loginfmt"]:not([type="hidden"]), input[id="i0116"]:not([type="hidden"])').locator("visible=true")
+                    email_input = page.locator('input[type="email"], input[name="loginfmt"]:not([type="hidden"]), input[id="i0116"]:not([type="hidden"])').first
                     if email_input.count() > 0:
                         email_input.first.fill(ms_email)
                         page.keyboard.press("Enter")
@@ -1164,7 +1164,7 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False):
                         continue
                         
                     # 4. Form nhập password lại (nếu có)
-                    pwd_input = page.locator('input[type="password"]:not([type="hidden"]), input[name="passwd"]:not([type="hidden"])').locator("visible=true")
+                    pwd_input = page.locator('input[type="password"]:not([type="hidden"]), input[name="passwd"]:not([type="hidden"])').first
                     if pwd_input.count() > 0:
                         pwd_input.first.fill(ms_password)
                         page.keyboard.press("Enter")
