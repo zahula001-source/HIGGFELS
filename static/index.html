@@ -496,6 +496,7 @@ async function loadProfiles(){
         : "Chrome thuong: nhieu profile dong thoi - khong gia lap fingerprint CloakBrowser";
     renderProfiles(allProfiles);
     document.getElementById("totalProfiles").textContent = allProfiles.length;
+    populateVideoProfiles();
   }catch(e){console.error(e);}
 }
 
@@ -1601,12 +1602,12 @@ async function addVideoForm(force_fId = null) {
     `;
     document.getElementById("videoFormsContainer").insertAdjacentHTML('beforeend', html);
     
-    const sel = document.getElementById(`videoProfileId_${fId}`);
-    (allProfiles || []).forEach(p => {
-      sel.innerHTML += `<option value="${p.id}">${p.name} (${p.os})</option>`;
-    });
+    populateVideoProfiles();
     
-    sel.value = trulyFree[0];
+    const sel = document.getElementById(`videoProfileId_${fId}`);
+    if (sel && trulyFree.length > 0) {
+      sel.value = trulyFree[0];
+    }
     
     setTimeout(() => {
         document.getElementById(`vform_${fId}`).scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1628,19 +1629,22 @@ function populateVideoProfiles() {
     const cur = sel.value;
     sel.innerHTML = '<option value="">-- Chọn profile đã đăng nhập --</option>';
     (allProfiles || []).forEach(p => {
-      if (p.notes !== "không free" && p.notes !== "đã ra video") {
         let optStyle = '';
+        let emoji = '⚪'; // default
         const notes = (p.notes || '').toLowerCase();
-        if (p.running) optStyle = 'color: #10b981; font-weight: bold;'; 
-        else if (notes.includes('lỗi') || notes.includes('loi') || notes.includes('login')) optStyle = 'color: #ef4444;';
-        else if (p.os === 'linux') optStyle = 'color: #60a5fa;'; 
-        else if (p.os === 'windows') optStyle = 'color: #fbbf24;'; 
+        
+        if (p.running) { optStyle = 'color: #10b981; font-weight: bold;'; emoji = '🟢'; }
+        else if (notes.startsWith('free gen')) { optStyle = 'color: #22c55e;'; emoji = '🟢'; }
+        else if (notes === 'không free' || notes === 'khong free') { optStyle = 'color: #eab308;'; emoji = '🟠'; }
+        else if (notes === 'đã ra video') { optStyle = 'color: #a78bfa;'; emoji = '🟣'; }
+        else if (notes.includes('lỗi') || notes.includes('loi') || notes.includes('login')) { optStyle = 'color: #ef4444;'; emoji = '🔴'; }
+        else if (p.os === 'linux') { optStyle = 'color: #60a5fa;'; emoji = '🔵'; }
+        else if (p.os === 'windows') { optStyle = 'color: #fbbf24;'; emoji = '🟡'; }
         
         const statusText = p.running ? ' (Đang mở)' : '';
         const noteText = p.notes ? ` - [${p.notes}]` : '';
-        const text = `${p.name} (${p.os})${statusText}${noteText}`;
-        sel.innerHTML += `<option value="${p.id}" style="${optStyle}" ${p.id === cur ? 'selected' : ''}>${text}</option>`;
-      }
+        const text = `${emoji} ${p.name} (${p.os})${statusText}${noteText}`;
+        sel.innerHTML += `<option value="${p.id}" data-name="${esc(p.name)}" style="${optStyle}" ${p.id === cur ? 'selected' : ''}>${text}</option>`;
     });
   });
 }
@@ -3022,9 +3026,8 @@ async function quickRenameProfile(fId) {
     }
     const profileId = sel.value;
     
-    // Extract base name by removing suffix parts that might have been added
-    let oldName = sel.options[sel.selectedIndex].text;
-    oldName = oldName.replace(/ \((linux|windows)\).*/i, '').trim();
+    // Get actual unformatted name from data-name attribute
+    const oldName = sel.options[sel.selectedIndex].dataset.name;
     
     const newName = prompt("Nhập tên mới cho Profile:", oldName);
     if (!newName || newName.trim() === "" || newName === oldName) return;
@@ -3054,9 +3057,8 @@ async function quickDeleteProfile(fId) {
     }
     const profileId = sel.value;
     
-    // Extract base name by removing suffix parts that might have been added
-    let profileName = sel.options[sel.selectedIndex].text;
-    profileName = profileName.replace(/ \((linux|windows)\).*/i, '').trim();
+    // Get actual unformatted name from data-name attribute
+    const profileName = sel.options[sel.selectedIndex].dataset.name;
     
     if (!confirm(`Bạn có CHẮC CHẮN muốn XÓA Profile "${profileName}" không?\nHành động này không thể hoàn tác!`)) {
         return;
