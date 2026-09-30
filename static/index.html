@@ -1471,7 +1471,10 @@ async function addVideoForm(force_fId = null) {
         <div class="video-form-grid" style="display:flex;flex-direction:column;gap:12px;margin-top:24px;">
           <!-- Profile & Buttons (Đưa lên đầu) -->
           <div class="form-group" style="margin:0;">
-            <label>👤 Profile Chrome</label>
+            <label style="display:flex; justify-content:space-between; align-items:center;">
+              <span ondblclick="quickRenameProfile(${fId})" style="cursor:pointer; user-select:none;" title="Click đúp để đổi tên Profile đang chọn">👤 Profile Chrome</span>
+              <button class="btn btn-ghost" style="padding:0 4px; color:#ef4444; font-size:12px; height:auto; line-height:1; border: 1px solid #ef4444; border-radius:4px;" onclick="quickDeleteProfile(${fId})" title="Xóa Profile đang chọn">🗑️</button>
+            </label>
             <div style="display:flex; gap:6px;">
               <select id="videoProfileId_${fId}" class="select" style="height:40px;flex:1;">
                 <option value="">-- Chọn profile --</option>
@@ -2999,6 +3002,63 @@ async function submitCheckVideo() {
       // Wait to bypass the 300ms isAddingForm lock in addVideoForm
       await new Promise(r => setTimeout(r, 400));
   }
+}
+
+async function quickRenameProfile(fId) {
+    const sel = document.getElementById(`videoProfileId_${fId}`);
+    if (!sel || !sel.value) {
+        alert("Vui lòng chọn một Profile Chrome trước khi đổi tên!");
+        return;
+    }
+    const profileId = sel.value;
+    const oldName = sel.options[sel.selectedIndex].text.replace(" (Đang mở)", "").replace(" (Đã Login)", "").trim();
+    const newName = prompt("Nhập tên mới cho Profile:", oldName);
+    if (!newName || newName.trim() === "" || newName === oldName) return;
+    
+    try {
+        const res = await fetch(`/api/profiles/${profileId}/name`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ name: newName.trim() })
+        });
+        const data = await res.json();
+        if (data.ok) {
+            loadProfiles(); // Reload dropdown
+        } else {
+            alert("Lỗi đổi tên: " + (data.detail || data.message || "Unknown error"));
+        }
+    } catch (e) {
+        alert("Lỗi: " + e.message);
+    }
+}
+
+async function quickDeleteProfile(fId) {
+    const sel = document.getElementById(`videoProfileId_${fId}`);
+    if (!sel || !sel.value) {
+        alert("Vui lòng chọn một Profile Chrome trước khi xóa!");
+        return;
+    }
+    const profileId = sel.value;
+    const profileName = sel.options[sel.selectedIndex].text.replace(" (Đang mở)", "").replace(" (Đã Login)", "").trim();
+    
+    if (!confirm(`Bạn có CHẮC CHẮN muốn XÓA Profile "${profileName}" không?\nHành động này không thể hoàn tác!`)) {
+        return;
+    }
+    
+    try {
+        const res = await fetch(`/api/profiles/${profileId}`, {
+            method: 'DELETE'
+        });
+        const data = await res.json();
+        if (data.ok) {
+            loadProfiles(); // Reload dropdown
+            sel.value = ""; // Clear selection
+        } else {
+            alert("Lỗi xóa profile: " + (data.detail || data.message || "Unknown error"));
+        }
+    } catch (e) {
+        alert("Lỗi: " + e.message);
+    }
 }
 </script>
 

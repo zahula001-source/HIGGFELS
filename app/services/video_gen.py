@@ -1441,10 +1441,10 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
 
         video_tasks[task_id] = {"status": "running", "message": "✅ Đã gửi yêu cầu! Đang chờ higgsfield.ai tạo video..."}
 
-        # ── BƯỚC 11: Đợi video xuất hiện (tối đa 10 phút) ───────────────
+        # ── BƯỚC 11: Đợi video xuất hiện (tối đa 30 phút) ───────────────
         video_url = None
         video_urls = []
-        for i in range(600):
+        for i in range(1800):
             page.wait_for_timeout(1000)
             
             # Cập nhật log chat
