@@ -2960,19 +2960,10 @@ async function submitCheckVideo() {
       }
       
       const profileSelect = document.getElementById(`videoProfileId_${currentFid}`);
-      if(profileSelect) profileSelect.value = pId;
-      
-      const promptDiv = profileSelect ? profileSelect.closest('.video-form-grid').querySelector('div:has(textarea[id^="videoPrompt_"])') : null;
-      if(promptDiv) promptDiv.style.display = 'none';
-      
-      const uploadDiv = document.getElementById(`uploadBoxes_${currentFid}`);
-      if(uploadDiv) uploadDiv.style.display = 'none';
-      
-      const btnGroup = document.getElementById(`vtask_btns_${currentFid}`);
-      if(btnGroup) btnGroup.style.display = 'none';
-      
-      const createBtn = document.getElementById(`createVideoBtn_${currentFid}`);
-      if(createBtn) createBtn.style.display = 'none';
+      if(profileSelect) {
+          profileSelect.value = pId;
+          updateVideoCardTitle(currentFid, profileSelect);
+      }
       
       const statusBar = document.getElementById(`vtask_status_${currentFid}`);
       if(statusBar) {
