@@ -58,6 +58,31 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                 
                 ignore_args = []
                 
+                # Tao extension doi ten tab
+                try:
+                    import json
+                    from pathlib import Path
+                    name_ext_dir = Path(profile.user_data_dir) / "automation_extensions" / "name_tab"
+                    name_ext_dir.mkdir(parents=True, exist_ok=True)
+                    (name_ext_dir / "manifest.json").write_text(json.dumps({
+                        "manifest_version": 3,
+                        "name": "Profile Name Tab",
+                        "version": "1.0",
+                        "content_scripts": [{
+                            "matches": ["<all_urls>"],
+                            "js": ["content.js"],
+                            "run_at": "document_idle"
+                        }]
+                    }), encoding="utf-8")
+                    
+                    js_code = "setInterval(() => { if (!document.title.startsWith('[' + " + repr(profile.name) + " + ']')) { document.title = '[' + " + repr(profile.name) + " + '] ' + document.title.replace(/^\\\\[.*?\\\\]\\\\s*/, ''); } }, 1000);"
+                    (name_ext_dir / "content.js").write_text(js_code, encoding="utf-8")
+                    
+                    args.append(f"--load-extension={name_ext_dir}")
+                except Exception as e:
+                    print(f"Err creating name tab ext: {e}")
+                
+                
                 if is_headless:
                     args.append("--window-position=-32000,-32000")
                     args.append("--window-size=1366,768")

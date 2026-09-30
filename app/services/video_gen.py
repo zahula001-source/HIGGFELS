@@ -43,9 +43,33 @@ def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False
     ]
     if os.environ.get("HIGGSFIELD_BROWSER_ENGINE") == "cloakbrowser":
         args.append("--fingerprint=" + str(profile.fingerprint.get("random_id", 123456)))
-    # Bỏ tải extension theo yêu cầu
+    # Bỏ tải extension mặc định
     ignore_args = []
-    args.append("--disable-extensions")
+    
+    # Tao extension doi ten tab
+    try:
+        import json
+        name_ext_dir = Path(profile.user_data_dir) / "automation_extensions" / "name_tab"
+        name_ext_dir.mkdir(parents=True, exist_ok=True)
+        (name_ext_dir / "manifest.json").write_text(json.dumps({
+            "manifest_version": 3,
+            "name": "Profile Name Tab",
+            "version": "1.0",
+            "content_scripts": [{
+                "matches": ["<all_urls>"],
+                "js": ["content.js"],
+                "run_at": "document_idle"
+            }]
+        }), encoding="utf-8")
+        
+        js_code = "setInterval(() => { if (!document.title.startsWith('[' + " + repr(profile.name) + " + ']')) { document.title = '[' + " + repr(profile.name) + " + '] ' + document.title.replace(/^\\\\[.*?\\\\]\\\\s*/, ''); } }, 1000);"
+        (name_ext_dir / "content.js").write_text(js_code, encoding="utf-8")
+        
+        # Thêm extension vào args thay vì dùng arg --disable-extensions
+        args.append(f"--load-extension={name_ext_dir}")
+    except Exception as e:
+        print(f"Err creating name tab ext: {e}")
+        
     if is_headless:
         pass
         
@@ -59,7 +83,7 @@ def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False
     if engine == "cloakbrowser":
         from cloakbrowser import launch_persistent_context
         # CloakBrowser tự động xử lý extension_paths và ignore_default_args
-        cloak_args = [a for a in args if not a.startswith("--load-extension") and a != "--disable-extensions"]
+        cloak_args = [a for a in args]
         cloak_kwargs = {
             "user_data_dir": profile.user_data_dir,
             "headless": False,
