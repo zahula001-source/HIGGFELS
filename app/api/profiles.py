@@ -1380,8 +1380,8 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False):
 
                     print("Đang kiểm tra trạng thái đăng nhập và Free Gens...")
                     try:
-                        # Về trang chủ trước để xác nhận login
-                        page.goto("https://higgsfield.ai/", timeout=30000)
+                        # Vào trang video để check free gens
+                        page.goto("https://higgsfield.ai/ai/video?model=genjutsu", timeout=30000)
                         page.wait_for_timeout(2000)
                         # Đóng cookie banner nếu còn
                         try:
@@ -1391,8 +1391,6 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False):
                             }""")
                         except: pass
                         page.wait_for_timeout(1000)
-                        # Vào trang video để check free gens
-                        page.goto("https://higgsfield.ai/ai/video?model=genjutsu", timeout=30000)
                         
                         def check_login_status():
                             page.wait_for_timeout(4000)
@@ -1478,10 +1476,9 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False):
                             
                         is_logged, is_free, quality = check_login_status()
                         if not is_logged:
-                            print("Chua thay dau hieu login, chuyen ve trang chu https://higgsfield.ai/...")
-                            page.goto("https://higgsfield.ai/", timeout=30000)
-                            page.wait_for_timeout(5000)
+                            print("Chua thay dau hieu login, reload trang...")
                             page.goto("https://higgsfield.ai/ai/video?model=genjutsu", timeout=30000)
+                            page.wait_for_timeout(5000)
                             is_logged, is_free, quality = check_login_status()
                             if not is_logged:
                                 print("Van chua thay, reload lan cuoi...")
