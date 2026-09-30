@@ -44,6 +44,7 @@ class LaunchRequest(BaseModel):
     startup_mode: Optional[str] = None
     enable_ext_btn2: bool = False
     enable_ext: bool = False
+    keep_open_after_check: bool = True
 
 
 class CheckVideoReq(BaseModel):
