@@ -84,7 +84,7 @@ def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False
     if engine == "cloakbrowser":
         from cloakbrowser import launch_persistent_context
         # CloakBrowser tự động xử lý extension_paths và ignore_default_args
-        cloak_args = [a for a in args]
+        cloak_args = [a for a in args if not a.startswith("--load-extension") and not a.startswith("--disable-extensions")]
         cloak_kwargs = {
             "user_data_dir": profile.user_data_dir,
             "headless": False,
@@ -92,8 +92,12 @@ def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False
             "accept_downloads": True,
             "downloads_path": str(Path.home() / "Downloads")
         }
-        # if ext_path:
-        #     cloak_kwargs["extension_paths"] = [ext_path]
+        
+        try:
+            name_ext_dir = Path(profile.user_data_dir) / "automation_extensions" / "name_tab"
+            if name_ext_dir.exists():
+                cloak_kwargs["extension_paths"] = [str(name_ext_dir)]
+        except: pass
             
         context = launch_persistent_context(**cloak_kwargs)
     else:

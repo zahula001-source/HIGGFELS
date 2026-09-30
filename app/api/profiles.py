@@ -893,14 +893,19 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False):
                         # 1.5 Kiểm tra trang Claim Username (Bước cuối cùng)
                         try:
                             if page.locator('text="Claim your username"').count() > 0:
-                                terms_label = page.locator('label:has-text("I agree to the Terms of Use")').first
-                                if terms_label.count() > 0:
-                                    # Click checkbox
-                                    terms_box = terms_label.first.bounding_box()
-                                    if terms_box:
-                                        page.mouse.click(terms_box["x"] + 10, terms_box["y"] + terms_box["height"] / 2)
-                                        print("Quiz: Tích chọn 'I agree to the Terms of Use'")
-                                        page.wait_for_timeout(500)
+                                page.evaluate("""() => {
+                                    const labels = document.querySelectorAll('label');
+                                    for(let l of labels) {
+                                        if(l.innerText.includes('Terms of Use') || l.innerText.includes('Privacy Policy')) {
+                                            const cb = l.querySelector('input[type="checkbox"]');
+                                            if (cb && !cb.checked) {
+                                                l.click();
+                                            }
+                                        }
+                                    }
+                                }""")
+                                print("Quiz: Tích chọn 'I agree to the Terms of Use' (JS)")
+                                page.wait_for_timeout(500)
                         except Exception as e:
                             pass
 
