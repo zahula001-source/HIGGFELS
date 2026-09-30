@@ -1461,21 +1461,21 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False):
                             # Tang 2: Click Avatar -> Radix Portal append vao DOM -> tim a[href*=logout]
                             if not status_logged:
                                 try:
-                                avatar_btn = page.locator('button.hfnav-avatar-ring, button[aria-label="Account menu"]')
-                                if avatar_btn.count() > 0 and avatar_btn.first.is_visible():
-                                    avatar_btn.first.click()
-                                    page.wait_for_timeout(2000)
-                                    has_logout = page.evaluate("""() => {
-                                        const links = document.querySelectorAll('a[href*="logout"]');
-                                        return links.length > 0;
-                                    }""")
-                                    if has_logout:
-                                        status_logged = True
-                                        print("Xac nhan login: tim thay a[href*=logout] trong DOM!")
-                                    page.keyboard.press("Escape")
-                                    page.wait_for_timeout(500)
-                            except Exception as e:
-                                print(f"Loi check Sign Out: {e}")
+                                    avatar_btn = page.locator('button.hfnav-avatar-ring, button[aria-label="Account menu"]')
+                                    if avatar_btn.count() > 0 and avatar_btn.first.is_visible():
+                                        avatar_btn.first.click()
+                                        page.wait_for_timeout(2000)
+                                        has_logout = page.evaluate("""() => {
+                                            const links = document.querySelectorAll('a[href*="logout"]');
+                                            return links.length > 0;
+                                        }""")
+                                        if has_logout:
+                                            status_logged = True
+                                            print("Xac nhan login: tim thay a[href*=logout] trong DOM!")
+                                        page.keyboard.press("Escape")
+                                        page.wait_for_timeout(500)
+                                except Exception as e:
+                                    print(f"Loi check Sign Out: {e}")
                                 
                             # Tang 3: Fallback - Clerk session cookie
                             if not status_logged:
