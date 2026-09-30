@@ -1855,6 +1855,16 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                     all_result_urls.extend(all_urls)
                 video_tasks[task_id]["result_urls"] = all_result_urls
                 video_tasks[task_id]["message"] = f"🎉 {len(video_urls)} Video tạo xong! Đang hiển thị lên Tool..."
+                
+                # Cập nhật thẻ profile thành "đã ra video"
+                try:
+                    p_obj = manager.get_profile(profile_id)
+                    if p_obj:
+                        p_obj.notes = "đã ra video"
+                        manager._save()
+                except Exception as ex:
+                    print(f"Lỗi cập nhật thẻ profile: {ex}")
+                
                 page.wait_for_timeout(3000)
             except Exception as e:
                 video_tasks[task_id] = {"status": "error", "message": f"Tạo thành công nhưng tải video thất bại: {e}"}
