@@ -750,6 +750,37 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False):
                             print("Đã tự động click tắt thông báo Cookie!")
                     except: pass
                     
+                    # Đóng popup quảng cáo Higgsfield "Plans with up to..." (nút X góc trên phải)
+                    try:
+                        promo_closed = page.evaluate("""() => {
+                            // Tìm nút X đóng popup (chứa SVG với path chéo X)
+                            const btns = document.querySelectorAll('button, [role="button"]');
+                            for (const btn of btns) {
+                                const svg = btn.querySelector('svg');
+                                if (!svg) continue;
+                                const paths = svg.querySelectorAll('path');
+                                for (const p of paths) {
+                                    const d = p.getAttribute('d') || '';
+                                    // Path của nút X: M7.75 7.75L16.25 16.25M16.25 7.75L7.75 16.25
+                                    if (d.includes('7.75') && d.includes('16.25')) {
+                                        btn.click();
+                                        return true;
+                                    }
+                                }
+                            }
+                            // Fallback: tìm theo aria-label hoặc text gần "Plans with up to"
+                            const overlay = document.querySelector('[data-testid="modal-close"], button[aria-label*="close"], button[aria-label*="Close"], button[aria-label*="Đóng"]');
+                            if (overlay && overlay.offsetParent !== null) {
+                                overlay.click();
+                                return true;
+                            }
+                            return false;
+                        }""")
+                        if promo_closed:
+                            print("Đã tắt popup quảng cáo Higgsfield!")
+                    except: pass
+
+                    
                     # ⚠️ LUÔN ĐỂ Ý: Nếu gặp thông báo lỗi "Couldn't save your answer" -> reload và làm tiếp
                     try:
                         error_texts = [

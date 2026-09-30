@@ -914,6 +914,31 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
         if "from_logout=1" in page.url or page.evaluate("() => Array.from(document.querySelectorAll('button')).some(b => b.innerText && b.innerText.includes('Continue with Microsoft'))"):
             raise Exception("higgsfield_logout")
 
+        # Đóng popup quảng cáo "Plans with up to..." nếu có
+        try:
+            promo_closed = page.evaluate("""() => {
+                const btns = document.querySelectorAll('button, [role="button"]');
+                for (const btn of btns) {
+                    const svg = btn.querySelector('svg');
+                    if (!svg) continue;
+                    const paths = svg.querySelectorAll('path');
+                    for (const p of paths) {
+                        const d = p.getAttribute('d') || '';
+                        if (d.includes('7.75') && d.includes('16.25')) {
+                            btn.click();
+                            return true;
+                        }
+                    }
+                }
+                const overlay = document.querySelector('[data-testid="modal-close"], button[aria-label*="close"], button[aria-label*="Close"]');
+                if (overlay && overlay.offsetParent !== null) { overlay.click(); return true; }
+                return false;
+            }""")
+            if promo_closed:
+                print("Đã tắt popup quảng cáo Higgsfield!")
+                page.wait_for_timeout(500)
+        except: pass
+
         for master_attempt in range(3):
             try:
                 # ── BƯỚC 8: Upload ảnh & Video theo giao diện MỚI ─────────────────────────────
