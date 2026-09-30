@@ -129,7 +129,7 @@ def launch_profile_endpoint(profile_id: str, req: LaunchRequest = None):
         try:
             # Auto login immediately when opening chrome
             # Nếu được gọi từ "Tạo acc + login", UI sẽ truyền keep_open_after_check=False
-            keep_open_after = req.get("keep_open_after_check", True)
+            keep_open_after = getattr(req, "keep_open_after_check", True) if req else True
             auto_signup_endpoint(profile_id, keep_open=keep_open_after)
         except Exception as e:
             print(f"Failed to trigger auto login: {e}")
