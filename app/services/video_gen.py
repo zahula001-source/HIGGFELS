@@ -22,6 +22,17 @@ def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False
     only_navigator=True: chỉ bật nút 1 (Spoof Navigator) - dùng khi cần tải ảnh
     close_old_tabs=True: đóng hết các tab cũ khi mở lên (chỉ dùng cho video creation)
     """
+    # Nếu chrome đang mở, ưu tiên dùng chrome đó
+    port_file = Path(profile.user_data_dir) / "cdp_port.txt"
+    if port_file.exists():
+        try:
+            port = int(port_file.read_text().strip())
+            browser = p.chromium.connect_over_cdp(f"http://localhost:{port}")
+            print(f"Đã kết nối vào Chrome đang mở của profile {profile.name} qua CDP port {port}")
+            return browser.contexts[0]
+        except Exception as e:
+            pass
+            
     args = [
         "--disable-blink-features=AutomationControlled",
         "--no-first-run",

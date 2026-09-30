@@ -544,6 +544,7 @@ function renderProfiles(profiles){
         <button class="btn btn-sm" style="background:#0369a1;color:#fff;" onclick="openPasteMailModal('${p.id}')">📧 Dán mail</button>
         <button class="btn btn-sm btn-ghost" onclick="duplicateProfile('${p.id}')">📋 Clone</button>
         <button class="btn btn-sm" style="background:#0e7490;color:#fff;" onclick="exportSingleBundle('${p.id}')" title="Xuất riêng thẻ này ra file JSON">📤 Xuất</button>
+        <button class="btn btn-sm" style="background:#ec4899;color:#fff;" onclick="switchTab('video'); addVideoForm(null, '${p.id}');" title="Mở thẻ tạo video riêng cho Profile này">🎬 Tạo Video</button>
         <button class="btn btn-sm btn-danger" onclick="deleteProfile('${p.id}')">🗑</button>
       </div>
       <div class="card-footer">
@@ -1438,7 +1439,7 @@ function clearVideoForm() {
 
 let formCounter = 0;
 let isAddingForm = false;
-async function addVideoForm(force_fId = null) {
+async function addVideoForm(force_fId = null, forceProfileId = null) {
   if (isAddingForm && force_fId === null) return;
   if (force_fId === null) isAddingForm = true;
   
@@ -1455,7 +1456,7 @@ async function addVideoForm(force_fId = null) {
       
     const trulyFree = freeFromBackend.filter(id => !usedInUI.includes(id));
     
-    if (trulyFree.length === 0) {
+    if (trulyFree.length === 0 && !forceProfileId) {
       alert("Hết Profile Chrome rảnh! Vui lòng tạo thêm Profile trước khi mở thẻ mới!");
       if (force_fId === null) {
           formCounter--;
@@ -1466,7 +1467,7 @@ async function addVideoForm(force_fId = null) {
     
     const html = `
       <div id="vform_${fId}" style="background:#151a27;border:1px solid #212a3d;border-radius:14px;padding:16px;position:relative;">
-        <div style="font-size:13px; font-weight:bold; color:#46c8ff; position:absolute; top:12px; left:16px;"># Thẻ ${fId}</div>
+        <div id="vform_title_${fId}" style="font-size:13px; font-weight:bold; color:#46c8ff; position:absolute; top:12px; left:16px;"># Thẻ ${fId}</div>
         <button class="btn btn-ghost" style="position:absolute;top:8px;right:8px;padding:4px 8px;color:#ef4444;height:auto;" onclick="document.getElementById('vform_${fId}').remove()" title="Đóng thẻ này">✕</button>
         
         <div class="video-form-grid" style="display:flex;flex-direction:column;gap:12px;margin-top:24px;">
@@ -1477,7 +1478,7 @@ async function addVideoForm(force_fId = null) {
               <button class="btn btn-ghost" style="padding:0 4px; color:#ef4444; font-size:12px; height:auto; line-height:1; border: 1px solid #ef4444; border-radius:4px;" onclick="quickDeleteProfile(${fId})" title="Xóa Profile đang chọn">🗑️</button>
             </div>
             <div style="display:flex; gap:6px;">
-              <select id="videoProfileId_${fId}" class="select" style="height:40px;flex:1;">
+              <select id="videoProfileId_${fId}" class="select" style="height:40px;flex:1;" onchange="updateVideoCardTitle(${fId}, this)">
                 <option value="">-- Chọn profile --</option>
               </select>
               <button class="btn btn-ghost" style="height:40px;padding:0 8px;font-size:11px;font-weight:bold;border:1px solid #46c8ff;color:#46c8ff;" onclick="openChatModal(${fId})" title="Xem lịch sử chat">
@@ -1605,8 +1606,14 @@ async function addVideoForm(force_fId = null) {
     populateVideoProfiles();
     
     const sel = document.getElementById(`videoProfileId_${fId}`);
-    if (sel && trulyFree.length > 0) {
-      sel.value = trulyFree[0];
+    if (sel) {
+        if (forceProfileId) {
+            sel.value = forceProfileId;
+            updateVideoCardTitle(fId, sel);
+        } else if (trulyFree.length > 0) {
+            sel.value = trulyFree[0];
+            updateVideoCardTitle(fId, sel);
+        }
     }
     
     setTimeout(() => {
@@ -1647,6 +1654,17 @@ function populateVideoProfiles() {
         sel.innerHTML += `<option value="${p.id}" data-name="${esc(p.name)}" style="${optStyle}" ${p.id === cur ? 'selected' : ''}>${text}</option>`;
     });
   });
+}
+
+function updateVideoCardTitle(fId, selectEl) {
+    const titleDiv = document.getElementById(`vform_title_${fId}`);
+    if (!titleDiv) return;
+    if (selectEl.selectedIndex > 0) {
+        const text = selectEl.options[selectEl.selectedIndex].text;
+        titleDiv.textContent = `# Thẻ ${fId} - ${text}`;
+    } else {
+        titleDiv.textContent = `# Thẻ ${fId}`;
+    }
 }
 
 // ===== IMAGE UPLOAD (nhiều ảnh) =====

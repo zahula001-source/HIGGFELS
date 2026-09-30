@@ -32,40 +32,53 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
         with pw_lock:
             p = sync_playwright().start()
         if True:
-            args = [
-                "--disable-blink-features=AutomationControlled",
-                "--no-first-run",
-                "--no-default-browser-check",
-                "--restore-last-session",
-                "--lang=vi-VN",
-                "--accept-lang=vi-VN,vi",
-            ]
-            if os.environ.get("HIGGSFIELD_BROWSER_ENGINE") == "cloakbrowser":
-                args.append("--fingerprint=" + str(profile.fingerprint.get("random_id", 123456)))
+            # Nếu chrome đang mở, ưu tiên dùng chrome đó
+            port_file = Path(profile.user_data_dir) / "cdp_port.txt"
+            context = None
+            if port_file.exists():
+                try:
+                    port = int(port_file.read_text().strip())
+                    browser = p.chromium.connect_over_cdp(f"http://localhost:{port}")
+                    print(f"Đã kết nối vào Chrome đang mở của profile {profile.name} qua CDP port {port}")
+                    context = browser.contexts[0]
+                except Exception as e:
+                    pass
             
-            ignore_args = []
-            
-            if is_headless:
-                args.append("--window-position=-32000,-32000")
-                args.append("--window-size=1366,768")
+            if not context:
+                args = [
+                    "--disable-blink-features=AutomationControlled",
+                    "--no-first-run",
+                    "--no-default-browser-check",
+                    "--restore-last-session",
+                    "--lang=vi-VN",
+                    "--accept-lang=vi-VN,vi",
+                ]
+                if os.environ.get("HIGGSFIELD_BROWSER_ENGINE") == "cloakbrowser":
+                    args.append("--fingerprint=" + str(profile.fingerprint.get("random_id", 123456)))
                 
-            try:
-                from app.browser_settings import browser_launch_options, get_global_args
-                args.extend(get_global_args())
-                b_opts = browser_launch_options()
-            except:
-                b_opts = {}
+                ignore_args = []
+                
+                if is_headless:
+                    args.append("--window-position=-32000,-32000")
+                    args.append("--window-size=1366,768")
+                    
+                try:
+                    from app.browser_settings import browser_launch_options, get_global_args
+                    args.extend(get_global_args())
+                    b_opts = browser_launch_options()
+                except:
+                    b_opts = {}
 
-            context = p.chromium.launch_persistent_context(
-                profile.user_data_dir,
-                headless=False,
-                channel="chrome" if not b_opts else None,
-                ignore_default_args=ignore_args,
-                args=args,
-                accept_downloads=True,
-                downloads_path=str(Path.home() / "Downloads"),
-                **b_opts
-            )
+                context = p.chromium.launch_persistent_context(
+                    profile.user_data_dir,
+                    headless=False,
+                    channel="chrome" if not b_opts else None,
+                    ignore_default_args=ignore_args,
+                    args=args,
+                    accept_downloads=True,
+                    downloads_path=str(Path.home() / "Downloads"),
+                    **b_opts
+                )
             
             # Tìm tab higgsfield.ai đã mở sẵn, nếu không có thì lấy tab đầu tiên
             page = None
