@@ -956,15 +956,20 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False):
                                 
                         # 3. Bấm Continue sau khi đã chọn xong
                         try:
-                            cont_btn = page.locator('button:has-text("Continue"), button:has-text("Next"), button:has-text("Choose an option"), button:has-text("Submit")').first
-                            if cont_btn.count() > 0 and not cont_btn.first.is_disabled():
-                                cont_btn.first.scroll_into_view_if_needed()
-                                page.wait_for_timeout(200)
-                                box = cont_btn.first.bounding_box()
-                                if box:
-                                    page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
-                                    print("Quiz: Mouse clicked 'Continue/Next'")
-                                    page.wait_for_timeout(1500)
+                            clicked = page.evaluate("""() => {
+                                const btns = Array.from(document.querySelectorAll('button')).filter(b => {
+                                    const text = (b.innerText || b.textContent || '').trim().toLowerCase();
+                                    return (text === 'continue' || text === 'next' || text === 'submit' || text.includes('choose')) && !b.disabled;
+                                });
+                                if (btns.length > 0) {
+                                    btns[btns.length - 1].click();
+                                    return true;
+                                }
+                                return false;
+                            }""")
+                            if clicked:
+                                print("Quiz: JS clicked 'Continue/Next'")
+                                page.wait_for_timeout(1500)
                         except Exception: pass
                             
                         continue
