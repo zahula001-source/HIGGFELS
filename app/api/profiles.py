@@ -1412,6 +1412,19 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False):
                             status_free = False
                             status_logged = False
                             quality = ""
+                            has_video = False
+                            
+                            # Kiem tra co video chua (de khong bi tag nham "khong free")
+                            try:
+                                has_video = page.evaluate("""() => {
+                                    let grid = document.getElementById('assets-grid');
+                                    if(grid) {
+                                        let completed = grid.querySelector('[data-job-status="completed"] video');
+                                        if(completed && completed.src && completed.src.includes('http')) return true;
+                                    }
+                                    return false;
+                                }""")
+                            except: pass
                             
                             # Tang 1: Kiem tra "Use free gens"
                             if page.locator('text="Use free gens"').count() > 0:
@@ -1419,45 +1432,35 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False):
                                 status_logged = True
                                 print("Xac nhan login: thay 'Use free gens'!")
                                 
-                                try:
-                                    # Trích xuất quality (720p hoặc 480p)
-                                    q_val = page.evaluate("""() => {
-                                        const spans = document.querySelectorAll('span, div');
-                                        for (let s of spans) {
-                                            const t = (s.innerText || s.textContent || '').trim();
-                                            if (t === 'Quality') {
-                                                const p = s.parentElement;
-                                                if (p) {
-                                                    const pText = (p.innerText || p.textContent || '');
-                                                    if (pText.includes('720')) return '720p';
-                                                    if (pText.includes('480')) return '480p';
-                                                    if (pText.includes('1080')) return '1080p';
-                                                }
-                                            }
-                                        }
-                                        // Fallback 1: check inside comboboxes
-                                        const btns = document.querySelectorAll('button[aria-label="Quality"], button[role="combobox"]');
-                                        for (let b of btns) {
-                                            const bText = (b.innerText || b.textContent || '');
-                                            if (bText.includes('720')) return '720p';
-                                            if (bText.includes('480')) return '480p';
-                                        }
-                                        // Fallback 2: check HTML
-                                        const html = document.body.innerHTML;
-                                        if (html.includes('>720p<') || html.includes('720p')) return '720p';
-                                        if (html.includes('>480p<') || html.includes('480p')) return '480p';
-                                        return '';
-                                    }""")
-                                    if q_val:
-                                        quality = q_val
-                                        print(f"Detected quality: {quality}")
-                                except Exception as e:
-                                    print(f"Lỗi lấy quality: {e}")
-                                    
-                                return status_logged, status_free, quality
+                            # Cố gắng lấy Quality bất kể thế nào nếu đã login hoặc có video
+                            try:
+                                q_val = page.evaluate("""() => {
+                                    const qSpan = document.querySelector('button[aria-label="Quality"] span.q-select-value');
+                                    if (qSpan) {
+                                        const q = (qSpan.innerText || qSpan.textContent || '').trim();
+                                        if (q) return q;
+                                    }
+                                    const b = document.querySelector('button[aria-label="Quality"]');
+                                    if (b) {
+                                        const bText = (b.innerText || b.textContent || '');
+                                        if (bText.includes('720')) return '720p';
+                                        if (bText.includes('480')) return '480p';
+                                    }
+                                    // Fallback text search
+                                    const html = document.body.innerHTML;
+                                    if (html.includes('>720p<') || html.includes('720p')) return '720p';
+                                    if (html.includes('>480p<') || html.includes('480p')) return '480p';
+                                    return '';
+                                }""")
+                                if q_val:
+                                    quality = q_val
+                                    print(f"Detected quality: {quality}")
+                            except Exception as e:
+                                print(f"Lỗi lấy quality: {e}")
                                 
                             # Tang 2: Click Avatar -> Radix Portal append vao DOM -> tim a[href*=logout]
-                            try:
+                            if not status_logged:
+                                try:
                                 avatar_btn = page.locator('button.hfnav-avatar-ring, button[aria-label="Account menu"]')
                                 if avatar_btn.count() > 0 and avatar_btn.first.is_visible():
                                     avatar_btn.first.click()
@@ -1487,21 +1490,25 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False):
                                 except Exception as e:
                                     print(f"Loi check Clerk session: {e}")
                                     
-                            return status_logged, status_free, quality
+                            return status_logged, status_free, quality, has_video
                             
-                        is_logged, is_free, quality = check_login_status()
-                        if not is_logged:
+                        is_logged, is_free, quality, has_video = check_login_status()
+                        if not is_logged and not has_video:
                             print("Chua thay dau hieu login, reload trang...")
                             page.goto("https://higgsfield.ai/ai/video?model=genjutsu", timeout=30000)
                             page.wait_for_timeout(5000)
-                            is_logged, is_free, quality = check_login_status()
-                            if not is_logged:
+                            is_logged, is_free, quality, has_video = check_login_status()
+                            if not is_logged and not has_video:
                                 print("Van chua thay, reload lan cuoi...")
                                 page.reload(timeout=30000)
-                                is_logged, is_free, quality = check_login_status()
+                                is_logged, is_free, quality, has_video = check_login_status()
+                                
                         p_obj = manager.get_profile(profile.id)
                         if p_obj:
-                            if is_free:
+                            if has_video:
+                                p_obj.notes = "đã ra video"
+                                print("=> Cap nhat the thanh 'đã ra video' (da hoan thanh)")
+                            elif is_free:
                                 tag_note = f"free gen {quality}".strip() if quality else "free gen"
                                 p_obj.notes = tag_note
                                 print(f"=> Cap nhat the thanh '{tag_note}' (Xanh la)")
@@ -1541,8 +1548,11 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False):
                                         print(f"Lỗi khi retry login: {ex}")
                                     
                                     # Sau khi thử click lại, kiểm tra lại trạng thái
-                                    is_logged, is_free, quality = check_login_status()
-                                    if is_free:
+                                    is_logged, is_free, quality, has_video = check_login_status()
+                                    if has_video:
+                                        p_obj.notes = "đã ra video"
+                                        print("=> Retry thành công: đã ra video")
+                                    elif is_free:
                                         tag_note = f"free gen {quality}".strip() if quality else "free gen"
                                         p_obj.notes = tag_note
                                         print(f"=> Retry thành công: {tag_note}")
