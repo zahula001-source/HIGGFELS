@@ -1792,40 +1792,58 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                 pass
 
             try:
-                new_url = page.evaluate(f"""() => {{
-                    const urls = [];
+                eval_res = page.evaluate(f"""() => {{
+                    const result = {{ urls: [], status: '' }};
                     // CHỈ lấy video đầu tiên trong danh sách assets-grid (thẻ div chứa video vừa gen xong)
                     const firstItem = document.querySelector('#assets-grid > div:first-child');
                     
-                    // Kiểm tra trạng thái completed và đảm bảo không lấy nhầm video cũ (last_asset_id)
-                    if (firstItem && firstItem.getAttribute('data-job-status') === 'completed' && firstItem.getAttribute('data-asset-id') !== '{last_asset_id}') {{
-                        const video = firstItem.querySelector('video');
-                        if (video) {{
-                            if (video.src && (video.src.startsWith('http') || video.src.startsWith('blob'))) {{
-                                urls.push(video.src);
-                            }} else {{
-                                const s = video.querySelector('source');
-                                if (s && s.src && (s.src.startsWith('http') || s.src.startsWith('blob'))) {{
-                                    urls.push(s.src);
+                    if (firstItem && firstItem.getAttribute('data-asset-id') !== '{last_asset_id}') {{
+                        result.status = firstItem.getAttribute('data-job-status') || '';
+                        // Kiểm tra trạng thái completed và đảm bảo không lấy nhầm video cũ
+                        if (result.status === 'completed') {{
+                            const video = firstItem.querySelector('video');
+                            if (video) {{
+                                if (video.src && (video.src.startsWith('http') || video.src.startsWith('blob'))) {{
+                                    result.urls.push(video.src);
+                                }} else {{
+                                    const s = video.querySelector('source');
+                                    if (s && s.src && (s.src.startsWith('http') || s.src.startsWith('blob'))) {{
+                                        result.urls.push(s.src);
+                                    }}
                                 }}
                             }}
                         }}
                     }}
-                    return urls;
+                    
+                    if (result.status !== 'completed') {{
+                        const spans = Array.from(document.querySelectorAll('span, div'));
+                        if (spans.some(el => el.innerText && el.innerText.trim() === 'Generating')) {{
+                            result.status = 'generating';
+                        }}
+                    }}
+                    return result;
                 }}""")
+                new_url = eval_res.get('urls', [])
+                current_job_status = eval_res.get('status', '')
                 if new_url and len(new_url) > 0:
                     video_urls = new_url
                     video_url = new_url[0]
                     break
             except:
+                current_job_status = ''
                 pass
 
             mins = i // 60
             secs = i % 60
-            if video_tasks[task_id].get("message", "").startswith("✅ Đã Cancel"):
-                video_tasks[task_id]["message"] = f"✅ Đã Cancel & Gen! Đang chờ video... {mins:02d}:{secs:02d}"
+            
+            base_msg = f"Đang chờ higgsfield.ai tạo video... {mins:02d}:{secs:02d}"
+            if video_tasks[task_id].get("message", "").startswith("✅ Đã Cancel") or "Cancel & Gen" in video_tasks[task_id].get("message", ""):
+                base_msg = f"✅ Đã Cancel & Gen! Đang chờ video... {mins:02d}:{secs:02d}"
+                
+            if current_job_status == 'generating':
+                video_tasks[task_id]["message"] = f'<span style="color: #c084fc; font-weight: bold;">{base_msg} ( sắp ra rồi nhé )</span>'
             else:
-                video_tasks[task_id]["message"] = f"Đang chờ higgsfield.ai tạo video... {mins:02d}:{secs:02d}"
+                video_tasks[task_id]["message"] = base_msg
 
         if video_urls:
             out_dir = Path(save_path)

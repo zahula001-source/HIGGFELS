@@ -495,11 +495,11 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                             remaining = max(0, 900 - elapsed)
                             mins = int(remaining // 60)
                             secs = int(remaining % 60)
-                            video_tasks[task_id]["message"] = f"⏳ Sắp ra rồi! Còn khoảng {mins} phút {secs} giây nữa..."
+                            video_tasks[task_id]["message"] = f'<span style="color: #c084fc; font-weight: bold;">⏳ Sắp ra rồi! Còn khoảng {mins} phút {secs} giây nữa... ( sắp ra rồi nhé )</span>'
                             if elapsed >= 900:
                                 generating_countdown_done = True
                         else:
-                            video_tasks[task_id]["message"] = f"⏳ Đang chờ video... (Đã chờ {int(elapsed // 60)} phút)"
+                            video_tasks[task_id]["message"] = f'<span style="color: #c084fc; font-weight: bold;">⏳ Đang chờ video... (Đã chờ {int(elapsed // 60)} phút) ( sắp ra rồi nhé )</span>'
                     
                         page.wait_for_timeout(3000)
                     
