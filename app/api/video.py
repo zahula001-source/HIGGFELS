@@ -142,7 +142,7 @@ def api_check_video(req: CheckVideoReq):
     check_video_task_ids.add(task_id)
     def _run_and_cleanup(*args):
         try:
-            run_check_video_automation(*args)
+            run_check_video_automation(*args, cancel_first=req.cancel_first)
         finally:
             check_video_task_ids.discard(task_id)
     t = threading.Thread(target=_run_and_cleanup, args=(task_id, req.profile_id, req.is_headless), daemon=True)

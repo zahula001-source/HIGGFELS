@@ -1810,12 +1810,8 @@ const videoTaskPolls = {};  // fId -> intervalId
 const fIdToTaskId = {}; // map fId to actual task_id
 
 async function startCancelAndGen(fId) {
-  const taskId = fIdToTaskId[fId];
-  if (!taskId) { 
-      alert("Không tìm thấy tiến trình đang chạy cho thẻ này!"); 
-      return; 
-  }
-
+  let taskId = fIdToTaskId[fId];
+  
   const btn = document.getElementById(`cancelGenBtn_${fId}`);
   btn.disabled = true;
   btn.textContent = "⏳...";
@@ -1828,9 +1824,37 @@ async function startCancelAndGen(fId) {
   }
 
   try {
-    const res = await fetch(`/api/video/cancel_gen/${taskId}`, { method: 'POST' });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || data.message || "Lỗi không xác định");
+    if (!taskId) {
+        // Tự động mở Chrome và chạy task Cancel + Gen
+        const profileId = document.getElementById(`videoProfileId_${fId}`).value;
+        const isHeadless = document.getElementById("globalHeadless") ? document.getElementById("globalHeadless").checked : false;
+        
+        const reqBody = {
+            profile_id: profileId,
+            is_headless: isHeadless,
+            cancel_first: true
+        };
+        const res = await fetch('/api/video/check', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(reqBody)
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || "Lỗi khởi tạo Cancel + Gen direct");
+        
+        taskId = data.task_id;
+        fIdToTaskId[fId] = taskId;
+        
+        // Bắt đầu poll status luôn
+        if(videoTaskPolls[fId]) clearInterval(videoTaskPolls[fId]);
+        videoTaskPolls[fId] = setInterval(() => pollTaskStatusDynamic(fId, taskId), 2000);
+        
+    } else {
+        const res = await fetch(`/api/video/cancel_gen/${taskId}`, { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || data.message || "Lỗi không xác định");
+    }
+    
     
   } catch(e) {
     alert("❌ Lỗi: " + e.message);

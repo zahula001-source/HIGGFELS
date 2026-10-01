@@ -50,6 +50,7 @@ class LaunchRequest(BaseModel):
 class CheckVideoReq(BaseModel):
     profile_id: str
     is_headless: bool = False
+    cancel_first: bool = False
 
 class CancelGenReq(BaseModel):
     profile_id: str

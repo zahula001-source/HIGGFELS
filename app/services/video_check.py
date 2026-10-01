@@ -17,7 +17,7 @@ from app.manager import manager
 from app.browser import launch_profile_with_fallback, close_profile, is_running, list_running
 from app.browser_settings import browser_launch_options
 
-def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool = False, _already_tried_login: bool = False):
+def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool = False, _already_tried_login: bool = False, cancel_first: bool = False):
     from playwright.sync_api import sync_playwright
     import time, os
     from pathlib import Path
@@ -278,6 +278,9 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
             import random, time
             next_reload_time = time.time() + random.randint(240, 420)
             
+            if cancel_first:
+                video_tasks[task_id]["cancel_and_gen_requested"] = True
+                
             while True:
                 try:
                     # Kiểm tra cờ dừng
