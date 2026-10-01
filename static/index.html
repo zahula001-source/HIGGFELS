@@ -1811,6 +1811,15 @@ const fIdToTaskId = {}; // map fId to actual task_id
 
 async function startCancelAndGen(fId) {
   let taskId = fIdToTaskId[fId];
+  let isRunning = false;
+  if (taskId) {
+      try {
+          const s = await fetch(`/api/video/status/${taskId}`).then(r=>r.json());
+          if (s.status === 'running' || s.status === 'pending') {
+              isRunning = true;
+          }
+      } catch(e) {}
+  }
   
   const btn = document.getElementById(`cancelGenBtn_${fId}`);
   btn.disabled = true;
@@ -1824,7 +1833,7 @@ async function startCancelAndGen(fId) {
   }
 
   try {
-    if (!taskId) {
+    if (!isRunning) {
         // Tự động mở Chrome và chạy task Cancel + Gen
         const profileId = document.getElementById(`videoProfileId_${fId}`).value;
         const isHeadless = document.getElementById("globalHeadless") ? document.getElementById("globalHeadless").checked : false;
