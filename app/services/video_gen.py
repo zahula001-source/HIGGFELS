@@ -1021,6 +1021,9 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                 page.wait_for_timeout(500)
         except: pass
 
+        images_uploaded = False
+        videos_uploaded = False
+        
         for master_attempt in range(3):
             try:
                 # ── BƯỚC 8: Upload ảnh & Video theo giao diện MỚI ─────────────────────────────
@@ -1299,7 +1302,7 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                 except: pass
                 
                 # 2. Upload Ảnh (Có cơ chế Retry riêng)
-                if images_to_upload:
+                if images_to_upload and not images_uploaded:
                     for attempt in range(3):
                         try:
                             print(f"=== BẮT ĐẦU UPLOAD ẢNH ({len(images_to_upload)} file) (Lần {attempt+1}) ===")
@@ -1313,6 +1316,7 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                                 page.mouse.click(10, 10)
                                 page.wait_for_timeout(1000)
                             except: pass
+                            images_uploaded = True
                             break # Thành công thì thoát loop ảnh
                         except Exception as e:
                             if "ReloadRequired" in str(e):
@@ -1322,7 +1326,7 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                             raise e
 
                 # 3. Upload Video (Có cơ chế Retry riêng)
-                if videos_to_upload:
+                if videos_to_upload and not videos_uploaded:
                     for attempt in range(3):
                         try:
                             if gen_mode == "objects_swap":
@@ -1333,6 +1337,7 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                             print(f"=== BẮT ĐẦU UPLOAD VIDEO ({len(videos_to_upload)} file) (Lần {attempt+1}) ===")
                             video_tasks[task_id] = {"status": "running", "message": f"Đang tải {len(videos_to_upload)} video lên..."}
                             upload_and_select(page, video_btn_label, videos_to_upload)
+                            videos_uploaded = True
                             break # Thành công thì thoát loop video
                         except Exception as e:
                             if "ReloadRequired" in str(e):
