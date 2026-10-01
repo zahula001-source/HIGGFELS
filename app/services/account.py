@@ -37,6 +37,7 @@ def run_delete_account_automation(task_id: str, profile_id: str):
         if True:
             browser = None
             context = None
+            connected_via_cdp = False
             
             # Ưu tiên kết nối qua CDP nếu profile đang được mở (Nút 'Mở Chrome' đã được bấm)
             port_file = Path(profile.user_data_dir) / "cdp_port.txt"
@@ -45,6 +46,7 @@ def run_delete_account_automation(task_id: str, profile_id: str):
                     port = int(port_file.read_text().strip())
                     browser = p.chromium.connect_over_cdp(f"http://localhost:{port}")
                     context = browser.contexts[0]
+                    connected_via_cdp = True
                 except:
                     pass
             
@@ -81,8 +83,9 @@ def run_delete_account_automation(task_id: str, profile_id: str):
             avatar_btn = page.locator("button[aria-haspopup='menu']").filter(has=page.locator("img.rounded-full"))
             if not avatar_btn.count():
                 video_tasks[task_id] = {"status": "error", "message": "Bạn chưa đăng nhập higgsfield trên Profile này! Vui lòng Mở Chrome và đăng nhập trước."}
-                try: context.close()
-                except: pass
+                if not connected_via_cdp:
+                    try: context.close()
+                    except: pass
                 return
                 
             video_tasks[task_id]["message"] = "Đang tiến hành Xóa tài khoản..."
@@ -333,12 +336,14 @@ def run_delete_account_automation(task_id: str, profile_id: str):
             video_tasks[task_id]["message"] = "Đã xóa Account thành công!"
             video_tasks[task_id]["status"] = "done"
             
-            try: context.close()
-            except: pass
+            if not connected_via_cdp:
+                try: context.close()
+                except: pass
 
     except Exception as e:
-        try: context.close()
-        except: pass
+        if not connected_via_cdp:
+            try: context.close()
+            except: pass
         video_tasks[task_id]["status"] = "error"
         video_tasks[task_id]["message"] = f"Lỗi khi xóa account: {e}"
 

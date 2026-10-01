@@ -516,8 +516,13 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False):
                     except Exception as e:
                         print(f"Lỗi click Microsoft: {e}")
                     
-                    # Đợi chuyển sang trang login.microsoftonline.com
-                    page.wait_for_timeout(3000)
+                    # Đợi chuyển sang trang login.microsoftonline.com / login.live.com
+                    try:
+                        for _ in range(15):
+                            if "login.microsoft" in page.url or "login.live" in page.url:
+                                break
+                            page.wait_for_timeout(500)
+                    except: pass
                     print(f"Current URL after click: {page.url}")
                     
                     # === Đọc thông tin tài khoản từ ms_account.txt ===
@@ -534,19 +539,16 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False):
                                 print(f"Loaded MS account: {ms_email}")
                         except Exception as e:
                             print(f"Error reading ms_account.txt: {e}")
-                    
                     if ms_email and ms_password:
                         # Đợi trang MS login hoặc trang higgsfield (nếu đã login)
                         try:
                             for _ in range(15):
-                                u = page.url
-                                if "login.microsoft" in u or "login.live" in u or "higgsfield.ai/quiz" in u or "higgsfield.ai/ai/video" in u:
+                                if "login.microsoft" in page.url or "login.live" in page.url or "higgsfield.ai/quiz" in page.url or "higgsfield.ai/ai/video" in page.url:
                                     break
-                                page.wait_for_timeout(1000)
-                        except:
-                            pass
+                                page.wait_for_timeout(500)
+                        except: pass
                         
-                        page.wait_for_timeout(2000)
+                        page.wait_for_timeout(500)
                         print(f"MS login page URL: {page.url}")
                         
                         # Điền email vào ô input
@@ -555,8 +557,26 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False):
                             if page.url.startswith("https://higgsfield.ai") or "account.live.com" in page.url or "fido" in page.url: 
                                 raise ValueError("Already logged in or stuck on protection page, skipping email")
                             
-                            # Đợi input xuất hiện
-                            page.wait_for_selector('#i0116:not([type="hidden"])', state='visible', timeout=10000)
+                            # Đợi input xuất hiện hoặc nút Sử dụng mật khẩu xuất hiện
+                            email_found = False
+                            for _ in range(20):
+                                try:
+                                    # Kiểm tra xem có nút "Sử dụng mật khẩu của bạn" không
+                                    use_pwd_btn = page.locator('span[role="button"]:has-text("Sử dụng mật khẩu của bạn"), span[role="button"]:has-text("Use your password"), a#iUsePasswordLink, a#idA_PWD_SwitchToPassword, a:has-text("Sử dụng mật khẩu của bạn")')
+                                    if use_pwd_btn.count() > 0 and use_pwd_btn.first.is_visible():
+                                        print("Bỏ qua chờ nhập email vì đã thấy nút Sử dụng mật khẩu")
+                                        raise ValueError("Thấy nút sử dụng mật khẩu")
+                                        
+                                    if page.locator('#i0116:not([type="hidden"])').is_visible():
+                                        email_found = True
+                                        break
+                                except Exception as e:
+                                    if "Thấy nút sử dụng mật khẩu" in str(e):
+                                        raise e
+                                page.wait_for_timeout(500)
+                                
+                            if not email_found:
+                                raise ValueError("Không thấy ô nhập email")
                             
                             # Dùng JavaScript để set giá trị và trigger Knockout binding (trang MS dùng Knockout.js)
                             filled = page.evaluate("""(email) => {
@@ -598,7 +618,7 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False):
                         # Kiểm tra xem có bị chuyển hướng sang trang "Xác minh email của bạn" (chọn phương thức xác thực) không
                         # Nếu có, bấm "Sử dụng mật khẩu của bạn" để quay lại form mật khẩu
                         try:
-                            page.wait_for_timeout(3000)
+                            page.wait_for_timeout(500)
                             if page.url.startswith("https://higgsfield.ai") or "account.live.com" in page.url or "fido" in page.url: 
                                 raise ValueError("Already logged in or stuck on protection page, skipping use password")
                             
@@ -1395,9 +1415,10 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False):
 
                     print("Đang kiểm tra trạng thái đăng nhập và Free Gens...")
                     try:
-                        # Vào trang video để check free gens
-                        page.goto("https://higgsfield.ai/ai/video?model=genjutsu", timeout=30000)
-                        page.wait_for_timeout(2000)
+                        # Vào trang video để check free gens (nếu chưa ở đúng trang)
+                        if "higgsfield.ai/ai/video" not in page.url:
+                            page.goto("https://higgsfield.ai/ai/video?model=genjutsu", timeout=30000)
+                            page.wait_for_timeout(2000)
                         # Đóng cookie banner nếu còn
                         try:
                             page.evaluate("""() => {
@@ -1407,8 +1428,41 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False):
                         except: pass
                         page.wait_for_timeout(1000)
                         
+                        # Đóng Marketing Popups (Restyle, Claim Free Gens, etc.)
+                        try:
+                            page.evaluate("""() => {
+                                const dialogs = document.querySelectorAll('div[role="dialog"]');
+                                for (let dialog of dialogs) {
+                                    const text = dialog.innerText || "";
+                                    if (text.includes('Claim Free Generation') || text.includes('Explore styles') || text.includes('RESTYLE') || text.includes('New in Genjutsu') || text.includes('Restyle')) {
+                                        const closeBtn = dialog.querySelector('button[aria-label="Close"], button[aria-label*="close"], button svg.lucide-x') || dialog.querySelector('button.absolute');
+                                        if (closeBtn) {
+                                            try { closeBtn.click(); } catch(e) {}
+                                        }
+                                    }
+                                }
+                            }""")
+                        except: pass
+                        
                         def check_login_status():
                             page.wait_for_timeout(4000)
+                            
+                            # Đóng Marketing Popups (nếu nó hiện ra chậm trong lúc chờ)
+                            try:
+                                page.evaluate("""() => {
+                                    const dialogs = document.querySelectorAll('div[role="dialog"]');
+                                    for (let dialog of dialogs) {
+                                        const text = dialog.innerText || "";
+                                        if (text.includes('Claim Free Generation') || text.includes('Explore styles') || text.includes('RESTYLE') || text.includes('New in Genjutsu') || text.includes('Restyle')) {
+                                            const closeBtn = dialog.querySelector('button[aria-label="Close"], button[aria-label*="close"], button svg.lucide-x') || dialog.querySelector('button.absolute');
+                                            if (closeBtn) {
+                                                try { closeBtn.click(); } catch(e) {}
+                                            }
+                                        }
+                                    }
+                                }""")
+                            except: pass
+                            
                             status_free = False
                             status_logged = False
                             quality = ""
@@ -1493,13 +1547,16 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False):
                             return status_logged, status_free, quality, has_video
                             
                         is_logged, is_free, quality, has_video = check_login_status()
-                        if not is_logged and not has_video:
-                            print("Chua thay dau hieu login, reload trang...")
+                        
+                        # Nếu quét lần 1 không thấy 'Use free gens', load lại trang quét phát nữa cho chắc
+                        if not is_free and not has_video:
+                            print("Chưa thấy 'Use free gens', load lại trang quét phát nữa cho chắc...")
                             page.goto("https://higgsfield.ai/ai/video?model=genjutsu", timeout=30000)
                             page.wait_for_timeout(5000)
                             is_logged, is_free, quality, has_video = check_login_status()
+                            
                             if not is_logged and not has_video:
-                                print("Van chua thay, reload lan cuoi...")
+                                print("Vẫn chưa thấy login, reload lần cuối...")
                                 page.reload(timeout=30000)
                                 is_logged, is_free, quality, has_video = check_login_status()
                                 

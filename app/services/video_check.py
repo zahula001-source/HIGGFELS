@@ -35,12 +35,14 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
             # Nếu chrome đang mở, ưu tiên dùng chrome đó
             port_file = Path(profile.user_data_dir) / "cdp_port.txt"
             context = None
+            connected_via_cdp = False
             if port_file.exists():
                 try:
                     port = int(port_file.read_text().strip())
                     browser = p.chromium.connect_over_cdp(f"http://localhost:{port}")
                     print(f"Đã kết nối vào Chrome đang mở của profile {profile.name} qua CDP port {port}")
                     context = browser.contexts[0]
+                    connected_via_cdp = True
                 except Exception as e:
                     pass
             
@@ -149,6 +151,39 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
             
             try: page.bring_to_front()
             except: pass
+            
+            # Thêm script tự động đóng popup liên tục
+            try:
+                page.evaluate("""() => {
+                    if (window._popupIntervalId) return;
+                    window._popupIntervalId = setInterval(() => {
+                        const dialogs = document.querySelectorAll('div[role="dialog"]');
+                        for (let dialog of dialogs) {
+                            const text = dialog.innerText || "";
+                            if (text.includes('Claim Free Generation') || text.includes('Explore styles') || text.includes('RESTYLE') || text.includes('New in Genjutsu') || text.includes('Restyle')) {
+                                const closeBtn = dialog.querySelector('button[aria-label="Close"], button[aria-label*="close"], button svg.lucide-x') || dialog.querySelector('button.absolute');
+                                if (closeBtn) {
+                                    try { closeBtn.click(); } catch(e) {}
+                                }
+                            }
+                        }
+                    }, 1000);
+                }""")
+            except: pass
+            page.add_init_script("""
+                setInterval(() => {
+                    const dialogs = document.querySelectorAll('div[role="dialog"]');
+                    for (let dialog of dialogs) {
+                        const text = dialog.innerText || "";
+                        if (text.includes('Claim Free Generation') || text.includes('Explore styles') || text.includes('RESTYLE') || text.includes('New in Genjutsu') || text.includes('Restyle')) {
+                            const closeBtn = dialog.querySelector('button[aria-label="Close"], button[aria-label*="close"], button svg.lucide-x') || dialog.querySelector('button.absolute');
+                            if (closeBtn) {
+                                try { closeBtn.click(); } catch(e) {}
+                            }
+                        }
+                    }
+                }, 1000);
+            """)
             
             video_tasks[task_id]["message"] = "Đang vào trang Genjutsu..."
             page.goto("https://higgsfield.ai/ai/video?model=genjutsu", timeout=60000)
@@ -590,11 +625,16 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                 video_tasks[task_id] = {"status": "error", "message": "Không tìm thấy video nào!"}
                 
             page.wait_for_timeout(2000)
-            context.close()
+            if not connected_via_cdp:
+                try: context.close()
+                except: pass
             with pw_lock:
                 p.stop()
     except Exception as e:
         import traceback
         traceback.print_exc()
         video_tasks[task_id] = {"status": "error", "message": str(e)}
+        if "context" in locals() and not connected_via_cdp:
+            try: context.close()
+            except: pass
 

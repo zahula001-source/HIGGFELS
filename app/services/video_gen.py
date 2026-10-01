@@ -29,7 +29,7 @@ def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False
             port = int(port_file.read_text().strip())
             browser = p.chromium.connect_over_cdp(f"http://localhost:{port}")
             print(f"Đã kết nối vào Chrome đang mở của profile {profile.name} qua CDP port {port}")
-            return browser.contexts[0]
+            return browser.contexts[0], True
         except Exception as e:
             pass
             
@@ -136,7 +136,7 @@ def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False
     except: pass
 
 
-    return context
+    return context, False
 
 def _activate_canvas_spoof(context, ext_path):
     """Kích hoạt Spoof Canvas SAU khi đã upload ảnh thành công"""
@@ -486,11 +486,11 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
         engine = os.environ.get("HIGGSFIELD_BROWSER_ENGINE", "chrome").lower()
         if engine == "cloakbrowser":
             p = None
-            context = _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=enable_ext_btn2, is_headless=is_headless)
+            context, connected_via_cdp = _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=enable_ext_btn2, is_headless=is_headless)
         else:
             with pw_lock:
                 p = sync_playwright().start()
-            context = _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=enable_ext_btn2, is_headless=is_headless)
+            context, connected_via_cdp = _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=enable_ext_btn2, is_headless=is_headless)
             
         # Tái sử dụng tab đầu tiên nếu có để tránh mở nhiều tab
         page = None
@@ -517,6 +517,22 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
         # (ĐÃ BỎ CẮT COOKIE HIGGSFIELD ĐỂ GIỮ TRẠNG THÁI LOGIN TỪ PROFILE)
         # video_tasks[task_id] = {"status": "running", "message": "Đang giả lập máy tính hoàn toàn mới (Clear Cookies)..."}
         # ... đoạn code xóa cookie đã bị vô hiệu hóa ...
+
+        # Thêm script tự động đóng popup liên tục
+        page.add_init_script("""
+            setInterval(() => {
+                const dialogs = document.querySelectorAll('div[role="dialog"]');
+                for (let dialog of dialogs) {
+                    const text = dialog.innerText || "";
+                    if (text.includes('Claim Free Generation') || text.includes('Explore styles') || text.includes('RESTYLE') || text.includes('New in Genjutsu') || text.includes('Restyle')) {
+                        const closeBtn = dialog.querySelector('button[aria-label="Close"], button[aria-label*="close"], button svg.lucide-x') || dialog.querySelector('button.absolute');
+                        if (closeBtn) {
+                            try { closeBtn.click(); } catch(e) {}
+                        }
+                    }
+                }
+            }, 1000);
+        """)
 
         # ── BƯỚC 1: Mở higgsfield.ai/chat ──────────────────────────────────
         video_tasks[task_id] = {"status": "running", "message": "Đang mở higgsfield.ai/ai/video..."}
@@ -2174,12 +2190,16 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
         # Đánh dấu done ở bước cuối cùng
         video_tasks[task_id]["status"] = "done"
 
-        try: context.close()
+        try:
+            if not connected_via_cdp:
+                context.close()
         except: pass
 
     except Exception as e:
         # Bắt buộc đóng trình duyệt ngay lập tức nếu có lỗi hoặc văng để retry có thể lấy FP mới
-        try: context.close()
+        try:
+            if not connected_via_cdp:
+                context.close()
         except: pass
     
         if "higgsfield_logout" in str(e):
