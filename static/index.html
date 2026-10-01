@@ -771,11 +771,13 @@ async function launchProfile(id){
   const startupUrls = localStorage.getItem("globalStartupUrls") || "";
   const startupMode = localStorage.getItem("globalStartupMode") || "once";
   
+  const isHeadless = document.getElementById("globalHeadless") ? document.getElementById("globalHeadless").checked : false;
+  
   const res = await fetch(`/api/profiles/${id}/launch`, {
     method:"POST", 
     headers:{"Content-Type":"application/json"}, 
     body:JSON.stringify({
-        headless:false, 
+        headless: isHeadless, 
         auto_random_fp: autoFp,
         startup_urls: startupUrls,
         startup_mode: startupMode,
@@ -1181,12 +1183,13 @@ async function autoSignup(id) {
         loadingMsg.style.zIndex = "9999";
         document.body.appendChild(loadingMsg);
         
+        const isHeadless = document.getElementById("globalHeadless") ? document.getElementById("globalHeadless").checked : false;
         try {
             const res = await fetch(`/api/profiles/${id}/launch`, {
                 method:"POST", 
                 headers:{"Content-Type":"application/json"}, 
                 body:JSON.stringify({
-                    headless:false, 
+                    headless: isHeadless, 
                     auto_random_fp: autoFp,
                     startup_urls: startupUrls,
                     startup_mode: startupMode,
