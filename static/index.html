@@ -1847,6 +1847,7 @@ async function startCancelAndGen(fId) {
         
         // Bắt đầu poll status luôn
         if(videoTaskPolls[fId]) clearInterval(videoTaskPolls[fId]);
+        pollTaskStatusDynamic(fId, taskId); // Cập nhật ngay lập tức
         videoTaskPolls[fId] = setInterval(() => pollTaskStatusDynamic(fId, taskId), 2000);
         
     } else {
