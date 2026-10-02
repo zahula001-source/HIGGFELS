@@ -1593,14 +1593,24 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False):
                                                     parts = ms_acc_file.read_text(encoding="utf-8").strip().split("|")
                                                     if len(parts) >= 2:
                                                         email_input.first.fill(parts[0].strip())
-                                                        page.keyboard.press("Enter")
-                                                        page.wait_for_timeout(2000)
+                                                        page.wait_for_timeout(1000)
+                                                        next_btn = page.locator('#idSIButton9, input[type="submit"]')
+                                                        if next_btn.count() > 0 and next_btn.first.is_visible():
+                                                            next_btn.first.click()
+                                                        else:
+                                                            page.keyboard.press("Enter")
+                                                        page.wait_for_timeout(3000)
                                                         
                                                         pwd_input = page.locator('input[type="password"], input[name="passwd"], input[id="i0118"]')
                                                         if pwd_input.count() > 0 and pwd_input.first.is_visible():
                                                             pwd_input.first.fill(parts[1].strip())
-                                                            page.keyboard.press("Enter")
-                                                            page.wait_for_timeout(3000)
+                                                            page.wait_for_timeout(1000)
+                                                            next_btn = page.locator('#idSIButton9, input[type="submit"]')
+                                                            if next_btn.count() > 0 and next_btn.first.is_visible():
+                                                                next_btn.first.click()
+                                                            else:
+                                                                page.keyboard.press("Enter")
+                                                            page.wait_for_timeout(4000)
                                     except Exception as ex:
                                         print(f"Lỗi khi retry login: {ex}")
                                     

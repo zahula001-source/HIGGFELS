@@ -827,6 +827,47 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                     # 1. Quét xem có dialog xác nhận tuổi không, nếu có thì click
                     check_popups(page)
                     
+                    # 1.1 Xử lý Login Microsoft nếu nó bắt nhập lại email/mật khẩu hoặc hiện bảng báo/yes
+                    try:
+                        # Điền form email nếu có
+                        email_input = page.locator('input[type="email"], input[name="loginfmt"], input[id="i0116"]')
+                        if email_input.count() > 0 and email_input.first.is_visible():
+                            p_obj = manager.get_profile(profile_id)
+                            if p_obj:
+                                ms_acc_file = Path(p_obj.user_data_dir) / "ms_account.txt"
+                                if ms_acc_file.exists():
+                                    parts = ms_acc_file.read_text(encoding="utf-8").strip().split("|")
+                                    if len(parts) >= 2:
+                                        print("Đang điền lại email Microsoft vì phiên bị đăng xuất...")
+                                        email_input.first.fill(parts[0].strip())
+                                        page.wait_for_timeout(1000)
+                                        next_btn = page.locator('#idSIButton9, input[type="submit"]')
+                                        if next_btn.count() > 0 and next_btn.first.is_visible():
+                                            next_btn.first.click()
+                                        else:
+                                            page.keyboard.press("Enter")
+                                        page.wait_for_timeout(3000)
+                                        
+                                        pwd_input = page.locator('input[type="password"], input[name="passwd"], input[id="i0118"]')
+                                        if pwd_input.count() > 0 and pwd_input.first.is_visible():
+                                            pwd_input.first.fill(parts[1].strip())
+                                            page.wait_for_timeout(1000)
+                                            next_btn = page.locator('#idSIButton9, input[type="submit"]')
+                                            if next_btn.count() > 0 and next_btn.first.is_visible():
+                                                next_btn.first.click()
+                                            else:
+                                                page.keyboard.press("Enter")
+                                            page.wait_for_timeout(4000)
+                                            
+                        # Click "Có" / "Yes" / "Chấp nhận" / "Looks good" nếu nó hiện ra
+                        yes_btn = page.locator('input#idSIButton9, button#idSIButton9, button#acceptButton, input#acceptButton, input[value*="Có"], input[value*="Yes"], input[value*="Chấp nhận"], input[value*="Accept"], input[value*="Trông rất được"], input[value*="Looks good"]')
+                        if yes_btn.count() > 0 and yes_btn.first.is_visible():
+                            yes_btn.first.click(force=True)
+                            print("Clicked Yes / Accept / Stay signed in")
+                            page.wait_for_timeout(2000)
+                    except Exception as e:
+                        print(f"Lỗi khi điền lại thông tin MS login: {e}")
+                    
                     # 1.2 Xử lý Cloudflare Turnstile
                     try:
                         cf_checkbox = page.locator('input[type="checkbox"][aria-label*="con người"], input[type="checkbox"][aria-label*="human"]')
