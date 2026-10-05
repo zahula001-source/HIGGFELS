@@ -786,13 +786,99 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                 print("Handling post-login popups...")
                 global_quiz_clicked_options = set()
                 quiz_completed = False
-                for _ in range(60):
-                    # Trang Quiz: poll nhanh (0.6s) để phát hiện câu hỏi mới ngay; trang khác giữ 2s
+                captcha_active = False
+                keep_open_before_captcha = keep_open
+                callback_reloads = 0
+                watchdog_state = ""
+                watchdog_state_since = time.monotonic()
+                original_profile_note = getattr(profile, "notes", "") or ""
+
+                def set_watchdog_note(note):
+                    try:
+                        live_profile = manager.get_profile(profile_id)
+                        if live_profile and live_profile.notes != note:
+                            live_profile.notes = note
+                            manager._save()
+                    except Exception:
+                        pass
+
+                def restore_watchdog_note():
+                    try:
+                        live_profile = manager.get_profile(profile_id)
+                        if live_profile and (live_profile.notes or "").startswith("⚠️ Xác minh"):
+                            live_profile.notes = original_profile_note
+                            manager._save()
+                    except Exception:
+                        pass
+
+                def handle_microsoft_credentials():
+                    """Handle both old and new Microsoft email/password forms."""
+                    if not ms_email or not ms_password:
+                        return False
+                    try:
+                        current_url = page.url.lower()
+                        if not any(host in current_url for host in ("login.live.com", "login.microsoftonline.com", "login.microsoft.com")):
+                            return False
+
+                        def first_visible(selector):
+                            candidates = page.locator(selector)
+                            for candidate_index in range(candidates.count()):
+                                candidate = candidates.nth(candidate_index)
+                                try:
+                                    if candidate.is_visible(timeout=200):
+                                        return candidate
+                                except Exception:
+                                    pass
+                            return None
+
+                        email_input = first_visible(
+                            '#i0116:not([type="hidden"]), input[name="loginfmt"], '
+                            'input[type="email"], input[autocomplete="username"]'
+                        )
+                        if email_input is not None:
+                            if email_input.input_value() != ms_email:
+                                email_input.fill(ms_email, timeout=3000)
+                            page.wait_for_timeout(250)
+                            next_button = first_visible(
+                                '#idSIButton9, button[data-testid="primaryButton"], '
+                                'button[type="submit"], input[type="submit"]'
+                            )
+                            if next_button is not None and next_button.is_enabled():
+                                next_button.click(timeout=3000)
+                            else:
+                                email_input.press("Enter")
+                            print("Watchdog: đã điền lại email Microsoft")
+                            return True
+
+                        password_input = first_visible(
+                            '#i0118, input[name="passwd"], #passwordEntry, '
+                            'input[type="password"]'
+                        )
+                        if password_input is not None:
+                            if not password_input.input_value():
+                                password_input.fill(ms_password, timeout=3000)
+                            page.wait_for_timeout(250)
+                            submit_button = first_visible(
+                                '#idSIButton9, button[data-testid="primaryButton"], '
+                                'button[type="submit"], input[type="submit"]'
+                            )
+                            if submit_button is not None and submit_button.is_enabled():
+                                submit_button.click(timeout=3000)
+                            else:
+                                password_input.press("Enter")
+                            print("Watchdog: đã điền lại mật khẩu Microsoft")
+                            return True
+                    except Exception as credential_error:
+                        print(f"Watchdog Microsoft form: {credential_error}")
+                    return False
+
+                for _ in range(240):
+                    # Poll quickly so three concurrent browsers do not sit on a stale step.
                     try:
                         _is_quiz = "higgsfield.ai/quiz" in page.url
                     except Exception:
                         _is_quiz = False
-                    page.wait_for_timeout(600 if _is_quiz else 2000)
+                    page.wait_for_timeout(500 if _is_quiz else 800)
                     
                     # Vòng lặp chính xử lý các form bật lên
                     
@@ -876,6 +962,77 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                                     break
                                     
                     cur_url = page.url
+
+                    # Cloudflare Turnstile cannot be safely completed by DOM clicking.
+                    # Detect it immediately, surface the affected window, then resume as
+                    # soon as the user has completed the verification.
+                    try:
+                        body_text = page.locator("body").inner_text(timeout=1000)
+                    except Exception:
+                        body_text = ""
+                    try:
+                        has_turnstile_frame = page.locator(
+                            'iframe[src*="challenges.cloudflare.com"], '
+                            'iframe[src*="turnstile"], iframe[title*="Cloudflare"]'
+                        ).count() > 0
+                    except Exception:
+                        has_turnstile_frame = False
+                    captcha_detected = (
+                        "Verify you are human" in body_text
+                        or "Xác minh bạn là con người" in body_text
+                        or has_turnstile_frame
+                    )
+                    if captcha_detected:
+                        if not captcha_active:
+                            captcha_active = True
+                            keep_open = True
+                            set_watchdog_note("⚠️ Xác minh người")
+                            try:
+                                page.bring_to_front()
+                            except Exception:
+                                pass
+                            print("Watchdog: phát hiện Verify you are human; chờ người dùng xác minh...")
+                        continue
+                    elif captcha_active:
+                        captcha_active = False
+                        keep_open = keep_open_before_captcha
+                        restore_watchdog_note()
+                        watchdog_state = ""
+                        watchdog_state_since = time.monotonic()
+                        print("Watchdog: Cloudflare đã xác minh xong, tiếp tục tự động.")
+
+                    if handle_microsoft_credentials():
+                        watchdog_state = ""
+                        watchdog_state_since = time.monotonic()
+                        page.wait_for_timeout(700)
+                        continue
+
+                    # Recover a Higgsfield SSO callback that remains on "Wait just a moment".
+                    callback_waiting = (
+                        "/auth/sso-callback" in cur_url
+                        or "Wait just a moment" in body_text
+                        or "Vui lòng chờ trong giây lát" in body_text
+                    )
+                    current_state = (
+                        f"{cur_url}|callback={callback_waiting}|"
+                        f"email={'i0116' in body_text}|password={'Enter your password' in body_text}"
+                    )
+                    if current_state != watchdog_state:
+                        watchdog_state = current_state
+                        watchdog_state_since = time.monotonic()
+                    elif callback_waiting and time.monotonic() - watchdog_state_since >= 15:
+                        callback_reloads += 1
+                        print(f"Watchdog: SSO callback treo, tự khôi phục lần {callback_reloads}/3")
+                        try:
+                            if callback_reloads <= 2:
+                                page.reload(wait_until="domcontentloaded", timeout=30000)
+                            else:
+                                page.goto(HIGGSFIELD_URL, wait_until="domcontentloaded", timeout=30000)
+                        except Exception as callback_error:
+                            print(f"Watchdog callback reload: {callback_error}")
+                        watchdog_state = ""
+                        watchdog_state_since = time.monotonic()
+                        continue
                     
                     if any(s in cur_url for s in ["/ai/video", "/supercomputer", "/canvas", "/cinema", "/marketing", "/shorts", "/mcp"]) and "quiz" not in cur_url:
                         # Đợi thêm 3s để chắc chắn React không redirect ngược về Quiz
@@ -1442,43 +1599,6 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                             print("Clicked Cancel for Security Key setup")
                             continue
                             
-                    # 6. Tích chọn Cloudflare Turnstile "Xác minh bạn là con người" (ƯU TIÊN HÀNG ĐẦU VÌ NÓ BLOCK TRANG)
-                    try:
-                        # Cách 1: Click qua div #clerk-captcha (bao bọc shadow DOM)
-                        captcha_div = page.locator('#clerk-captcha')
-                        if captcha_div.count() > 0 and captcha_div.first.is_visible():
-                            box = captcha_div.first.bounding_box()
-                            if box:
-                                page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
-                                print("Clicked Turnstile via #clerk-captcha bounding box")
-                                continue
-                                
-                        # Cách 2: Click trực tiếp vào iframe (nếu truy cập được)
-                        iframe_el = page.locator('iframe[src*="cloudflare.com"], iframe[src*="turnstile"]')
-                        if iframe_el.count() > 0 and iframe_el.first.is_visible():
-                            box = iframe_el.first.bounding_box()
-                            if box:
-                                page.mouse.click(box["x"] + 30, box["y"] + box["height"] / 2)
-                                print("Clicked Turnstile via iframe bounding box")
-                                continue
-                        
-                        # Cách 3: Truyền thống - Nếu nằm ngoài cùng
-                        cf_checkbox = page.locator('input[type="checkbox"][aria-label*="con người"], input[type="checkbox"][aria-label*="human"]')
-                        if cf_checkbox.count() > 0 and cf_checkbox.first.is_visible():
-                            cf_checkbox.first.click(force=True, position={"x": 5, "y": 5})
-                            print("Clicked Turnstile checkbox (main frame)")
-                            continue
-                            
-                        # Cách 4: Truyền thống - Nếu nằm trong iframe
-                        cf_iframe = page.frame_locator('iframe[src*="cloudflare.com"], iframe[src*="turnstile"]')
-                        cf_checkbox_iframe = cf_iframe.locator('input[type="checkbox"], body')
-                        if cf_checkbox_iframe.count() > 0:
-                            cf_checkbox_iframe.first.click(force=True)
-                            print("Clicked Turnstile checkbox (in iframe)")
-                            continue
-                    except Exception as e:
-                        print(f"Error handling Turnstile: {e}")
-
                     # 7. Nút Có (Yes) / Chấp nhận (Accept) - Duy trì đăng nhập / Cho phép ứng dụng
                     yes_btn = page.locator('button[data-testid="appConsentPrimaryButton"], input#idSIButton9, button#idSIButton9, button#acceptButton, input#acceptButton, button#idBtn_Accept, input#idBtn_Accept, input[value*="Có"], input[value*="Yes"], input[value*="Chấp nhận"], input[value*="Accept"], button:has-text("Có"), button:has-text("Yes"), button:has-text("Chấp nhận")')
                     if yes_btn.count() > 0 and yes_btn.first.is_visible():
@@ -1509,6 +1629,18 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                         if clicked_yes_js:
                             print("Clicked Yes / Accept via JS fallback")
                             continue
+
+                if captcha_active:
+                    keep_open = True
+                    set_watchdog_note("⚠️ Xác minh người")
+                    try:
+                        page.bring_to_front()
+                    except Exception:
+                        pass
+                    print("Watchdog: hết thời gian chờ Cloudflare; giữ Chrome mở để người dùng xác minh.")
+                    return
+
+                restore_watchdog_note()
 
                 # ====== BƯỚC CUỐI CÙNG: KIỂM TRA FREE GENS ======
                 if "auth/sign-in" not in page.url:
