@@ -357,6 +357,10 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False):
 
     def run_auto_signup():
         nonlocal keep_open
+        import random, time
+        # --- Tối ưu: Stagger startup (giãn cách thời gian mở) để các luồng không tranh chấp tài nguyên và không spam API cùng 1 miligiây ---
+        time.sleep(random.uniform(0.5, 3.5))
+        
         try:
             from playwright.sync_api import sync_playwright
             with pw_lock:
@@ -704,15 +708,17 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False):
                         
                         def tinyhost_get_random_domain():
                             """Lấy domain ngẫu nhiên từ TinyHost API"""
-                            try:
-                                req = urllib.request.Request("https://tinyhost.shop/api/random-domains/?limit=10")
-                                with urllib.request.urlopen(req, timeout=10) as resp:
-                                    data = json_mod.loads(resp.read().decode())
-                                    domains = data.get("domains", [])
-                                    if domains:
-                                        return random_mod.choice(domains)
-                            except Exception as e:
-                                print(f"Error getting domain: {e}")
+                            for _ in range(3):
+                                try:
+                                    req = urllib.request.Request("https://tinyhost.shop/api/random-domains/?limit=10")
+                                    with urllib.request.urlopen(req, timeout=10) as resp:
+                                        data = json_mod.loads(resp.read().decode())
+                                        domains = data.get("domains", [])
+                                        if domains:
+                                            return random_mod.choice(domains)
+                                except Exception as e:
+                                    import time
+                                    time.sleep(1.5)
                             return "spacezin.space"  # fallback domain
                         
                         def tinyhost_check_inbox(domain, user, keyword="Mã bảo mật"):
@@ -729,7 +735,7 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False):
                                         if keyword.lower() in subj.lower() or keyword.lower() in body.lower() or "microsoft" in subj.lower():
                                             return em
                             except Exception as e:
-                                print(f"Inbox check err: {e}")
+                                pass
                             return None
                         
                         def extract_otp_code(text):
@@ -750,8 +756,13 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False):
                 print("Handling post-login popups...")
                 global_quiz_clicked_options = set()
                 quiz_completed = False
-                for _ in range(30):
-                    page.wait_for_timeout(2000)
+                for _ in range(60):
+                    # Trang Quiz: poll nhanh (0.6s) để phát hiện câu hỏi mới ngay; trang khác giữ 2s
+                    try:
+                        _is_quiz = "higgsfield.ai/quiz" in page.url
+                    except Exception:
+                        _is_quiz = False
+                    page.wait_for_timeout(600 if _is_quiz else 2000)
                     
                     # Vòng lặp chính xử lý các form bật lên
                     
@@ -946,6 +957,69 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False):
                             "Custom terms & pricing", "Certifications (SOC 2, GDPR)", "Security & legal compliance",
                             "Personal support & AI educator", "No training on your data", "Shared team workspace"
                         ]
+                        # ⚡ Quét TẤT CẢ đáp án đang hiển thị bằng 1 lần JS duy nhất (nhanh hơn rất nhiều so với
+                        # lặp từng locator). Chọn ngẫu nhiên 1 đáp án chưa click, scroll vào giữa và trả về tọa độ.
+                        try:
+                            picked = page.evaluate("""([options, clicked]) => {
+                                const optSet = new Set(options);
+                                const clickedSet = new Set(clicked);
+                                const found = new Map();
+                                const els = document.querySelectorAll('button, [role="button"], [role="radio"], [role="checkbox"], label, div, span, p, h3, h4, li');
+                                for (const el of els) {
+                                    const txt = (el.innerText || '').trim();
+                                    if (!txt || txt.length > 80 || !optSet.has(txt) || clickedSet.has(txt) || found.has(txt)) continue;
+                                    if (el.closest('a, nav, header')) continue;
+                                    const target = el.closest('button, [role="button"], [role="radio"], [role="checkbox"], label') || el;
+                                    const r = target.getBoundingClientRect();
+                                    if (r.width < 2 || r.height < 2) continue;
+                                    const st = getComputedStyle(target);
+                                    if (st.visibility === 'hidden' || st.display === 'none' || target.disabled) continue;
+                                    found.set(txt, target);
+                                }
+                                const keys = Array.from(found.keys());
+                                if (keys.length === 0) return null;
+                                const key = keys[Math.floor(Math.random() * keys.length)];
+                                const t = found.get(key);
+                                t.scrollIntoView({block: 'center', inline: 'center'});
+                                const r = t.getBoundingClientRect();
+                                return {text: key, x: r.left + r.width / 2, y: r.top + r.height / 2};
+                            }""", [quiz_options, list(global_quiz_clicked_options)])
+                        except Exception:
+                            picked = None
+
+                        if picked:
+                            try:
+                                page.mouse.click(picked["x"], picked["y"])
+                                print(f"Quiz: Mouse clicked option '{picked['text']}'")
+                                global_quiz_clicked_options.add(picked["text"])
+                            except Exception: pass
+
+                        # 3. Bấm Continue ngay khi nút được bật (poll tối đa ~2s thay vì chờ cứng)
+                        try:
+                            clicked = False
+                            for _w in range(10):
+                                clicked = page.evaluate("""() => {
+                                    const btns = Array.from(document.querySelectorAll('button')).filter(b => {
+                                        const text = (b.innerText || b.textContent || '').trim().toLowerCase();
+                                        return (text === 'continue' || text === 'next' || text === 'submit' || text.includes('choose')) && !b.disabled && b.getAttribute('aria-disabled') !== 'true';
+                                    });
+                                    if (btns.length > 0) {
+                                        btns[btns.length - 1].click();
+                                        return true;
+                                    }
+                                    return false;
+                                }""")
+                                if clicked or not picked:
+                                    break
+                                page.wait_for_timeout(200)
+                            if clicked:
+                                print("Quiz: JS clicked 'Continue/Next'")
+                                page.wait_for_timeout(500)
+                        except Exception: pass
+
+                        continue
+
+                        # (Code cũ bên dưới không còn chạy — giữ lại để tham khảo)
                         import random
                         random.shuffle(quiz_options)
 
