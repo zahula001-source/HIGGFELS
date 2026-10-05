@@ -115,6 +115,8 @@ def launch_profile_endpoint(profile_id: str, req: LaunchRequest = None):
                 raise HTTPException(400, f"Profile '{profile.name}' đang chạy ngầm để tạo Video. Vui lòng đợi tạo xong!")
                 
     do_random = False
+    if req:
+        req.enable_ext = True
     if req and req.auto_random_fp:
         do_random = True
     elif getattr(profile, 'auto_random_fp', False):
@@ -122,6 +124,22 @@ def launch_profile_endpoint(profile_id: str, req: LaunchRequest = None):
         
     if do_random:
         profile = manager.randomize_fingerprint(profile_id)
+
+    # Urban VPN dang tra 429 o API dang ky, lam popup bao "Registration error".
+    # Dung 1ClickVPN (API dang ky hoat dong) lam VPN mac dinh cho CloakBrowser.
+    old_ext_paths = (
+        "D:/CODE/higgsfield-VIDEOAI/data/extensions/urbanvpn",
+        "D:/CODE/higgsfield-VIDEOAI/data/extensions/1clickvpn",
+    )
+    ext_path = "https://chromewebstore.google.com/detail/1clickvpn-proxy-for-chrom/pphgdbgldlmicfdkhondlafkiomnelnk"
+
+    if profile.extensions:
+        for old_ext_path in old_ext_paths:
+            profile.extensions = profile.extensions.replace(old_ext_path, "")
+
+    if not profile.extensions or ext_path not in profile.extensions:
+        profile.extensions = (profile.extensions + ";" + ext_path).strip(";")
+        profile.extensions = profile.extensions.replace(";;", ";")
 
     result = launch_profile_with_fallback(profile, req)
     
@@ -154,6 +172,7 @@ def close_profile_endpoint(profile_id: str):
     result = close_profile(profile_id)
     return result
 
+@router.put("/api/profiles/{profile_id}/name")
 def update_profile_name_endpoint(profile_id: str, payload: dict = Body(...)):
     new_name = payload.get("name")
     if not new_name:
@@ -1764,6 +1783,23 @@ def set_max_retries(val: int = Form(...)):
     return {"ok": True}
 
 
+class ExtensionApplyReq(BaseModel):
+    profile_id: Optional[str] = None
+    extensions: str
+
+@router.post("/api/extensions/apply")
+def apply_extensions(req: ExtensionApplyReq):
+    ext_str = req.extensions.replace("\n", ";").strip(";")
+    if req.profile_id:
+        p = manager.get_profile(req.profile_id)
+        if p:
+            p.extensions = ext_str
+            manager._save()
+    else:
+        for p in manager.list_profiles():
+            p.extensions = ext_str
+        manager._save()
+    return {"ok": True, "message": "Đã lưu tiện ích thành công!"}
 
 @router.put("/api/profiles/{profile_id}/name")
 def rename_profile(profile_id: str, payload: dict = Body(...)):

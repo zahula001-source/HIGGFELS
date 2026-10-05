@@ -45,6 +45,7 @@ class LaunchRequest(BaseModel):
     enable_ext_btn2: bool = False
     enable_ext: bool = False
     keep_open_after_check: bool = True
+    engine: str = "cloakbrowser"
 
 
 class CheckVideoReq(BaseModel):

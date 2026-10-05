@@ -7,16 +7,22 @@
 from __future__ import annotations
 
 import os
+import json
 import shutil
 import tempfile
 import zipfile
 from pathlib import Path
-def _extract(path: Path, dest_dir: Path) -> Path:
+
+ONECLICK_EXTENSION_ID = "pphgdbgldlmicfdkhondlafkiomnelnk"
+ONECLICK_PUBLIC_KEY = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqoJDyiKQ+SGDdD/sVqXBprZzGRPorww6T07qUwv0wbpH47Xiqz6pyD78qzPE2wkkYPH16fVLhSz5QK4MwoKVaF1k0r7omxlYXbkPDBu1cuRkQzKzfcmSjkl7RpZseRuX8pTyJIFaaYLVBlyzloLVpUhF1ShCntOd5p0/A+4gWwn3lVN5x8Ew/i/BW6WdTpvz/Y7jYuWUnCic3Zwxr71Yvf/N9HaXXalfLY4PN+POB7DFkfNVZsj3+oNAJpsPw8z8+r3hlaLkyXiKkJNI/dsgjAg7WvR43wo+J+qVe6o/xmdJyejlXfubEbaoKneVLkjZ0OnDo+9uHk480A1FFff+WwIDAQAB"
+
+
+def _extract(path: Path, dest_dir: Path, folder_name: str | None = None) -> Path:
     """Giải nén file .crx/.zip vào một thư mục con trong dest_dir."""
-    dest_dir = dest_dir / path.stem
+    dest_dir = dest_dir / (folder_name or path.stem)
     if dest_dir.exists():
         shutil.rmtree(dest_dir, ignore_errors=True)
-    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest_dir.parent.mkdir(parents=True, exist_ok=True)
     tmp = Path(tempfile.mkdtemp(prefix="cloakext_"))
     try:
         with zipfile.ZipFile(path) as z:
@@ -55,7 +61,7 @@ def resolve_extension_paths(raw: str, profile_dir: Path, install: bool = True) -
         ext_id = None
         if "chromewebstore.google.com" in low or "/webstore/" in low:
             import re
-            m = re.search(r"/detail/([a-z0-9_]{1,})/([a-zA-Z0-9]{32})", low)
+            m = re.search(r"/detail/([a-z0-9_-]+)/([a-zA-Z0-9]{32})", low)
             if m:
                 ext_id = m.group(2)
         elif len(item) == 32 and item.isalnum():
@@ -64,6 +70,11 @@ def resolve_extension_paths(raw: str, profile_dir: Path, install: bool = True) -
         if ext_id and ("http" in low or "chromewebstore" in low or len(item) == 32):
             if install:
                 try:
+                    installed_dir = ext_dir / ext_id
+                    installed_manifest = installed_dir / "manifest.json"
+                    if installed_manifest.is_file():
+                        out.append(str(installed_dir))
+                        continue
                     crx_url = f"https://clients2.google.com/service/update2/crx?response=redirect&prodversion=125.0.0.0&acceptformat=crx2,crx3&x=id%3D{ext_id}%26installsource%3Dondemand%26uc"
                     import tempfile
                     from urllib.request import urlopen, Request
@@ -73,7 +84,13 @@ def resolve_extension_paths(raw: str, profile_dir: Path, install: bool = True) -
                     if len(body) > 50:
                         tmp_crx = Path(tempfile.mktemp(suffix=".crx"))
                         tmp_crx.write_bytes(body)
-                        out.append(str(_extract(tmp_crx, ext_dir)))
+                        installed_dir = _extract(tmp_crx, ext_dir, ext_id)
+                        if ext_id == ONECLICK_EXTENSION_ID:
+                            manifest_path = installed_dir / "manifest.json"
+                            manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+                            manifest["key"] = ONECLICK_PUBLIC_KEY
+                            manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+                        out.append(str(installed_dir))
                         try:
                             tmp_crx.unlink()
                         except Exception:

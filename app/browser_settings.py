@@ -1,21 +1,50 @@
 """Project-local CloakBrowser v146 selection; never modifies the user's license."""
 import os
+import shutil
+import tempfile
+import urllib.request
+import zipfile
 from pathlib import Path
 
 VERSION = "146.0.7680.177.5"
 BINARY = Path.home() / ".cloakbrowser" / ("chromium-" + VERSION) / "chrome.exe"
-ENGINE = os.environ.setdefault("HIGGSFIELD_BROWSER_ENGINE", "cloakbrowser").lower()
+CHROME_EXTENSION_BINARY = Path(__file__).resolve().parent.parent / "data" / "browser_bins" / "chrome-136" / "chrome-win64" / "chrome.exe"
+CHROME_EXTENSION_URL = "https://storage.googleapis.com/chrome-for-testing-public/136.0.7103.113/win64/chrome-win64.zip"
+ENGINE = os.environ.setdefault("HIGGSFIELD_BROWSER_ENGINE", "chrome").lower()
 if ENGINE == "cloakbrowser":
     if not BINARY.is_file():
         raise RuntimeError(f"CloakBrowser v146 binary not found: {BINARY}")
     os.environ["CLOAKBROWSER_BINARY_PATH"] = str(BINARY)
     os.environ["CLOAKBROWSER_VERSION"] = VERSION
 
+def ensure_chrome_extension_binary() -> Path:
+    """Tai Chrome 136 portable tu Google neu may chua co."""
+    if CHROME_EXTENSION_BINARY.is_file():
+        return CHROME_EXTENSION_BINARY
+
+    install_root = CHROME_EXTENSION_BINARY.parent.parent
+    install_root.mkdir(parents=True, exist_ok=True)
+    temp_root = Path(tempfile.mkdtemp(prefix="higgsfield_chrome136_"))
+    archive = temp_root / "chrome-136.zip"
+    try:
+        request = urllib.request.Request(CHROME_EXTENSION_URL, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(request, timeout=120) as response, archive.open("wb") as output:
+            shutil.copyfileobj(response, output)
+        with zipfile.ZipFile(archive) as package:
+            package.extractall(install_root)
+    finally:
+        shutil.rmtree(temp_root, ignore_errors=True)
+
+    if not CHROME_EXTENSION_BINARY.is_file():
+        raise RuntimeError("Tai Chrome 136 co extension that bai")
+    return CHROME_EXTENSION_BINARY
+
+
 def browser_launch_options():
     """Keep auxiliary workflows on the same engine as the profile runner."""
     if os.environ.get("HIGGSFIELD_BROWSER_ENGINE") == "cloakbrowser":
         return {"executable_path": str(BINARY)}
-    return {"channel": "chrome"}
+    return {"executable_path": str(ensure_chrome_extension_binary())}
 
 def get_global_args(proxy=None):
     import json
@@ -24,6 +53,8 @@ def get_global_args(proxy=None):
         if config_path.exists():
             cfg = json.loads(config_path.read_text(encoding="utf-8"))
             extra = []
+            if os.environ.get("HIGGSFIELD_BROWSER_ENGINE") != "cloakbrowser":
+                extra.append("--disable-features=DisableLoadExtensionCommandLineSwitch")
             if cfg.get("lightweight_cache"):
                 extra.extend(["--disk-cache-size=1", "--media-cache-size=1"])
             if cfg.get("block_media"):
@@ -53,7 +84,10 @@ def get_global_args(proxy=None):
             return extra
     except:
         pass
-    return ["--force-webrtc-ip-handling-policy=disable_non_proxied_udp", "--enforce-webrtc-ip-permission-check"]
+    fallback = ["--force-webrtc-ip-handling-policy=disable_non_proxied_udp", "--enforce-webrtc-ip-permission-check"]
+    if os.environ.get("HIGGSFIELD_BROWSER_ENGINE") != "cloakbrowser":
+        fallback.insert(0, "--disable-features=DisableLoadExtensionCommandLineSwitch")
+    return fallback
 
 def get_algo_proxy(profile_name: str) -> dict:
     import json

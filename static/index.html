@@ -207,6 +207,13 @@ body{background:#0b0e14;color:#e5e7eb;min-height:100vh;}
         <input type="checkbox" id="globalAutoSignup" onchange="localStorage.setItem('globalAutoSignup', this.checked)">
         <label for="globalAutoSignup" style="font-size:13px; cursor:pointer; color:#34d399; font-weight:bold; margin:0;" title="Bật: Sau khi mở Chrome xong sẽ TỰ ĐỘNG chạy Tạo acc + login ngay lập tức (không cần bấm tay)">🤖 Auto Tạo Acc</label>
       </div>
+      <div style="display:flex; align-items:center; gap: 4px; background:#0f172a; padding:6px 12px; border-radius:6px; border:1px solid #334155;">
+        <label for="globalBrowserEngine" style="font-size:13px; cursor:pointer; color:#facc15; font-weight:bold; margin:0;" title="Chọn nhân trình duyệt">Trình duyệt:</label>
+        <select id="globalBrowserEngine" onchange="localStorage.setItem('globalBrowserEngine', this.value)" style="background:#1e293b; color:#fff; border:1px solid #334155; border-radius:4px; font-size:12px; padding:2px 4px; outline:none;">
+          <option value="cloakbrowser">CloakBrowser</option>
+          <option value="chrome">Chrome + Extension (v136)</option>
+        </select>
+      </div>
 
       <button class="btn btn-ghost" onclick="openBatchCheckFreeGenModal()" style="border:1px solid #10b981; color:#10b981; margin-left: 8px; font-weight: bold;">🔍 Check Free Gen</button>
     </div>
@@ -779,6 +786,7 @@ async function launchProfile(id){
   const enableExtBtn2 = false; // removed from UI
   const startupUrls = localStorage.getItem("globalStartupUrls") || "";
   const startupMode = localStorage.getItem("globalStartupMode") || "once";
+  const engine = document.getElementById("globalBrowserEngine") ? document.getElementById("globalBrowserEngine").value : "cloakbrowser";
   
   const isHeadless = document.getElementById("globalHeadless") ? document.getElementById("globalHeadless").checked : false;
   
@@ -791,7 +799,8 @@ async function launchProfile(id){
         startup_urls: startupUrls,
         startup_mode: startupMode,
         enable_ext_btn2: enableExtBtn2,
-        enable_ext: enableExt
+        enable_ext: enableExt,
+        engine: engine
     })
   });
   const data = await res.json();
@@ -2574,6 +2583,10 @@ document.addEventListener('DOMContentLoaded', () => {
   if(localStorage.getItem('globalAutoSignup') === 'true') {
       const el = document.getElementById('globalAutoSignup');
       if (el) el.checked = true;
+  }
+  if(localStorage.getItem('globalBrowserEngine')) {
+      const el = document.getElementById('globalBrowserEngine');
+      if (el) el.value = localStorage.getItem('globalBrowserEngine');
   }
   if(localStorage.getItem('globalEnableExt') === 'true') {
       const el = document.getElementById('globalEnableExt');

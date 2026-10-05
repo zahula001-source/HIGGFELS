@@ -18,7 +18,7 @@ class MultiProfileTest(unittest.TestCase):
     def test_generated_runner(self):
         for proxy in (None, {"server": "http://127.0.0.1:8080"}):
             code = browser.get_chromium_runner_simple(
-                "syntax", r"D:\test profile", proxy, {"random_id": 123456})
+                "syntax", "syntax", r"D:\test profile", proxy, {"random_id": 123456})
             compile(code, "runner", "exec")
             self.assertIn("--fingerprint=123456", code)
             self.assertNotIn("--fingerprint={random_id}", code)
