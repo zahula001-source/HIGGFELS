@@ -157,7 +157,7 @@ body{background:#0b0e14;color:#e5e7eb;min-height:100vh;}
       </div>
       
       <div style="display:flex; align-items:center; gap:6px; border:1px solid #334155; padding: 4px 8px; border-radius: 6px; background: #1e293b;">
-         <input type="checkbox" id="globalGenerateIp" onchange="localStorage.setItem('globalGenerateIp', this.checked); saveUIState()" style="cursor:pointer;">
+         <input type="checkbox" id="globalGenerateIp" checked onchange="localStorage.setItem('globalGenerateIp', this.checked); saveUIState()" style="cursor:pointer;">
          <label for="globalGenerateIp" style="font-size:12px; color:#38bdf8; font-weight:bold; margin:0; cursor:pointer;" title="Trước khi Tạo acc + login, tự chọn IP ngẫu nhiên trong 1ClickVPN và kiểm tra không trùng IP">🌐 Sinh IP</label>
       </div>
       
@@ -2605,9 +2605,10 @@ document.addEventListener('DOMContentLoaded', () => {
       if (el) el.checked = true;
   }
   
-  if(localStorage.getItem('globalGenerateIp') === 'true') {
-      const el = document.getElementById('globalGenerateIp');
-      if (el) el.checked = true;
+  const savedGenerateIp = localStorage.getItem('globalGenerateIp');
+  const generateIpEl = document.getElementById('globalGenerateIp');
+  if (generateIpEl && savedGenerateIp !== null) {
+      generateIpEl.checked = savedGenerateIp === 'true';
   }
 });
 

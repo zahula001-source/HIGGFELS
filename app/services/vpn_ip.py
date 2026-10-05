@@ -66,6 +66,7 @@ def _public_ip(context) -> str:
 
 def _wait_for_popup_ready(page) -> None:
     page.goto(POPUP_URL, wait_until="domcontentloaded", timeout=20000)
+    page.bring_to_front()
     deadline = time.time() + 35
     while time.time() < deadline:
         body = page.locator("body").inner_text(timeout=3000)
@@ -132,6 +133,9 @@ def connect_unique_vpn_ip(context, profile_id: str, max_attempts: int = 8) -> di
     last_error: Exception | None = None
     try:
         _wait_for_popup_ready(popup)
+        # Make the automatic VPN operation visible instead of flashing in the background.
+        popup.bring_to_front()
+        popup.wait_for_timeout(1200)
         for _ in range(max_attempts):
             try:
                 country = _choose_random_country(popup, attempted_countries)
@@ -156,6 +160,8 @@ def connect_unique_vpn_ip(context, profile_id: str, max_attempts: int = 8) -> di
                     if owner is None:
                         _reserved_ips[str(profile_id)] = ip
                         _save_reservations()
+                        popup.bring_to_front()
+                        popup.wait_for_timeout(3000)
                         return {"ip": ip, "country": country}
                 last_error = RuntimeError(f"IP {ip} dang duoc profile {owner} su dung")
             except Exception as exc:

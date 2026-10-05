@@ -558,6 +558,13 @@ def _launch_profile(profile, req=None):
         if "profile" not in prefs:
             prefs["profile"] = {}
         prefs["profile"]["name"] = profile_name
+
+        # Keep 1ClickVPN visible on Chrome's toolbar for every profile.
+        extensions_prefs = prefs.setdefault("extensions", {})
+        pinned_extensions = extensions_prefs.setdefault("pinned_extensions", [])
+        vpn_extension_id = "pphgdbgldlmicfdkhondlafkiomnelnk"
+        if vpn_extension_id not in pinned_extensions:
+            pinned_extensions.append(vpn_extension_id)
         
         pref_file.write_text(json.dumps(prefs, ensure_ascii=False), encoding="utf-8")
     except Exception as e:
