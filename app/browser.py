@@ -513,11 +513,12 @@ def _launch_profile(profile, req=None):
             else:
                 del running_browsers[profile.id]
 
-    requested_engine = req.engine if req else "cloakbrowser"
+    requested_engine = req.engine if req else os.environ.get("HIGGSFIELD_BROWSER_ENGINE", "chrome")
     engine = requested_engine
+    profile_name = getattr(profile, "name", profile.id)
 
     from app.browser_settings import get_algo_proxy, ensure_chrome_extension_binary
-    proxy_dict = get_algo_proxy(profile.name)
+    proxy_dict = get_algo_proxy(profile_name)
     user_data_dir = profile.user_data_dir
     if engine == "chrome":
         ensure_chrome_extension_binary()
@@ -556,7 +557,7 @@ def _launch_profile(profile, req=None):
         
         if "profile" not in prefs:
             prefs["profile"] = {}
-        prefs["profile"]["name"] = profile.name
+        prefs["profile"]["name"] = profile_name
         
         pref_file.write_text(json.dumps(prefs, ensure_ascii=False), encoding="utf-8")
     except Exception as e:
@@ -576,7 +577,7 @@ def _launch_profile(profile, req=None):
             ensure_camoufox_once()
         py_code = get_camoufox_python_code_fast(profile.id, user_data_dir, getattr(profile, "os", "windows"), proxy_dict, getattr(profile, "fingerprint_preset", True))
     else:
-        py_code = get_chromium_runner_simple(profile.id, profile.name, user_data_dir, proxy_dict, profile.fingerprint, startup_urls, startup_mode, port, enable_ext_btn2, enable_ext, profile_extensions, headless=headless, engine=engine)
+        py_code = get_chromium_runner_simple(profile.id, profile_name, user_data_dir, proxy_dict, profile.fingerprint, startup_urls, startup_mode, port, enable_ext_btn2, enable_ext, profile_extensions, headless=headless, engine=engine)
 
     tmp_script = DATA_DIR / f"runner_{profile.id}.py"
     tmp_script.write_text(py_code, encoding="utf-8")
@@ -639,6 +640,11 @@ def close_profile(profile_id: str):
         if not proc or proc.poll() is not None:
             with running_lock:
                 running_browsers.pop(profile_id, None)
+            try:
+                from app.services.vpn_ip import release_vpn_ip
+                release_vpn_ip(profile_id)
+            except Exception:
+                pass
             return {"status": "not_running"}
         try:
             Path(proc.profile_dir, "runner.stop").touch()
@@ -652,6 +658,11 @@ def close_profile(profile_id: str):
                 proc.wait(timeout=5)
             with running_lock:
                 running_browsers.pop(profile_id, None)
+            try:
+                from app.services.vpn_ip import release_vpn_ip
+                release_vpn_ip(profile_id)
+            except Exception:
+                pass
             return {"status": "closed"}
         except Exception as e:
             return {"status": "error", "message": str(e)}

@@ -55,6 +55,7 @@ async def create_video(request: Request):
     telegram_token = form.get("telegram_token", "")
     telegram_chat_id = form.get("telegram_chat_id", "")
     gen_mode = form.get("gen_mode", "motion_transfer")
+    browser_engine = form.get("browser_engine", "chrome")
 
     # Lấy danh sách các profile đang bận
     used_profiles = set()
@@ -123,11 +124,12 @@ async def create_video(request: Request):
             "tg_enabled": (telegram_enabled.lower() == "true"),
             "tg_token": telegram_token,
             "tg_chat_id": telegram_chat_id,
-            "gen_mode": gen_mode
+            "gen_mode": gen_mode,
+            "browser_engine": browser_engine,
         }
     }
     
-    t = threading.Thread(target=run_video_automation, args=(task_id, prompt, saved_paths, profile_id, save_path, headless_bool, (enable_ext.lower() == "true"), (enable_ext_btn2.lower() == "true"), (telegram_enabled.lower() == "true"), telegram_token, telegram_chat_id, gen_mode), daemon=True)
+    t = threading.Thread(target=run_video_automation, args=(task_id, prompt, saved_paths, profile_id, save_path, headless_bool, (enable_ext.lower() == "true"), (enable_ext_btn2.lower() == "true"), (telegram_enabled.lower() == "true"), telegram_token, telegram_chat_id, gen_mode, browser_engine), daemon=True)
     t.start()
     
     return {"ok": True, "task_id": task_id, "profile_id": profile_id}
@@ -142,7 +144,7 @@ def api_check_video(req: CheckVideoReq):
     check_video_task_ids.add(task_id)
     def _run_and_cleanup(*args):
         try:
-            run_check_video_automation(*args, cancel_first=req.cancel_first)
+            run_check_video_automation(*args, cancel_first=req.cancel_first, engine=req.engine)
         finally:
             check_video_task_ids.discard(task_id)
     t = threading.Thread(target=_run_and_cleanup, args=(task_id, req.profile_id, req.is_headless), daemon=True)

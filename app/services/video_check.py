@@ -17,7 +17,7 @@ from app.manager import manager
 from app.browser import launch_profile_with_fallback, close_profile, is_running, list_running
 from app.browser_settings import browser_launch_options
 
-def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool = False, _already_tried_login: bool = False, cancel_first: bool = False):
+def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool = False, _already_tried_login: bool = False, cancel_first: bool = False, engine: str = "chrome"):
     from playwright.sync_api import sync_playwright
     import time, os
     from pathlib import Path
@@ -33,7 +33,9 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
             p = sync_playwright().start()
         if True:
             # Nếu chrome đang mở, ưu tiên dùng chrome đó
-            port_file = Path(profile.user_data_dir) / "cdp_port.txt"
+            from app.browser import prepare_chrome_136_profile
+            runtime_dir = profile.user_data_dir if engine == "cloakbrowser" else prepare_chrome_136_profile(profile.user_data_dir)
+            port_file = Path(runtime_dir) / "cdp_port.txt"
             context = None
             connected_via_cdp = False
             if port_file.exists():
@@ -55,16 +57,17 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                     "--lang=vi-VN",
                     "--accept-lang=vi-VN,vi",
                 ]
-                if os.environ.get("HIGGSFIELD_BROWSER_ENGINE") == "cloakbrowser":
+                if engine == "cloakbrowser":
                     args.append("--fingerprint=" + str(profile.fingerprint.get("random_id", 123456)))
                 
                 ignore_args = ["--disable-extensions"]
+                extension_dirs = []
                 
                 # Tao extension doi ten tab
                 try:
                     import json
                     from pathlib import Path
-                    name_ext_dir = Path(profile.user_data_dir) / "automation_extensions" / "name_tab"
+                    name_ext_dir = Path(runtime_dir) / "automation_extensions" / "name_tab"
                     name_ext_dir.mkdir(parents=True, exist_ok=True)
                     (name_ext_dir / "manifest.json").write_text(json.dumps({
                         "manifest_version": 3,
@@ -80,10 +83,20 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                     js_code = "setInterval(() => { if (!document.title.startsWith('[' + " + repr(profile.name) + " + ']')) { document.title = '[' + " + repr(profile.name) + " + '] ' + document.title.replace(/^\\\\[.*?\\\\]\\\\s*/, ''); } }, 1000);"
                     (name_ext_dir / "content.js").write_text(js_code, encoding="utf-8")
                     
-                    args.append(f"--disable-extensions-except={name_ext_dir}")
-                    args.append(f"--load-extension={name_ext_dir}")
+                    extension_dirs.append(str(name_ext_dir))
                 except Exception as e:
                     print(f"Err creating name tab ext: {e}")
+
+                try:
+                    from app.extensions import resolve_extension_paths
+                    extension_dirs.extend(resolve_extension_paths(profile.extensions, Path(runtime_dir)))
+                except Exception as e:
+                    print(f"Err loading profile extensions: {e}")
+                extension_dirs = list(dict.fromkeys(extension_dirs))
+                if extension_dirs:
+                    joined_extensions = ",".join(extension_dirs)
+                    args.append(f"--disable-extensions-except={joined_extensions}")
+                    args.append(f"--load-extension={joined_extensions}")
                 
                 
                 if is_headless:
@@ -101,8 +114,12 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
 
                 try:
                     from app.browser_settings import browser_launch_options, get_global_args
-                    args.extend(get_global_args(raw_proxy))
-                    b_opts = browser_launch_options()
+                    args.extend(get_global_args(raw_proxy, engine=engine))
+                    if engine == "cloakbrowser":
+                        from app.browser_settings import BINARY
+                        b_opts = {"executable_path": str(BINARY)}
+                    else:
+                        b_opts = browser_launch_options()
                 except:
                     b_opts = {}
 
@@ -110,14 +127,14 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                 
                 # Xoá file port cũ để tránh đọc nhầm
                 try:
-                    active_port_file = Path(profile.user_data_dir) / "DevToolsActivePort"
+                    active_port_file = Path(runtime_dir) / "DevToolsActivePort"
                     if active_port_file.exists(): active_port_file.unlink()
-                    cdp_file = Path(profile.user_data_dir) / "cdp_port.txt"
+                    cdp_file = Path(runtime_dir) / "cdp_port.txt"
                     if cdp_file.exists(): cdp_file.unlink()
                 except: pass
                 
                 context = p.chromium.launch_persistent_context(
-                    profile.user_data_dir,
+                    runtime_dir,
                     headless=False,
                     proxy=algo_proxy,
                     channel="chrome" if not b_opts else None,
@@ -143,11 +160,11 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                 try:
                     import time
                     for _ in range(20):
-                        active_port_file = Path(profile.user_data_dir) / "DevToolsActivePort"
+                        active_port_file = Path(runtime_dir) / "DevToolsActivePort"
                         if active_port_file.exists():
                             lines_port = active_port_file.read_text().splitlines()
                             if lines_port:
-                                Path(profile.user_data_dir, "cdp_port.txt").write_text(lines_port[0])
+                                Path(runtime_dir, "cdp_port.txt").write_text(lines_port[0])
                                 break
                         time.sleep(0.5)
                 except: pass
@@ -240,9 +257,15 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                 import requests as _req
                 try:
                     video_tasks[task_id]["message"] = "🔑 Đang chạy Auto Login, vui lòng chờ..."
-                    _req.post(f"http://127.0.0.1:5333/api/profiles/{profile_id}/launch", json={"headless": False})
+                    _req.post(
+                        f"http://127.0.0.1:5333/api/profiles/{profile_id}/launch",
+                        json={"headless": False, "engine": engine},
+                    )
                     time.sleep(8)
-                    _req.post(f"http://127.0.0.1:5333/api/profiles/{profile_id}/auto-signup")
+                    _req.post(
+                        f"http://127.0.0.1:5333/api/profiles/{profile_id}/auto-signup",
+                        params={"engine": engine},
+                    )
                 except Exception as e:
                     video_tasks[task_id]["status"] = "error"
                     video_tasks[task_id]["message"] = f"Lỗi gọi auto login: {e}"
@@ -269,7 +292,13 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                 # Sau khi login xong → tiếp tục check video (đánh dấu đã thử login để tránh loop)
                 video_tasks[task_id]["message"] = "✅ Đăng nhập xong! Đang tiếp tục kiểm tra video..."
                 time.sleep(3)
-                run_check_video_automation(task_id, profile_id, is_headless, _already_tried_login=True)
+                run_check_video_automation(
+                    task_id,
+                    profile_id,
+                    is_headless,
+                    _already_tried_login=True,
+                    engine=engine,
+                )
                 return
             
             video_tasks[task_id]["message"] = "Đang chuyển sang tab History..."

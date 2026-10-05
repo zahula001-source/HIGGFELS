@@ -46,12 +46,14 @@ class LaunchRequest(BaseModel):
     enable_ext: bool = False
     keep_open_after_check: bool = True
     engine: str = "cloakbrowser"
+    generate_ip: bool = False
 
 
 class CheckVideoReq(BaseModel):
     profile_id: str
     is_headless: bool = False
     cancel_first: bool = False
+    engine: str = "chrome"
 
 class CancelGenReq(BaseModel):
     profile_id: str

@@ -157,8 +157,8 @@ body{background:#0b0e14;color:#e5e7eb;min-height:100vh;}
       </div>
       
       <div style="display:flex; align-items:center; gap:6px; border:1px solid #334155; padding: 4px 8px; border-radius: 6px; background: #1e293b;">
-         <label for="globalMaxRetries" style="font-size:12px; color:#f59e0b; margin:0;" title="Số lần thử lại tối đa cho mỗi thẻ">Thử Lại Max:</label>
-         <input type="number" id="globalMaxRetries" value="20" min="1" max="999" oninput="saveUIState(); updateMaxRetries()" style="width:40px; background:transparent; border:1px solid #475569; color:#fff; border-radius:4px; text-align:center; font-size:12px; outline:none;">
+         <input type="checkbox" id="globalGenerateIp" onchange="localStorage.setItem('globalGenerateIp', this.checked); saveUIState()" style="cursor:pointer;">
+         <label for="globalGenerateIp" style="font-size:12px; color:#38bdf8; font-weight:bold; margin:0; cursor:pointer;" title="Trước khi Tạo acc + login, tự chọn IP ngẫu nhiên trong 1ClickVPN và kiểm tra không trùng IP">🌐 Sinh IP</label>
       </div>
       
       <div style="display:flex; align-items:center; gap:6px; border:1px solid #334155; padding: 4px 8px; border-radius: 6px; background: #1e293b; margin-right: 12px; cursor:pointer;" title="Bấm để chọn thư mục lưu (Để trống = lưu vào mục Downloads của máy)" onclick="selectFolder()">
@@ -787,6 +787,7 @@ async function launchProfile(id){
   const startupUrls = localStorage.getItem("globalStartupUrls") || "";
   const startupMode = localStorage.getItem("globalStartupMode") || "once";
   const engine = document.getElementById("globalBrowserEngine") ? document.getElementById("globalBrowserEngine").value : "cloakbrowser";
+  const generateIp = document.getElementById("globalGenerateIp") ? document.getElementById("globalGenerateIp").checked : false;
   
   const isHeadless = document.getElementById("globalHeadless") ? document.getElementById("globalHeadless").checked : false;
   
@@ -800,7 +801,8 @@ async function launchProfile(id){
         startup_mode: startupMode,
         enable_ext_btn2: enableExtBtn2,
         enable_ext: enableExt,
-        engine: engine
+        engine: engine,
+        generate_ip: generateIp && autoSignup
     })
   });
   const data = await res.json();
@@ -811,7 +813,8 @@ async function launchProfile(id){
   if(autoSignup && data.ok && data.pid) {
     setTimeout(async () => {
       try {
-        const r = await fetch(`/api/profiles/${id}/auto-signup?keep_open=true`, {method:"POST"});
+        const params = new URLSearchParams({keep_open: "true", generate_ip: String(generateIp), engine});
+        const r = await fetch(`/api/profiles/${id}/auto-signup?${params}`, {method:"POST"});
         const d = await r.json();
         if(!r.ok) console.warn("Auto signup err:", d);
       } catch(e) { console.warn("Auto signup exception:", e); }
@@ -1188,6 +1191,8 @@ async function autoSignup(id) {
         const enableExt = document.getElementById("globalEnableExt") ? document.getElementById("globalEnableExt").checked : false;
         const startupUrls = localStorage.getItem("globalStartupUrls") || "";
         const startupMode = localStorage.getItem("globalStartupMode") || "once";
+        const engine = document.getElementById("globalBrowserEngine") ? document.getElementById("globalBrowserEngine").value : "chrome";
+        const generateIp = document.getElementById("globalGenerateIp") ? document.getElementById("globalGenerateIp").checked : false;
         
         const loadingMsg = document.createElement("div");
         loadingMsg.textContent = "⏳ Đang mở Chrome trước khi tạo acc...";
@@ -1212,7 +1217,9 @@ async function autoSignup(id) {
                     startup_urls: startupUrls,
                     startup_mode: startupMode,
                     enable_ext: enableExt,
-                    keep_open_after_check: false
+                    keep_open_after_check: false,
+                    engine: engine,
+                    generate_ip: generateIp
                 })
             });
             const data = await res.json();
@@ -1254,7 +1261,10 @@ async function autoSignup(id) {
 
 async function callAutoSignupApi(id, keepOpen = false) {
     try {
-        const res = await fetch(`/api/profiles/${id}/auto-signup${keepOpen ? '?keep_open=true' : ''}`, {method: "POST"});
+        const engine = document.getElementById("globalBrowserEngine") ? document.getElementById("globalBrowserEngine").value : "chrome";
+        const generateIp = document.getElementById("globalGenerateIp") ? document.getElementById("globalGenerateIp").checked : false;
+        const params = new URLSearchParams({keep_open: String(keepOpen), generate_ip: String(generateIp), engine});
+        const res = await fetch(`/api/profiles/${id}/auto-signup?${params}`, {method: "POST"});
         const data = await res.json();
         if(!res.ok) throw new Error(data.detail || data.message);
         
@@ -1876,7 +1886,8 @@ async function startCancelAndGen(fId) {
         const reqBody = {
             profile_id: profileId,
             is_headless: isHeadless,
-            cancel_first: true
+            cancel_first: true,
+            engine: document.getElementById("globalBrowserEngine")?.value || "chrome"
         };
         const res = await fetch('/api/video/check', {
             method: 'POST',
@@ -1938,6 +1949,7 @@ async function startVideoCreationDynamic(fId) {
 
   const isHeadless = document.getElementById("globalHeadless") ? document.getElementById("globalHeadless").checked : false;
   formData.append("is_headless", isHeadless);
+  formData.append("browser_engine", document.getElementById("globalBrowserEngine")?.value || "chrome");
 
   const enableExtBtn2 = document.getElementById("globalExtBtn2") ? document.getElementById("globalExtBtn2").checked : false;
   formData.append("enable_ext_btn2", enableExtBtn2);
@@ -2251,7 +2263,7 @@ function saveUIState() {
   const state = {
     globalVideoSavePath: document.getElementById("globalVideoSavePath") ? document.getElementById("globalVideoSavePath").value : "",
     globalHeadless: document.getElementById("globalHeadless") ? document.getElementById("globalHeadless").checked : false,
-    globalMaxRetries: document.getElementById("globalMaxRetries") ? parseInt(document.getElementById("globalMaxRetries").value) : 20,
+    globalGenerateIp: document.getElementById("globalGenerateIp") ? document.getElementById("globalGenerateIp").checked : false,
     cards: []
   };
   
@@ -2323,9 +2335,9 @@ function restoreStateStr(saved) {
           const gh = document.getElementById("globalHeadless");
           if(gh) gh.checked = state.globalHeadless;
       }
-      if (state.hasOwnProperty("globalMaxRetries")) {
-          const gm = document.getElementById("globalMaxRetries");
-          if(gm) gm.value = state.globalMaxRetries;
+      if (state.hasOwnProperty("globalGenerateIp")) {
+          const generateIp = document.getElementById("globalGenerateIp");
+          if(generateIp) generateIp.checked = state.globalGenerateIp;
       }
       
       document.getElementById("videoFormsContainer").innerHTML = "";
@@ -2593,21 +2605,11 @@ document.addEventListener('DOMContentLoaded', () => {
       if (el) el.checked = true;
   }
   
-  // Also push max retries to backend on load if valid
-  setTimeout(() => updateMaxRetries(), 1000);
+  if(localStorage.getItem('globalGenerateIp') === 'true') {
+      const el = document.getElementById('globalGenerateIp');
+      if (el) el.checked = true;
+  }
 });
-
-function updateMaxRetries() {
-    const el = document.getElementById('globalMaxRetries');
-    if (!el) return;
-    const val = parseInt(el.value) || 20;
-    const fd = new FormData();
-    fd.append('val', val);
-    fetch('/api/settings/max_retries', {
-        method: 'POST',
-        body: fd
-    }).catch(console.error);
-}
 
 // Tự động dừng phát video khi thoát chế độ toàn màn hình
 document.addEventListener("fullscreenchange", function() {
@@ -2910,7 +2912,11 @@ async function submitCheckVideoForFid(fId) {
     const res = await fetch('/api/video/check', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ profile_id: pId, is_headless: globalHeadless })
+      body: JSON.stringify({
+        profile_id: pId,
+        is_headless: globalHeadless,
+        engine: document.getElementById("globalBrowserEngine")?.value || "chrome"
+      })
     });
     const data = await res.json();
     if (data.ok && data.task_id) {
@@ -3079,7 +3085,11 @@ async function submitCheckVideo() {
       fetch('/api/video/check', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ profile_id: pId, is_headless: isHeadless })
+          body: JSON.stringify({
+            profile_id: pId,
+            is_headless: isHeadless,
+            engine: document.getElementById("globalBrowserEngine")?.value || "chrome"
+          })
       })
       .then(res => res.json())
       .then(data => {

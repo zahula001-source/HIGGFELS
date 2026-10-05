@@ -17,13 +17,15 @@ from app.manager import manager
 from app.browser import launch_profile_with_fallback, close_profile, is_running, list_running
 from app.browser_settings import browser_launch_options
 
-def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False, is_headless=False):
+def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False, is_headless=False, engine="chrome"):
     """Mở trình duyệt với Random FP và kích hoạt extension
     only_navigator=True: chỉ bật nút 1 (Spoof Navigator) - dùng khi cần tải ảnh
     close_old_tabs=True: đóng hết các tab cũ khi mở lên (chỉ dùng cho video creation)
     """
     # Nếu chrome đang mở, ưu tiên dùng chrome đó
-    port_file = Path(profile.user_data_dir) / "cdp_port.txt"
+    from app.browser import prepare_chrome_136_profile
+    runtime_dir = profile.user_data_dir if engine == "cloakbrowser" else prepare_chrome_136_profile(profile.user_data_dir)
+    port_file = Path(runtime_dir) / "cdp_port.txt"
     if port_file.exists():
         try:
             port = int(port_file.read_text().strip())
@@ -41,15 +43,16 @@ def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False
         "--lang=vi-VN",
         "--accept-lang=vi-VN,vi",
     ]
-    if os.environ.get("HIGGSFIELD_BROWSER_ENGINE") == "cloakbrowser":
+    if engine == "cloakbrowser":
         args.append("--fingerprint=" + str(profile.fingerprint.get("random_id", 123456)))
     # Bỏ tải extension mặc định của Playwright bằng cách đưa vào ignore_args
     ignore_args = ["--disable-extensions"]
+    extension_dirs = []
     
     # Tao extension doi ten tab
     try:
         import json
-        name_ext_dir = Path(profile.user_data_dir) / "automation_extensions" / "name_tab"
+        name_ext_dir = Path(runtime_dir) / "automation_extensions" / "name_tab"
         name_ext_dir.mkdir(parents=True, exist_ok=True)
         (name_ext_dir / "manifest.json").write_text(json.dumps({
             "manifest_version": 3,
@@ -65,11 +68,20 @@ def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False
         js_code = "setInterval(() => { if (!document.title.startsWith('[' + " + repr(profile.name) + " + ']')) { document.title = '[' + " + repr(profile.name) + " + '] ' + document.title.replace(/^\\\\[.*?\\\\]\\\\s*/, ''); } }, 1000);"
         (name_ext_dir / "content.js").write_text(js_code, encoding="utf-8")
         
-        # Thêm extension vào args thay vì dùng arg --disable-extensions
-        args.append(f"--disable-extensions-except={name_ext_dir}")
-        args.append(f"--load-extension={name_ext_dir}")
+        extension_dirs.append(str(name_ext_dir))
     except Exception as e:
         print(f"Err creating name tab ext: {e}")
+
+    try:
+        from app.extensions import resolve_extension_paths
+        extension_dirs.extend(resolve_extension_paths(profile.extensions, Path(runtime_dir)))
+    except Exception as e:
+        print(f"Err loading profile extensions: {e}")
+    extension_dirs = list(dict.fromkeys(extension_dirs))
+    if extension_dirs:
+        joined_extensions = ",".join(extension_dirs)
+        args.append(f"--disable-extensions-except={joined_extensions}")
+        args.append(f"--load-extension={joined_extensions}")
         
     if is_headless:
         pass
@@ -85,7 +97,7 @@ def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False
 
     try:
         from app.browser_settings import get_global_args
-        args.extend(get_global_args(raw_proxy))
+        args.extend(get_global_args(raw_proxy, engine=engine))
     except Exception as e:
         pass
         
@@ -93,20 +105,18 @@ def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False
     
     # Xoá file port cũ để tránh đọc nhầm
     try:
-        active_port_file = Path(profile.user_data_dir) / "DevToolsActivePort"
+        active_port_file = Path(runtime_dir) / "DevToolsActivePort"
         if active_port_file.exists(): active_port_file.unlink()
-        cdp_file = Path(profile.user_data_dir) / "cdp_port.txt"
+        cdp_file = Path(runtime_dir) / "cdp_port.txt"
         if cdp_file.exists(): cdp_file.unlink()
     except: pass
         
-    engine = os.environ.get("HIGGSFIELD_BROWSER_ENGINE", "chrome").lower()
-    
     if engine == "cloakbrowser":
         from cloakbrowser import launch_persistent_context
         # CloakBrowser tự động xử lý extension_paths và ignore_default_args
         cloak_args = [a for a in args if not a.startswith("--load-extension") and not a.startswith("--disable-extensions")]
         cloak_kwargs = {
-            "user_data_dir": profile.user_data_dir,
+            "user_data_dir": runtime_dir,
             "headless": False,
             "args": cloak_args,
             "accept_downloads": True,
@@ -114,16 +124,13 @@ def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False
             "proxy": algo_proxy
         }
         
-        try:
-            name_ext_dir = Path(profile.user_data_dir) / "automation_extensions" / "name_tab"
-            if name_ext_dir.exists():
-                cloak_kwargs["extension_paths"] = [str(name_ext_dir)]
-        except: pass
+        if extension_dirs:
+            cloak_kwargs["extension_paths"] = extension_dirs
             
         context = launch_persistent_context(**cloak_kwargs)
     else:
         context = p.chromium.launch_persistent_context(
-            profile.user_data_dir,
+            runtime_dir,
             headless=False,
             proxy=algo_proxy,
             **browser_launch_options(),
@@ -150,11 +157,11 @@ def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False
     try:
         import time
         for _ in range(20):
-            active_port_file = Path(profile.user_data_dir) / "DevToolsActivePort"
+            active_port_file = Path(runtime_dir) / "DevToolsActivePort"
             if active_port_file.exists():
                 lines_port = active_port_file.read_text().splitlines()
                 if lines_port:
-                    Path(profile.user_data_dir, "cdp_port.txt").write_text(lines_port[0])
+                    Path(runtime_dir, "cdp_port.txt").write_text(lines_port[0])
                     break
             time.sleep(0.5)
     except: pass
@@ -422,7 +429,7 @@ def _send_video_to_telegram(video_path, token, chat_id):
     except Exception as e:
         print(f"Lỗi gửi Telegram: {e}")
 
-def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is_headless=False, enable_ext=False, enable_ext_btn2=False, tg_enabled=False, tg_token="", tg_chat_id="", gen_mode="motion_transfer"):
+def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is_headless=False, enable_ext=False, enable_ext_btn2=False, tg_enabled=False, tg_token="", tg_chat_id="", gen_mode="motion_transfer", engine="chrome"):
     """Background thread: mở higgsfield.ai, đăng nhập Microsoft, upload ảnh, nhập prompt và tạo video."""
     from playwright.sync_api import sync_playwright
     import urllib.parse
@@ -507,14 +514,13 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
         except: pass
 
     try:
-        engine = os.environ.get("HIGGSFIELD_BROWSER_ENGINE", "chrome").lower()
         if engine == "cloakbrowser":
             p = None
-            context, connected_via_cdp = _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=enable_ext_btn2, is_headless=is_headless)
+            context, connected_via_cdp = _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=enable_ext_btn2, is_headless=is_headless, engine=engine)
         else:
             with pw_lock:
                 p = sync_playwright().start()
-            context, connected_via_cdp = _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=enable_ext_btn2, is_headless=is_headless)
+            context, connected_via_cdp = _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=enable_ext_btn2, is_headless=is_headless, engine=engine)
             
         # Tái sử dụng tab đầu tiên nếu có để tránh mở nhiều tab
         page = None

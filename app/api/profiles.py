@@ -148,7 +148,7 @@ def launch_profile_endpoint(profile_id: str, req: LaunchRequest = None):
             # Auto login immediately when opening chrome
             # Nếu được gọi từ "Tạo acc + login", UI sẽ truyền keep_open_after_check=False
             keep_open_after = getattr(req, "keep_open_after_check", True) if req else True
-            auto_signup_endpoint(profile_id, keep_open=keep_open_after)
+            auto_signup_endpoint(profile_id, keep_open=keep_open_after, generate_ip=req.generate_ip, engine=req.engine)
         except Exception as e:
             print(f"Failed to trigger auto login: {e}")
 
@@ -352,20 +352,16 @@ _running_signups = set()
 _signup_lock = threading.Lock()
 
 @router.post("/api/profiles/{profile_id}/auto-signup")
-def auto_signup_endpoint(profile_id: str, keep_open: bool = False):
+def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: bool = False, engine: str = "chrome"):
     import threading
     from pathlib import Path
-    
-    with _signup_lock:
-        if profile_id in _running_signups:
-            print(f"Bỏ qua: Auto signup cho profile {profile_id} đã đang chạy.")
-            return {"ok": True, "message": "Auto Login đã đang chạy."}
-        _running_signups.add(profile_id)
-    
+
     profile = manager.get_profile(profile_id)
     if not profile: raise HTTPException(404, "Profile not found")
     
-    port_file = Path(profile.user_data_dir) / "cdp_port.txt"
+    from app.browser import prepare_chrome_136_profile
+    runtime_dir = profile.user_data_dir if engine == "cloakbrowser" else prepare_chrome_136_profile(profile.user_data_dir)
+    port_file = Path(runtime_dir) / "cdp_port.txt"
     if not port_file.exists():
         raise HTTPException(400, "Profile đang không chạy hoặc không có CDP port. Hãy mở lại Chrome!")
         
@@ -373,6 +369,12 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False):
         port = int(port_file.read_text().strip())
     except:
         raise HTTPException(400, "Invalid CDP port.")
+
+    with _signup_lock:
+        if profile_id in _running_signups:
+            print(f"Bỏ qua: Auto signup cho profile {profile_id} đã đang chạy.")
+            return {"ok": True, "message": "Auto Login đã đang chạy."}
+        _running_signups.add(profile_id)
 
     def run_auto_signup():
         nonlocal keep_open
@@ -390,7 +392,7 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False):
                 # Thử connect nhiều lần để chờ browser khởi động xong (nếu bị gọi đồng thời với /launch)
                 for attempt in range(10):
                     try:
-                        port_file_latest = Path(profile.user_data_dir) / "cdp_port.txt"
+                        port_file_latest = Path(runtime_dir) / "cdp_port.txt"
                         if port_file_latest.exists():
                             latest_port = int(port_file_latest.read_text().strip())
                             browser = p.chromium.connect_over_cdp(f"http://localhost:{latest_port}")
@@ -406,6 +408,15 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False):
                     try: p.stop()
                     except: pass
                     return
+
+                if generate_ip:
+                    try:
+                        from app.services.vpn_ip import connect_unique_vpn_ip
+                        vpn_info = connect_unique_vpn_ip(context, profile_id)
+                        print(f"Sinh IP thanh cong: {vpn_info['ip']} ({vpn_info['country']})")
+                    except Exception as vpn_error:
+                        print(f"Sinh IP that bai, dung tao acc de tranh trung IP: {vpn_error}")
+                        return
                     
                 # Tìm tab đang ở trang higgsfield, nếu không có thì mở mới
                 HIGGSFIELD_URL = "https://higgsfield.ai/ai/video?model=genjutsu"

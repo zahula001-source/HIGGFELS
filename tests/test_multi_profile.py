@@ -45,7 +45,8 @@ class MultiProfileTest(unittest.TestCase):
                 for i in range(2)
             ]
             def connect(pw, profile):
-                port = Path(profile.user_data_dir, "cdp_port.txt").read_text().strip()
+                runtime_dir = browser.prepare_chrome_136_profile(profile.user_data_dir)
+                port = Path(runtime_dir, "cdp_port.txt").read_text().strip()
                 return pw.chromium.connect_over_cdp(f"http://127.0.0.1:{port}")
             try:
                 with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:

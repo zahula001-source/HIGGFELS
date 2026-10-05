@@ -46,14 +46,15 @@ def browser_launch_options():
         return {"executable_path": str(BINARY)}
     return {"executable_path": str(ensure_chrome_extension_binary())}
 
-def get_global_args(proxy=None):
+def get_global_args(proxy=None, engine=None):
     import json
+    selected_engine = (engine or os.environ.get("HIGGSFIELD_BROWSER_ENGINE", "chrome")).lower()
     try:
         config_path = Path(__file__).parent.parent / "data" / "config.json"
         if config_path.exists():
             cfg = json.loads(config_path.read_text(encoding="utf-8"))
             extra = []
-            if os.environ.get("HIGGSFIELD_BROWSER_ENGINE") != "cloakbrowser":
+            if selected_engine != "cloakbrowser":
                 extra.append("--disable-features=DisableLoadExtensionCommandLineSwitch")
             if cfg.get("lightweight_cache"):
                 extra.extend(["--disk-cache-size=1", "--media-cache-size=1"])
@@ -85,7 +86,7 @@ def get_global_args(proxy=None):
     except:
         pass
     fallback = ["--force-webrtc-ip-handling-policy=disable_non_proxied_udp", "--enforce-webrtc-ip-permission-check"]
-    if os.environ.get("HIGGSFIELD_BROWSER_ENGINE") != "cloakbrowser":
+    if selected_engine != "cloakbrowser":
         fallback.insert(0, "--disable-features=DisableLoadExtensionCommandLineSwitch")
     return fallback
 
