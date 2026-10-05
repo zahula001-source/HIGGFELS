@@ -141,13 +141,30 @@ def get_chromium_runner_simple(profile_id, profile_name, user_data_dir, proxy_di
     lines.append('        "--no-first-run",')
     lines.append('        "--no-default-browser-check",')
     lines.append('        "--restore-last-session",')
-    lines.append(f'        "--window-size={sw},{sh}",')
+    lines.append(f'        "--window-size={{sw}},{{sh}}",')
     lines.append('        "--remote-debugging-port=0",')
-    lines.append('        "--lang=vi-VN",')
-    lines.append('        "--accept-lang=vi-VN,vi",')
+    
+    # WebRTC Protection
+    lines.append('        "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",')
+    lines.append('        "--enforce-webrtc-ip-permission-check",')
+
+    # Timezone mapping (keeping locale as vi-VN for user convenience)
+    tz = "Asia/Ho_Chi_Minh"
+    if proxy_dict and "username" in proxy_dict:
+        if "__cr.de" in proxy_dict["username"]:
+            tz = "Europe/Berlin"
+        elif "__cr.us" in proxy_dict["username"]:
+            tz = "America/New_York"
+        elif "__cr.jp" in proxy_dict["username"]:
+            tz = "Asia/Tokyo"
+        elif "__cr.kr" in proxy_dict["username"]:
+            tz = "Asia/Seoul"
+            
+    lines.append(f'        "--lang=vi",')
+    lines.append(f'        "--accept-lang=en-US,en,vi",')
     lines.append(f'        "--fingerprint={random_id}",')
-    lines.append(f'        "--fingerprint-timezone=Asia/Ho_Chi_Minh",')
-    lines.append(f'        "--fingerprint-locale=vi-VN",')
+    lines.append(f'        "--fingerprint-timezone={tz}",')
+    lines.append(f'        "--fingerprint-locale=en-US",')
     lines.append(f'        "--fingerprint-platform=windows",')
     lines.append("    ]")
     
@@ -196,7 +213,16 @@ def get_chromium_runner_simple(profile_id, profile_name, user_data_dir, proxy_di
             log(f"Extension resolve err: {e}")
 
     if proxy:
-        launch_args["proxy"] = proxy
+        # Chrome 138+ khong con chay extension MV2 -> dung proxy trung gian 127.0.0.1
+        # tu gan user/pass roi chuyen tiep len AlgoData.
+        shutil_old_ext = Path(user_data_dir) / "automation_extensions" / "proxy_auth"
+        if shutil_old_ext.exists():
+            import shutil
+            shutil.rmtree(shutil_old_ext, ignore_errors=True)
+        from app.proxy_forwarder import start_forwarder
+        local_server = start_forwarder(proxy)
+        launch_args["proxy"] = {"server": local_server}
+        log(f"Proxy forwarder {local_server} -> {proxy['server']} user={proxy['username']}")
 
     log("Launching browser...")
     if engine == "chrome":
@@ -213,6 +239,22 @@ def get_chromium_runner_simple(profile_id, profile_name, user_data_dir, proxy_di
         launch_args.setdefault("extension_paths", []).append(google_search_extension(user_data_dir))
         log("Engine=cloakbrowser; Google address-bar search enabled")
     context = launch_persistent_context(**launch_args)
+    
+    try:
+        import json
+        from pathlib import Path
+        cfg = json.loads((Path(__file__).parent / 'config.json').read_text())
+        if cfg.get('block_media'):
+            def block_media_route(route, request):
+                if request.resource_type in ['image', 'media', 'font'] and request.method == 'GET':
+                    route.abort()
+                else:
+                    route.continue_()
+            context.route('**/*', block_media_route)
+            log('Media blocking is ENABLED via route intercept (GET requests only).')
+    except Exception as e:
+        log(f'Media route block err: {e}')
+        
     closed = [False]
     context.on("close", lambda *_: closed.__setitem__(0, True))
 
@@ -414,7 +456,8 @@ def _launch_profile(profile, req=None):
             else:
                 del running_browsers[profile.id]
 
-    proxy_dict = get_proxy_dict(profile.proxy) if profile.proxy else None
+    from app.browser_settings import get_algo_proxy
+    proxy_dict = get_algo_proxy(profile.name)
     user_data_dir = profile.user_data_dir
     os.makedirs(user_data_dir, exist_ok=True)
     os.makedirs(LOGS_DIR, exist_ok=True)

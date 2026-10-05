@@ -90,9 +90,18 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                     args.append("--window-position=-32000,-32000")
                     args.append("--window-size=1366,768")
                     
+                from app.browser_settings import get_algo_proxy
+                raw_proxy = get_algo_proxy(profile.name)
+                if raw_proxy:
+                    from app.proxy_forwarder import start_forwarder
+                    local_server = start_forwarder(raw_proxy)
+                    algo_proxy = {"server": local_server}
+                else:
+                    algo_proxy = None
+
                 try:
                     from app.browser_settings import browser_launch_options, get_global_args
-                    args.extend(get_global_args())
+                    args.extend(get_global_args(raw_proxy))
                     b_opts = browser_launch_options()
                 except:
                     b_opts = {}
@@ -106,10 +115,11 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                     cdp_file = Path(profile.user_data_dir) / "cdp_port.txt"
                     if cdp_file.exists(): cdp_file.unlink()
                 except: pass
-
+                
                 context = p.chromium.launch_persistent_context(
                     profile.user_data_dir,
                     headless=False,
+                    proxy=algo_proxy,
                     channel="chrome" if not b_opts else None,
                     ignore_default_args=ignore_args,
                     args=args,
@@ -117,6 +127,18 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                     downloads_path=str(Path.home() / "Downloads"),
                     **b_opts
                 )
+                
+                try:
+                    import json
+                    cfg = json.loads((Path(__file__).parent.parent.parent / 'data' / 'config.json').read_text())
+                    if cfg.get('block_media'):
+                        def block_media_route(route, request):
+                            if request.resource_type in ['image', 'media', 'font'] and request.method == 'GET':
+                                route.abort()
+                            else:
+                                route.continue_()
+                        context.route('**/*', block_media_route)
+                except: pass
                 
                 try:
                     import time

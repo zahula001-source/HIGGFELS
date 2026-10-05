@@ -59,10 +59,29 @@ def run_cancel_gen_automation(profile_id: str, is_headless: bool, task_id: str):
                     raise Exception("Không thể khởi động lại trình duyệt (Không thấy file port CDP).")
         else:
             with sync_playwright() as p:
+                from app.browser_settings import get_algo_proxy
+                raw_proxy = get_algo_proxy(profile.name)
+                if raw_proxy:
+                    from app.proxy_forwarder import start_forwarder
+                    local_server = start_forwarder(raw_proxy)
+                    algo_proxy = {"server": local_server}
+                else:
+                    algo_proxy = None
+                
+                try:
+                    from app.browser_settings import browser_launch_options, get_global_args
+                    args = get_global_args(raw_proxy)
+                    b_opts = browser_launch_options()
+                except:
+                    args = []
+                    b_opts = {}
+
                 context = p.chromium.launch_persistent_context(
                     profile.user_data_dir,
                     headless=is_headless,
-                    **browser_launch_options()
+                    proxy=algo_proxy,
+                    args=args,
+                    **b_opts
                 )
                 _do_cancel(context, task_id)
                 

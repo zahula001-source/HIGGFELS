@@ -171,7 +171,8 @@ def launch_profile(profile):
             else:
                 del running_browsers[profile.id]
 
-    proxy_dict = get_proxy_dict(profile.proxy) if profile.proxy else None
+    from app.browser_settings import get_algo_proxy
+    proxy_dict = get_algo_proxy(profile.name)
     user_data_dir = profile.user_data_dir
     os.makedirs(user_data_dir, exist_ok=True)
 

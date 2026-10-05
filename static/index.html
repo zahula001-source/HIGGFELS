@@ -150,6 +150,11 @@ body{background:#0b0e14;color:#e5e7eb;min-height:100vh;}
         <input type="checkbox" id="globalBlockMedia" onchange="updateBackendConfig()" style="cursor:pointer;">
         <label for="globalBlockMedia" style="font-size:12px; cursor:pointer; color:#f87171; font-weight:bold; margin:0;" title="Bật: Chặn tải Ảnh & Video trên trình duyệt để cực kỳ nhẹ máy">🚫 Chặn Ảnh/Video</label>
       </div>
+
+      <div style="display:flex; align-items:center; gap:6px; border:1px solid #334155; padding: 4px 8px; border-radius: 6px; background: #1e293b;">
+        <input type="checkbox" id="globalDisableAlgoData" onchange="updateBackendConfig()" style="cursor:pointer;">
+        <label for="globalDisableAlgoData" style="font-size:12px; cursor:pointer; color:#a78bfa; font-weight:bold; margin:0;" title="Bật: Sẽ KHÔNG sử dụng proxy AlgoData (Dùng mạng gốc của máy)">Tắt Proxy Xoay</label>
+      </div>
       
       <div style="display:flex; align-items:center; gap:6px; border:1px solid #334155; padding: 4px 8px; border-radius: 6px; background: #1e293b;">
          <label for="globalMaxRetries" style="font-size:12px; color:#f59e0b; margin:0;" title="Số lần thử lại tối đa cho mỗi thẻ">Thử Lại Max:</label>
@@ -465,6 +470,9 @@ async function loadBackendConfig() {
       if (document.getElementById("globalBlockMedia")) {
         document.getElementById("globalBlockMedia").checked = !!data.block_media;
       }
+      if (document.getElementById("globalDisableAlgoData")) {
+        document.getElementById("globalDisableAlgoData").checked = !!data.disable_algodata;
+      }
     }
   } catch(e) {}
 }
@@ -472,7 +480,8 @@ async function loadBackendConfig() {
 async function updateBackendConfig() {
   const payload = {
     lightweight_cache: document.getElementById("globalLightweightCache")?.checked || false,
-    block_media: document.getElementById("globalBlockMedia")?.checked || false
+    block_media: document.getElementById("globalBlockMedia")?.checked || false,
+    disable_algodata: document.getElementById("globalDisableAlgoData")?.checked || false
   };
   try {
     await fetch("/api/config", {
@@ -1568,6 +1577,7 @@ async function addVideoForm(force_fId = null, forceProfileId = null) {
                 <div class="img-drop-zone" style="height:64px;cursor:pointer;position:relative;" onclick="document.getElementById('videoInputUpload_${fId}').click()">
                   <div id="videoUploadPreview_${fId}" style="display:none;width:100%;height:100%;padding:4px;">
                     <video id="videoPreviewEl_${fId}" style="width:100%;height:100%;object-fit:contain;border-radius:6px;" muted></video>
+                    <button onclick="removeVideoUpload(event, '${fId}')" style="position:absolute;top:2px;right:2px;background:rgba(239,68,68,0.9);color:#fff;border:none;border-radius:3px;font-size:9px;width:14px;height:14px;cursor:pointer;padding:0;line-height:1;display:flex;align-items:center;justify-content:center;z-index:10;">✕</button>
                   </div>
                   <div id="videoUploadEmpty_${fId}" class="dz-label" style="font-size:10px;text-align:center;">
                     <div style="font-size:18px;">🎬</div>
@@ -1776,6 +1786,22 @@ function previewVideoUpload(event, fId) {
   emptyDiv.style.display = 'none';
   nameDiv.style.display = 'block';
   nameDiv.textContent = file.name.length > 22 ? file.name.substring(0,20)+'...' : file.name;
+}
+
+function removeVideoUpload(event, fId) {
+  event.stopPropagation();
+  const input = document.getElementById(`videoInputUpload_${fId}`);
+  if (input) input.value = '';
+  
+  const previewDiv = document.getElementById(`videoUploadPreview_${fId}`);
+  const emptyDiv = document.getElementById(`videoUploadEmpty_${fId}`);
+  const nameDiv = document.getElementById(`videoUploadName_${fId}`);
+  const videoEl = document.getElementById(`videoPreviewEl_${fId}`);
+  
+  if (videoEl) videoEl.src = '';
+  if (previewDiv) previewDiv.style.display = 'none';
+  if (emptyDiv) emptyDiv.style.display = 'block';
+  if (nameDiv) nameDiv.style.display = 'none';
 }
 
 // ===== IMAGE UPLOAD (cũ, giữ để tương thích nếu có) =====

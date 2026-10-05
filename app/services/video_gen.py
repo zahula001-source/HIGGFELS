@@ -74,9 +74,18 @@ def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False
     if is_headless:
         pass
         
+    from app.browser_settings import get_algo_proxy
+    raw_proxy = get_algo_proxy(profile.name)
+    if raw_proxy:
+        from app.proxy_forwarder import start_forwarder
+        local_server = start_forwarder(raw_proxy)
+        algo_proxy = {"server": local_server}
+    else:
+        algo_proxy = None
+
     try:
         from app.browser_settings import get_global_args
-        args.extend(get_global_args())
+        args.extend(get_global_args(raw_proxy))
     except Exception as e:
         pass
         
@@ -91,6 +100,7 @@ def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False
     except: pass
         
     engine = os.environ.get("HIGGSFIELD_BROWSER_ENGINE", "chrome").lower()
+    
     if engine == "cloakbrowser":
         from cloakbrowser import launch_persistent_context
         # CloakBrowser tự động xử lý extension_paths và ignore_default_args
@@ -100,7 +110,8 @@ def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False
             "headless": False,
             "args": cloak_args,
             "accept_downloads": True,
-            "downloads_path": str(Path.home() / "Downloads")
+            "downloads_path": str(Path.home() / "Downloads"),
+            "proxy": algo_proxy
         }
         
         try:
@@ -114,12 +125,25 @@ def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False
         context = p.chromium.launch_persistent_context(
             profile.user_data_dir,
             headless=False,
+            proxy=algo_proxy,
             **browser_launch_options(),
             ignore_default_args=ignore_args,
             args=args,
             accept_downloads=True,
             downloads_path=str(Path.home() / "Downloads"),
         )
+        
+    try:
+        import json
+        cfg = json.loads((Path(__file__).parent.parent.parent / 'data' / 'config.json').read_text())
+        if cfg.get('block_media'):
+            def block_media_route(route, request):
+                if request.resource_type in ['image', 'media', 'font'] and request.method == 'GET':
+                    route.abort()
+                else:
+                    route.continue_()
+            context.route('**/*', block_media_route)
+    except: pass
 
     # Chrome tự xử lý download 100% native - Không chặn, không xử lý bằng Playwright để tránh crash/lỗi .crdownload
 
