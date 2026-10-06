@@ -71,6 +71,14 @@ def read_code_in_smail_tab(context, email: str, password: str, timeout_ms: int =
 
 def click_use_password(page) -> bool:
     """Check the current DOM without waiting for a missing password input."""
+    try:
+        exact = page.locator('[data-testid="viewFooter"] span[role="button"]').filter(has_text="Use your password").first
+        if exact.count() > 0 and exact.is_visible(timeout=200):
+            exact.click(force=True, timeout=3000)
+            page.wait_for_timeout(500)
+            return True
+    except Exception:
+        pass
     return page.evaluate("""() => {
         const nodes = document.querySelectorAll('button, a, [role="button"], span');
         for (const el of nodes) {

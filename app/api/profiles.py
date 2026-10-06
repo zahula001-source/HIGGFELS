@@ -840,6 +840,7 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                 recovery_code_requested = False
                 recovery_last_poll = 0.0
                 recovery_api_denied = False
+                use_password_last_click = 0.0
                 original_profile_note = getattr(profile, "notes", "") or ""
 
                 def set_watchdog_note(note):
@@ -865,6 +866,7 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                     nonlocal recovery_known_uids, recovery_baseline_ready
                     nonlocal recovery_code_requested, recovery_last_poll
                     nonlocal recovery_api_denied, keep_open
+                    nonlocal use_password_last_click
                     if not ms_email or not ms_password:
                         return False
                     try:
@@ -890,7 +892,12 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
 
                         # Microsoft may show a method picker while a generic email
                         # input is also present. Always choose password first.
-                        if is_v2_account and click_use_password(page):
+                        if (
+                            is_v2_account
+                            and time.monotonic() - use_password_last_click >= 3
+                            and click_use_password(page)
+                        ):
+                            use_password_last_click = time.monotonic()
                             print("Watchdog: clicked 'Use your password'")
                             return True
                         use_password = first_visible(
