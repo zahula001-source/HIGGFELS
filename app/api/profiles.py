@@ -16,6 +16,19 @@ from app.models import ProfileCreate, LaunchRequest
 from app.manager import manager
 from app.browser import launch_profile_with_fallback, close_profile, is_running, list_running
 from app.browser_settings import browser_launch_options, VERSION as CLOAK_VERSION
+from app.services.microsoft_recovery import (
+    MailboxAccessDenied,
+    click_use_password,
+    fetch_roundcube_messages,
+    read_code_in_smail_tab,
+    parse_microsoft_account,
+)
+from app.services.higgsfield_login import (
+    video_login_state,
+    wait_video_login_state,
+    read_free_gens,
+    read_quality,
+)
 
 router = APIRouter()
 
@@ -435,7 +448,7 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                     if not page:
                         page = context.new_page()
                     
-                    if "higgsfield.ai" not in page.url:
+                    if page.url != HIGGSFIELD_URL:
                         page.goto(HIGGSFIELD_URL, timeout=30000)
                         page.wait_for_load_state("domcontentloaded")
                     
@@ -454,6 +467,7 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                     return
                 
                 # B1: Click nút Login hoặc Sign up (nếu đang ở trang chủ https://higgsfield.ai)
+                initial_login_state = wait_video_login_state(page)
                 ms_btn_visible = False
                 try:
                     ms_btn_check = page.locator("button:has-text('Continue with Microsoft')")
@@ -461,7 +475,7 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                         ms_btn_visible = True
                 except: pass
 
-                if not ms_btn_visible and "auth/sign-in" not in page.url:
+                if initial_login_state is not True and not ms_btn_visible and "auth/sign-in" not in page.url:
                     clicked_auth_btn = False
                     try:
                         login_btn = page.locator("a:has-text('Login'), button:has-text('Login')")
@@ -499,15 +513,17 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                             print(f"Fallback click err (tab might be closed/navigating): {e}")
                 
                 # B2: Đợi popup "Welcome to Higgsfield" xuất hiện hoặc phát hiện đã login
-                already_logged_in = False
+                already_logged_in = initial_login_state is True
                 try:
                     for _ in range(15):
+                        if already_logged_in:
+                            break
                         if "quiz" in page.url:
                             print("Đã phát hiện URL login sẵn (quiz), bỏ qua chờ popup!")
                             already_logged_in = True
                             break
                         # Check for logged-in indicators
-                        if page.locator('text="Use free gens"').count() > 0 or page.locator('button[aria-haspopup="menu"]:has(img.rounded-full)').count() > 0:
+                        if video_login_state(page) is True:
                             print("Đã phát hiện avatar/free gens, đã login sẵn!")
                             already_logged_in = True
                             break
@@ -520,6 +536,28 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                     print(f"Lỗi chờ popup: {e}")
                 
                 page.wait_for_timeout(1000)
+
+                ms_email = None
+                ms_password = None
+                recovery_email = None
+                recovery_password = None
+                is_v2_account = False
+                ms_acc_file = Path(profile.user_data_dir) / "ms_account.txt"
+                if ms_acc_file.exists():
+                    try:
+                        raw_acc = ms_acc_file.read_text(encoding="utf-8").strip()
+                        ms_account = parse_microsoft_account(raw_acc)
+                        if ms_account:
+                            ms_email = ms_account.email
+                            ms_password = ms_account.password
+                            recovery_email = ms_account.recovery_email or None
+                            recovery_password = ms_account.recovery_password or None
+                            is_v2_account = ms_account.is_v2
+                            print(f"Loaded MS account: {ms_email}")
+                            if ms_account.is_v2:
+                                print("Detected MS account V2 with recovery mailbox")
+                    except Exception as e:
+                        print(f"Error reading ms_account.txt: {e}")
                 
                 if not already_logged_in:
                     # B3: Click "Continue with Microsoft"
@@ -559,20 +597,6 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                     except: pass
                     print(f"Current URL after click: {page.url}")
                     
-                    # === Đọc thông tin tài khoản từ ms_account.txt ===
-                    ms_acc_file = Path(profile.user_data_dir) / "ms_account.txt"
-                    ms_email = None
-                    ms_password = None
-                    if ms_acc_file.exists():
-                        try:
-                            raw_acc = ms_acc_file.read_text(encoding="utf-8").strip()
-                            parts_acc = raw_acc.split("|")
-                            if len(parts_acc) >= 2:
-                                ms_email = parts_acc[0].strip()
-                                ms_password = parts_acc[1].strip()
-                                print(f"Loaded MS account: {ms_email}")
-                        except Exception as e:
-                            print(f"Error reading ms_account.txt: {e}")
                     if ms_email and ms_password:
                         # Đợi trang MS login hoặc trang higgsfield (nếu đã login)
                         try:
@@ -644,7 +668,8 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                                 return null;
                             }""")
                             print(f"Clicked Next after email via: {clicked}")
-                            page.wait_for_timeout(3000)
+                            if not is_v2_account:
+                                page.wait_for_timeout(3000)
                             
                         except Exception as e:
                             print(f"Error filling email: {e}")
@@ -652,7 +677,7 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                         # Kiểm tra xem có bị chuyển hướng sang trang "Xác minh email của bạn" (chọn phương thức xác thực) không
                         # Nếu có, bấm "Sử dụng mật khẩu của bạn" để quay lại form mật khẩu
                         try:
-                            page.wait_for_timeout(500)
+                            page.wait_for_timeout(100 if is_v2_account else 500)
                             if page.url.startswith("https://higgsfield.ai") or "account.live.com" in page.url or "fido" in page.url: 
                                 raise ValueError("Already logged in or stuck on protection page, skipping use password")
                             
@@ -691,7 +716,24 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                                 raise ValueError("Already logged in or stuck on protection page, skipping password")
                             
                             # Đợi ô password xuất hiện
-                            page.wait_for_selector('input[type="password"]', state='visible', timeout=10000)
+                            if is_v2_account:
+                                # Poll both states every 100ms: the modern Microsoft
+                                # page can render a button after the first DOM check.
+                                password_deadline = time.monotonic() + 10
+                                while time.monotonic() < password_deadline:
+                                    password_ready = page.locator('input[type="password"]:visible')
+                                    if password_ready.count() > 0:
+                                        break
+                                    try:
+                                        if click_use_password(page):
+                                            print("V2: clicked 'Use your password' immediately")
+                                    except Exception:
+                                        pass  # Navigation can temporarily destroy the DOM.
+                                    page.wait_for_timeout(100)
+                                else:
+                                    raise ValueError("V2: password form did not appear within 10s")
+                            else:
+                                page.wait_for_selector('input[type="password"]', state='visible', timeout=10000)
                             
                             # Dùng JavaScript để set giá trị và trigger Knockout binding
                             filled_pwd = page.evaluate("""(pwd) => {
@@ -714,6 +756,8 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                             
                             page.wait_for_timeout(800)
                             print(f"Filled password via JS | success={filled_pwd}")
+                            if not filled_pwd:
+                                raise ValueError("Password was not filled; continue with watchdog")
                             
                             # Click Sign in bằng JS - thử cả 2 kiểu button MS cũ và mới
                             clicked_signin = page.evaluate("""() => {
@@ -791,6 +835,11 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                 callback_reloads = 0
                 watchdog_state = ""
                 watchdog_state_since = time.monotonic()
+                recovery_known_uids = set()
+                recovery_baseline_ready = False
+                recovery_code_requested = False
+                recovery_last_poll = 0.0
+                recovery_api_denied = False
                 original_profile_note = getattr(profile, "notes", "") or ""
 
                 def set_watchdog_note(note):
@@ -812,12 +861,20 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                         pass
 
                 def handle_microsoft_credentials():
-                    """Handle both old and new Microsoft email/password forms."""
+                    """Handle V1 login and V2 recovery-email verification forms."""
+                    nonlocal recovery_known_uids, recovery_baseline_ready
+                    nonlocal recovery_code_requested, recovery_last_poll
+                    nonlocal recovery_api_denied, keep_open
                     if not ms_email or not ms_password:
                         return False
                     try:
                         current_url = page.url.lower()
-                        if not any(host in current_url for host in ("login.live.com", "login.microsoftonline.com", "login.microsoft.com")):
+                        from urllib.parse import urlsplit
+                        microsoft_host = urlsplit(current_url).hostname
+                        allowed_hosts = {"login.live.com", "login.microsoftonline.com", "login.microsoft.com"}
+                        if is_v2_account:
+                            allowed_hosts.add("account.live.com")
+                        if microsoft_host not in allowed_hosts:
                             return False
 
                         def first_visible(selector):
@@ -830,6 +887,199 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                                 except Exception:
                                     pass
                             return None
+
+                        # Microsoft may show a method picker while a generic email
+                        # input is also present. Always choose password first.
+                        if is_v2_account and click_use_password(page):
+                            print("Watchdog: clicked 'Use your password'")
+                            return True
+                        use_password = first_visible(
+                            'a#iUsePasswordLink, a#idA_PWD_SwitchToPassword, '
+                            '[role="button"]:has-text("Use your password"), '
+                            'a:has-text("Use your password"), '
+                            '[role="button"]:has-text("Sử dụng mật khẩu")'
+                        ) if is_v2_account else None
+                        if use_password is not None:
+                            use_password.click(timeout=3000, force=True)
+                            print("Watchdog: clicked 'Use your password'")
+                            return True
+
+                        # V2: after password Microsoft asks which recovery address
+                        # should receive the code. Click the row matching its domain
+                        # (the local part is normally masked in the UI).
+                        if (
+                            is_v2_account and recovery_email and recovery_password
+                            and page.locator('input[type="password"]:visible').count() == 0
+                        ):
+                            recovery_domain = recovery_email.rsplit("@", 1)[-1].lower()
+                            recovery_prefix = recovery_email.split("@", 1)[0][:2].lower()
+                            body_lower = page.locator("body").inner_text(timeout=1000).lower()
+                            exact_recovery_input = first_visible(
+                                '#iProofEmail, input[name="ProofConfirmation"]'
+                            )
+                            exact_otp_input = first_visible(
+                                '#iOttText, input[name="otc"], input[autocomplete="one-time-code"]'
+                            )
+                            proof_radios = page.locator('input[type="radio"][name="proof"]')
+                            if exact_recovery_input is None and exact_otp_input is None:
+                                for proof_index in range(proof_radios.count()):
+                                    proof_radio = proof_radios.nth(proof_index)
+                                    proof_value = (proof_radio.get_attribute("value") or "").lower()
+                                    if (
+                                        "||email||" in proof_value
+                                        and "@" + recovery_domain in proof_value
+                                        and proof_radio.is_visible()
+                                    ):
+                                        proof_radio.check(timeout=3000)
+                                        recovery_code_requested = False
+                                        recovery_baseline_ready = False
+                                        print("Watchdog: selected recovery email radio")
+                                        return True
+                            recovery_choice = page.evaluate_handle(r"""([domain, prefix]) => {
+                                const visible = el => !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+                                const nodes = [...document.querySelectorAll('button, a, [role="button"], [role="option"], div')];
+                                const matches = nodes.filter(el => {
+                                    if (!visible(el)) return false;
+                                    const text = (el.innerText || '').replace(/\s+/g, ' ').trim().toLowerCase();
+                                    return text.length < 180 && text.includes(domain) &&
+                                        (text.includes('email') || text.includes(prefix));
+                                });
+                                return matches.sort((a, b) => a.childElementCount - b.childElementCount)[0] || null;
+                            }""", [recovery_domain, recovery_prefix])
+                            choice_element = recovery_choice.as_element()
+                            if (
+                                choice_element is not None
+                                and exact_recovery_input is None
+                                and exact_otp_input is None
+                                and "send code" not in body_lower
+                            ):
+                                try:
+                                    if recovery_api_denied:
+                                        raise MailboxAccessDenied("API disabled after access denial")
+                                    recovery_known_uids, _ = fetch_roundcube_messages(
+                                        recovery_email, recovery_password
+                                    )
+                                    recovery_baseline_ready = True
+                                except MailboxAccessDenied:
+                                    recovery_api_denied = True
+                                    recovery_baseline_ready = False
+                                except Exception as baseline_error:
+                                    recovery_baseline_ready = False
+                                    print(f"Recovery mailbox baseline error: {baseline_error}")
+                                choice_element.click(timeout=3000, force=True)
+                                recovery_code_requested = False
+                                print("Watchdog: selected V2 recovery email method")
+                                return True
+
+                            recovery_input = first_visible(
+                                '#iProofEmail, input[name="ProofConfirmation"], '
+                                'input[autocomplete="email"], input[type="email"]'
+                            )
+                            is_recovery_confirmation = (
+                                recovery_input is not None
+                                and (
+                                    exact_recovery_input is not None
+                                    or
+                                    "send code" in body_lower
+                                    or "verify your email" in body_lower
+                                    or "enter the email address" in body_lower
+                                    or "xác minh email" in body_lower
+                                )
+                            )
+                            if is_recovery_confirmation:
+                                # Legacy account.live.com already appends the domain.
+                                domain_label = first_visible('#iConfirmProofEmailDomain')
+                                proof_text = recovery_email
+                                if domain_label is not None:
+                                    displayed_domain = domain_label.inner_text().strip().lower()
+                                    if displayed_domain == "@" + recovery_domain:
+                                        proof_text = recovery_email.rsplit("@", 1)[0]
+                                recovery_input.fill(proof_text, timeout=3000)
+                                if not recovery_baseline_ready and not recovery_api_denied:
+                                    try:
+                                        recovery_known_uids, _ = fetch_roundcube_messages(
+                                            recovery_email, recovery_password, timeout=5
+                                        )
+                                        recovery_baseline_ready = True
+                                    except MailboxAccessDenied:
+                                        recovery_api_denied = True
+                                        print("smail1s denied API access; stopped API retries")
+                                    except Exception:
+                                        print("Recovery mailbox unavailable; continuing Send code")
+                                send_button = first_visible(
+                                    '#iSelectProofAction, #idSubmit_SAOTCS_SendCode, #idSIButton9, '
+                                    'button[data-testid="primaryButton"], '
+                                    'button:has-text("Send code"), input[type="submit"]'
+                                )
+                                if send_button is not None and send_button.is_enabled():
+                                    send_button.click(timeout=3000)
+                                else:
+                                    recovery_input.press("Enter")
+                                recovery_code_requested = True
+                                recovery_last_poll = 0.0
+                                print("Watchdog: entered recovery email and requested code")
+                                return True
+
+                            otp_input = (
+                                exact_otp_input
+                                if exact_otp_input is not None
+                                else first_visible('input[inputmode="numeric"]')
+                            )
+                            if otp_input is not None and recovery_code_requested:
+                                if recovery_api_denied:
+                                    keep_open = True
+                                    set_watchdog_note("⚠️ Xác minh OTP: smail1s chặn API")
+                                    try:
+                                        web_code = read_code_in_smail_tab(
+                                            context, recovery_email, recovery_password
+                                        )
+                                    except Exception as web_mail_error:
+                                        print(f"Tab smail1s: {web_mail_error}")
+                                        return False
+                                    if web_code:
+                                        otp_input.fill(web_code, timeout=3000)
+                                        manual_next = first_visible(
+                                            '#iVerifyCodeAction, #idSubmit_SAOTCC_Continue, '
+                                            '#idSIButton9, button[data-testid="primaryButton"]'
+                                        )
+                                        if manual_next is not None and manual_next.is_enabled():
+                                            manual_next.click(timeout=3000)
+                                            recovery_code_requested = False
+                                            print("Watchdog: submitted OTP from smail1s tab")
+                                            return True
+                                    return False
+                                now = time.monotonic()
+                                if now - recovery_last_poll < 4:
+                                    return False
+                                recovery_last_poll = now
+                                try:
+                                    current_uids, otp_code = fetch_roundcube_messages(
+                                        recovery_email, recovery_password
+                                    )
+                                    has_new_message = bool(current_uids - recovery_known_uids)
+                                    recovery_known_uids.update(current_uids)
+                                    if otp_code and (has_new_message or not recovery_baseline_ready):
+                                        otp_input.fill(otp_code, timeout=3000)
+                                        next_button = first_visible(
+                                            '#iVerifyCodeAction, #idSubmit_SAOTCC_Continue, #idSIButton9, '
+                                            'button[data-testid="primaryButton"], '
+                                            'button:has-text("Next"), input[type="submit"]'
+                                        )
+                                        if next_button is not None and next_button.is_enabled():
+                                            next_button.click(timeout=3000)
+                                        else:
+                                            otp_input.press("Enter")
+                                        recovery_code_requested = False
+                                        print("Watchdog: filled V2 recovery code and clicked Next")
+                                        return True
+                                    print("Watchdog: waiting for a new recovery code")
+                                except MailboxAccessDenied:
+                                    recovery_api_denied = True
+                                    print("smail1s denied API access; enter OTP in Microsoft to continue")
+                                    page.bring_to_front()
+                                except Exception as otp_error:
+                                    print(f"Recovery mailbox poll error: {otp_error}")
+                                return False
 
                         email_input = first_visible(
                             '#i0116:not([type="hidden"]), input[name="loginfmt"], '
@@ -872,7 +1122,8 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                         print(f"Watchdog Microsoft form: {credential_error}")
                     return False
 
-                for _ in range(240):
+                login_restarts = 0
+                for _ in range(720):
                     # Poll quickly so three concurrent browsers do not sit on a stale step.
                     try:
                         _is_quiz = "higgsfield.ai/quiz" in page.url
@@ -1035,11 +1286,39 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                         continue
                     
                     if any(s in cur_url for s in ["/ai/video", "/supercomputer", "/canvas", "/cinema", "/marketing", "/shorts", "/mcp"]) and "quiz" not in cur_url:
-                        # Đợi thêm 3s để chắc chắn React không redirect ngược về Quiz
-                        page.wait_for_timeout(3000)
-                        if "quiz" not in page.url:
+                        if page.url != HIGGSFIELD_URL:
+                            page.goto(HIGGSFIELD_URL, wait_until="domcontentloaded", timeout=30000)
+                        login_state = wait_video_login_state(page)
+                        if login_state is True:
                             print("Đã đăng nhập thành công vào Higgsfield!")
                             break
+                        if login_state is None:
+                            page.reload(wait_until="domcontentloaded", timeout=30000)
+                            continue
+                        login_restarts += 1
+                        if login_restarts > 5:
+                            print("Login chưa thành công sau 5 lần khởi động lại luồng.")
+                            break
+                        print(f"Còn nút Login/Sign up; tự đăng nhập lại lần {login_restarts}/5")
+                        auth_button = page.locator('button.hfnav-auth-login:visible, button.hfnav-auth-signup:visible').first
+                        if auth_button.count() > 0:
+                            auth_button.click(timeout=3000, force=True)
+                        else:
+                            page.goto("https://higgsfield.ai/auth/sign-in", wait_until="domcontentloaded", timeout=30000)
+                        # Wait for the actual Microsoft button; never announce a
+                        # successful click when the modal has not rendered yet.
+                        microsoft_button = page.locator('button:has-text("Continue with Microsoft"):visible').first
+                        try:
+                            microsoft_button.wait_for(state="visible", timeout=10000)
+                            microsoft_button.click(timeout=3000, force=True)
+                            recovery_code_requested = False
+                            recovery_baseline_ready = False
+                        except Exception as restart_error:
+                            print(f"Chưa mở được Microsoft: {restart_error}; tải lại trang video")
+                            page.goto(HIGGSFIELD_URL, wait_until="domcontentloaded", timeout=30000)
+                        # Continue the same watchdog: email, password, V2 OTP and
+                        # post-login steps remain active throughout the retry.
+                        continue
                         
                     # 0.5 Kiểm tra popup Congratulations (Upgrade promotion)
                     try:
@@ -1642,238 +1921,50 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
 
                 restore_watchdog_note()
 
-                # ====== BƯỚC CUỐI CÙNG: KIỂM TRA FREE GENS ======
-                if "auth/sign-in" not in page.url:
-                    if "quiz" in page.url and not quiz_completed:
-                        keep_open = True
-                        print("Trình duyệt vẫn kẹt ở Quiz! Không đóng trình duyệt để người dùng xử lý nốt.")
-                        return {"ok": True, "message": "Kẹt ở Quiz, trình duyệt vẫn mở để bạn xử lý..."}
-
-                    print("Đang kiểm tra trạng thái đăng nhập và Free Gens...")
-                    try:
-                        # Vào trang video để check free gens (nếu chưa ở đúng trang)
-                        if "higgsfield.ai/ai/video" not in page.url:
-                            page.goto("https://higgsfield.ai/ai/video?model=genjutsu", timeout=30000)
-                            page.wait_for_timeout(2000)
-                        # Đóng cookie banner nếu còn
-                        try:
-                            page.evaluate("""() => {
-                                const el = document.querySelector('a.cc-allow, .cc-allow');
-                                if (el && el.offsetParent !== null) { el.click(); }
-                            }""")
-                        except: pass
-                        page.wait_for_timeout(1000)
-                        
-                        # Đóng Marketing Popups (Restyle, Claim Free Gens, etc.)
-                        try:
-                            page.evaluate("""() => {
-                                const dialogs = document.querySelectorAll('div[role="dialog"]');
-                                for (let dialog of dialogs) {
-                                    const text = dialog.innerText || "";
-                                    if (text.includes('Claim Free Generation') || text.includes('Explore styles') || text.includes('RESTYLE') || text.includes('New in Genjutsu') || text.includes('Restyle')) {
-                                        const closeBtn = dialog.querySelector('button[aria-label="Close"], button[aria-label*="close"], button svg.lucide-x') || dialog.querySelector('button.absolute');
-                                        if (closeBtn) {
-                                            try { closeBtn.click(); } catch(e) {}
-                                        }
-                                    }
-                                }
-                            }""")
-                        except: pass
-                        
-                        def check_login_status():
-                            page.wait_for_timeout(4000)
-                            
-                            # Đóng Marketing Popups (nếu nó hiện ra chậm trong lúc chờ)
-                            try:
-                                page.evaluate("""() => {
-                                    const dialogs = document.querySelectorAll('div[role="dialog"]');
-                                    for (let dialog of dialogs) {
-                                        const text = dialog.innerText || "";
-                                        if (text.includes('Claim Free Generation') || text.includes('Explore styles') || text.includes('RESTYLE') || text.includes('New in Genjutsu') || text.includes('Restyle')) {
-                                            const closeBtn = dialog.querySelector('button[aria-label="Close"], button[aria-label*="close"], button svg.lucide-x') || dialog.querySelector('button.absolute');
-                                            if (closeBtn) {
-                                                try { closeBtn.click(); } catch(e) {}
-                                            }
-                                        }
-                                    }
-                                }""")
-                            except: pass
-                            
-                            status_free = False
-                            status_logged = False
-                            quality = ""
-                            has_video = False
-                            
-                            # Kiem tra co video chua (de khong bi tag nham "khong free")
-                            try:
-                                has_video = page.evaluate("""() => {
-                                    let grid = document.getElementById('assets-grid');
-                                    if(grid) {
-                                        let completed = grid.querySelector('[data-job-status="completed"] video');
-                                        if(completed && completed.src && completed.src.includes('http')) return true;
-                                    }
-                                    return false;
-                                }""")
-                            except: pass
-                            
-                            # Tang 1: Kiem tra "Use free gens"
-                            if page.locator('text="Use free gens"').count() > 0:
-                                status_free = True
-                                status_logged = True
-                                print("Xac nhan login: thay 'Use free gens'!")
-                                
-                            # Cố gắng lấy Quality bất kể thế nào nếu đã login hoặc có video
-                            try:
-                                q_val = page.evaluate("""() => {
-                                    const qSpan = document.querySelector('button[aria-label="Quality"] span.q-select-value');
-                                    if (qSpan) {
-                                        const q = (qSpan.innerText || qSpan.textContent || '').trim();
-                                        if (q) return q;
-                                    }
-                                    const b = document.querySelector('button[aria-label="Quality"]');
-                                    if (b) {
-                                        const bText = (b.innerText || b.textContent || '');
-                                        if (bText.includes('720')) return '720p';
-                                        if (bText.includes('480')) return '480p';
-                                    }
-                                    // Fallback text search
-                                    const html = document.body.innerHTML;
-                                    if (html.includes('>720p<') || html.includes('720p')) return '720p';
-                                    if (html.includes('>480p<') || html.includes('480p')) return '480p';
-                                    return '';
-                                }""")
-                                if q_val:
-                                    quality = q_val
-                                    print(f"Detected quality: {quality}")
-                            except Exception as e:
-                                print(f"Lỗi lấy quality: {e}")
-                                
-                            # Tang 2: Click Avatar -> Radix Portal append vao DOM -> tim a[href*=logout]
-                            if not status_logged:
-                                try:
-                                    avatar_btn = page.locator('button.hfnav-avatar-ring, button[aria-label="Account menu"]')
-                                    if avatar_btn.count() > 0 and avatar_btn.first.is_visible():
-                                        avatar_btn.first.click()
-                                        page.wait_for_timeout(2000)
-                                        has_logout = page.evaluate("""() => {
-                                            const links = document.querySelectorAll('a[href*="logout"]');
-                                            return links.length > 0;
-                                        }""")
-                                        if has_logout:
-                                            status_logged = True
-                                            print("Xac nhan login: tim thay a[href*=logout] trong DOM!")
-                                        page.keyboard.press("Escape")
-                                        page.wait_for_timeout(500)
-                                except Exception as e:
-                                    print(f"Loi check Sign Out: {e}")
-                                
-                            # Tang 3: Fallback - Clerk session cookie
-                            if not status_logged:
-                                try:
-                                    has_session = page.evaluate("""() => {
-                                        return document.cookie.includes('__session') || 
-                                               document.cookie.includes('__clerk');
-                                    }""")
-                                    if has_session:
-                                        status_logged = True
-                                        print("Xac nhan login: tim thay Clerk session cookie!")
-                                except Exception as e:
-                                    print(f"Loi check Clerk session: {e}")
-                                    
-                            return status_logged, status_free, quality, has_video
-                            
-                        is_logged, is_free, quality, has_video = check_login_status()
-                        
-                        # Nếu quét lần 1 không thấy 'Use free gens', load lại trang quét phát nữa cho chắc
-                        if not is_free and not has_video:
-                            print("Chưa thấy 'Use free gens', load lại trang quét phát nữa cho chắc...")
-                            page.goto("https://higgsfield.ai/ai/video?model=genjutsu", timeout=30000)
-                            page.wait_for_timeout(5000)
-                            is_logged, is_free, quality, has_video = check_login_status()
-                            
-                            if not is_logged and not has_video:
-                                print("Vẫn chưa thấy login, reload lần cuối...")
-                                page.reload(timeout=30000)
-                                is_logged, is_free, quality, has_video = check_login_status()
-                                
-                        p_obj = manager.get_profile(profile.id)
-                        if p_obj:
-                            if has_video:
-                                p_obj.notes = "đã ra video"
-                                print("=> Cap nhat the thanh 'đã ra video' (da hoan thanh)")
-                            elif is_free:
-                                tag_note = f"free gen {quality}".strip() if quality else "free gen"
-                                p_obj.notes = tag_note
-                                print(f"=> Cap nhat the thanh '{tag_note}' (Xanh la)")
-                            elif is_logged:
-                                p_obj.notes = "không free"
-                                print("=> Cap nhat the thanh 'khong free' (Vang)")
+                # Login status comes only from the rendered video navigation.
+                try:
+                    if page.url != HIGGSFIELD_URL:
+                        page.goto(HIGGSFIELD_URL, wait_until="domcontentloaded", timeout=30000)
+                    login_state = wait_video_login_state(page)
+                    if login_state is not True:
+                        page.reload(wait_until="domcontentloaded", timeout=30000)
+                        login_state = wait_video_login_state(page)
+                    if login_state is True:
+                        print("Đã đăng nhập: trang video không còn nút Login/Sign up.")
+                        free_info = read_free_gens(page)
+                        live_profile = manager.get_profile(profile_id)
+                        if free_info and live_profile:
+                            free_count = free_info.get("count")
+                            has_free = (
+                                not free_info.get("disabled")
+                                and free_info.get("enabled")
+                                and (free_count is None or free_count > 0)
+                            )
+                            quality = read_quality(page) if has_free else ""
+                            if has_free:
+                                live_profile.notes = (
+                                    f"free gen {free_count} {quality}" if free_count is not None and quality
+                                    else f"free gen {free_count}" if free_count is not None
+                                    else f"free gen {quality}" if quality
+                                    else "free gen"
+                                )
                             else:
-                                if not getattr(threading.current_thread(), 'has_retried_login', False):
-                                    threading.current_thread().has_retried_login = True
-                                    print("Chưa login thì thực hiện login lại lần nữa...")
-                                    try:
-                                        page.goto("https://higgsfield.ai/auth/sign-in", timeout=30000)
-                                        page.wait_for_timeout(3000)
-                                        ms_btn = page.locator("button:has-text('Continue with Microsoft')")
-                                        if ms_btn.count() > 0:
-                                            ms_btn.first.click(timeout=3000, force=True)
-                                            print("Retry: Clicked 'Continue with Microsoft'")
-                                            page.wait_for_timeout(3000)
-                                            
-                                            # Thử điền lại email nếu có form
-                                            email_input = page.locator('input[type="email"], input[name="loginfmt"], input[id="i0116"]')
-                                            if email_input.count() > 0 and email_input.first.is_visible():
-                                                ms_acc_file = Path(profile.user_data_dir) / "ms_account.txt"
-                                                if ms_acc_file.exists():
-                                                    parts = ms_acc_file.read_text(encoding="utf-8").strip().split("|")
-                                                    if len(parts) >= 2:
-                                                        email_input.first.fill(parts[0].strip())
-                                                        page.wait_for_timeout(1000)
-                                                        next_btn = page.locator('#idSIButton9, input[type="submit"]')
-                                                        if next_btn.count() > 0 and next_btn.first.is_visible():
-                                                            next_btn.first.click()
-                                                        else:
-                                                            page.keyboard.press("Enter")
-                                                        page.wait_for_timeout(3000)
-                                                        
-                                                        pwd_input = page.locator('input[type="password"], input[name="passwd"], input[id="i0118"]')
-                                                        if pwd_input.count() > 0 and pwd_input.first.is_visible():
-                                                            pwd_input.first.fill(parts[1].strip())
-                                                            page.wait_for_timeout(1000)
-                                                            next_btn = page.locator('#idSIButton9, input[type="submit"]')
-                                                            if next_btn.count() > 0 and next_btn.first.is_visible():
-                                                                next_btn.first.click()
-                                                            else:
-                                                                page.keyboard.press("Enter")
-                                                            page.wait_for_timeout(4000)
-                                    except Exception as ex:
-                                        print(f"Lỗi khi retry login: {ex}")
-                                    
-                                    # Sau khi thử click lại, kiểm tra lại trạng thái
-                                    is_logged, is_free, quality, has_video = check_login_status()
-                                    if has_video:
-                                        p_obj.notes = "đã ra video"
-                                        print("=> Retry thành công: đã ra video")
-                                    elif is_free:
-                                        tag_note = f"free gen {quality}".strip() if quality else "free gen"
-                                        p_obj.notes = tag_note
-                                        print(f"=> Retry thành công: {tag_note}")
-                                    elif is_logged:
-                                        p_obj.notes = "không free"
-                                        print("=> Retry thành công: không free")
-                                    else:
-                                        p_obj.notes = "lỗi login"
-                                        print("=> Retry thất bại: cập nhật thẻ thành 'loi login'")
-                                        keep_open = True
-                                else:
-                                    p_obj.notes = "lỗi login"
-                                    print("=> Cap nhat the thanh 'loi login'")
-                                    keep_open = True
+                                live_profile.notes = "không free"
                             manager._save()
-                    except Exception as e:
-                        print(f"Lỗi khi kiểm tra đăng nhập/Free Gens: {e}")
-                
+                            print(f"Kiểm tra Free Gens/Quality: {live_profile.notes}")
+                            # Login + Free Gens/Quality check is complete; close
+                            # Chrome even when the request used keep_open defaults.
+                            keep_open = False
+                        elif live_profile:
+                            live_profile.notes = "không đọc được free gen"
+                            manager._save()
+                            print("Không tìm thấy switch Use free gens sau khi đăng nhập")
+                            keep_open = False
+                    else:
+                        set_watchdog_note("lỗi login" if login_state is False else "chưa xác định đăng nhập")
+                        print("Chưa xác nhận đăng nhập sau các lần tự thử lại; đã đưa về trang video.")
+                except Exception as login_error:
+                    print(f"Lỗi kiểm tra đăng nhập: {login_error}")
         except Exception as e:
             print(f"Auto signup FATAL err: {e}")
         finally:
