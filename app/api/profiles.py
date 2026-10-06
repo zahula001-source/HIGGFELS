@@ -840,6 +840,7 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                 recovery_code_requested = False
                 recovery_last_poll = 0.0
                 recovery_api_denied = False
+                recovery_last_web_code = ""
                 use_password_last_click = 0.0
                 original_profile_note = getattr(profile, "notes", "") or ""
 
@@ -865,7 +866,7 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                     """Handle V1 login and V2 recovery-email verification forms."""
                     nonlocal recovery_known_uids, recovery_baseline_ready
                     nonlocal recovery_code_requested, recovery_last_poll
-                    nonlocal recovery_api_denied, keep_open
+                    nonlocal recovery_api_denied, recovery_last_web_code, keep_open
                     nonlocal use_password_last_click
                     if not ms_email or not ms_password:
                         return False
@@ -1024,6 +1025,7 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                                     recovery_input.press("Enter")
                                 recovery_code_requested = True
                                 recovery_last_poll = 0.0
+                                recovery_last_web_code = ""
                                 print("Watchdog: entered recovery email and requested code")
                                 return True
 
@@ -1032,13 +1034,29 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                                 if exact_otp_input is not None
                                 else first_visible('input[inputmode="numeric"]')
                             )
+                            if otp_input is not None:
+                                try:
+                                    verify_error = first_visible(
+                                        '#iVerifyCodeError, .alert-error, [role="alert"]'
+                                    )
+                                    if verify_error is not None:
+                                        error_text = verify_error.inner_text(timeout=500).lower()
+                                        if "didn't work" in error_text or "did not work" in error_text:
+                                            recovery_code_requested = True
+                                            print("Watchdog: Microsoft rejected OTP; refreshing smail1s inbox")
+                                except Exception:
+                                    pass
                             if otp_input is not None and recovery_code_requested:
                                 if recovery_api_denied:
                                     keep_open = True
                                     set_watchdog_note("⚠️ Xác minh OTP: smail1s chặn API")
                                     try:
                                         web_code = read_code_in_smail_tab(
-                                            context, recovery_email, recovery_password
+                                            context,
+                                            recovery_email,
+                                            recovery_password,
+                                            refresh=True,
+                                            exclude_codes={recovery_last_web_code},
                                         )
                                     except Exception as web_mail_error:
                                         print(f"Tab smail1s: {web_mail_error}")
@@ -1051,6 +1069,7 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                                         )
                                         if manual_next is not None and manual_next.is_enabled():
                                             manual_next.click(timeout=3000)
+                                            recovery_last_web_code = web_code
                                             recovery_code_requested = False
                                             print("Watchdog: submitted OTP from smail1s tab")
                                             return True

@@ -13,7 +13,15 @@ class MailboxAccessDenied(RuntimeError):
     """The provider denied access; retrying the same client is not useful."""
 
 
-def read_code_in_smail_tab(context, email: str, password: str, timeout_ms: int = 60000) -> str:
+def read_code_in_smail_tab(
+    context,
+    email: str,
+    password: str,
+    timeout_ms: int = 60000,
+    *,
+    refresh: bool = False,
+    exclude_codes: Optional[Set[str]] = None,
+) -> str:
     """Read a wmhotmail code through the visible smail1s web UI."""
     smail_pages = [p for p in context.pages if not p.is_closed() and "smail1s.com" in p.url]
     page = next((p for p in smail_pages if p.locator("#data").count() > 0), None)
@@ -49,8 +57,25 @@ def read_code_in_smail_tab(context, email: str, password: str, timeout_ms: int =
                 page.locator('label[for="modeRoundcube"]').click(force=True)
         else:
             page.locator('label[for="modeRoundcube"]').click(force=True)
-        if page.locator("#visibleMessages_0").count() == 0:
-            page.locator("#btnFetch").click(force=True)
+        page.locator("#btnFetch").click(force=True)
+    elif refresh:
+        # Existing result rows are deliberately refreshed.  Otherwise a
+        # failed Microsoft OTP would make us submit the same stale code again.
+        fetch_button = page.locator("#btnFetch")
+        fetch_button.wait_for(state="visible", timeout=10000)
+        fetch_button.click(force=True)
+        page.wait_for_timeout(300)
+        refresh_deadline = __import__("time").monotonic() + min(timeout_ms / 1000, 30)
+        while __import__("time").monotonic() < refresh_deadline:
+            try:
+                label = fetch_button.inner_text(timeout=500).lower()
+            except Exception:
+                label = ""
+            if "đang tải" not in label and "loading" not in label:
+                break
+            page.wait_for_timeout(300)
+        page.wait_for_timeout(500)
+    excluded = {str(code).strip() for code in (exclude_codes or set()) if code}
     deadline = __import__("time").monotonic() + timeout_ms / 1000
     while __import__("time").monotonic() < deadline:
         buttons = page.locator("button.copy-btn[data-code]")
@@ -58,7 +83,7 @@ def read_code_in_smail_tab(context, email: str, password: str, timeout_ms: int =
             button = buttons.nth(i)
             if button.is_visible(timeout=200):
                 code = (button.get_attribute("data-code") or "").strip()
-                if re.fullmatch(r"\d{4,8}", code):
+                if re.fullmatch(r"\d{4,8}", code) and code not in excluded:
                     try:
                         row_text = button.locator("xpath=ancestor::tr[1]").inner_text(timeout=200).lower()
                     except Exception:
