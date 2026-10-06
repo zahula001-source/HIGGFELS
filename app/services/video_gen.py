@@ -1,3 +1,4 @@
+from app.services.video_history import confirm_generation, refresh_video_history
 import asyncio
 import threading
 import time
@@ -16,8 +17,9 @@ from app.models import ProfileCreate, LaunchRequest
 from app.manager import manager
 from app.browser import launch_profile_with_fallback, close_profile, is_running, list_running
 from app.browser_settings import browser_launch_options
+from app.services.browser_navigation import install_vpn_welcome_guard
 
-def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False, is_headless=False, engine="chrome"):
+def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False, is_headless=False, engine="chrome", generate_ip=False):
     """Mở trình duyệt với Random FP và kích hoạt extension
     only_navigator=True: chỉ bật nút 1 (Spoof Navigator) - dùng khi cần tải ảnh
     close_old_tabs=True: đóng hết các tab cũ khi mở lên (chỉ dùng cho video creation)
@@ -31,7 +33,9 @@ def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False
             port = int(port_file.read_text().strip())
             browser = p.chromium.connect_over_cdp(f"http://localhost:{port}")
             print(f"Đã kết nối vào Chrome đang mở của profile {profile.name} qua CDP port {port}")
-            return browser.contexts[0], True
+            context = browser.contexts[0]
+            install_vpn_welcome_guard(context)
+            return context, True
         except Exception as e:
             pass
             
@@ -77,6 +81,22 @@ def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False
         extension_dirs.extend(resolve_extension_paths(profile.extensions, Path(runtime_dir)))
     except Exception as e:
         print(f"Err loading profile extensions: {e}")
+    if generate_ip:
+        vpn_dir = Path(DATA_DIR) / "extensions" / "1clickvpn"
+        if not (vpn_dir / "manifest.json").is_file():
+            raise RuntimeError("Sinh IP: chưa cài tiện ích 1ClickVPN cho trình duyệt")
+        vpn_key = json.loads((vpn_dir / "manifest.json").read_text(encoding="utf-8-sig")).get("key")
+        has_vpn = False
+        for extension_dir in extension_dirs:
+            try:
+                manifest = json.loads((Path(extension_dir) / "manifest.json").read_text(encoding="utf-8-sig"))
+                if vpn_key and manifest.get("key") == vpn_key:
+                    has_vpn = True
+                    break
+            except (OSError, ValueError):
+                pass
+        if not has_vpn:
+            extension_dirs.append(str(vpn_dir.resolve()))
     extension_dirs = list(dict.fromkeys(extension_dirs))
     if extension_dirs:
         joined_extensions = ",".join(extension_dirs)
@@ -148,9 +168,11 @@ def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False
                 if request.resource_type in ['image', 'media', 'font'] and request.method == 'GET':
                     route.abort()
                 else:
-                    route.continue_()
+                    route.fallback()
             context.route('**/*', block_media_route)
     except: pass
+
+    install_vpn_welcome_guard(context)
 
     # Chrome tự xử lý download 100% native - Không chặn, không xử lý bằng Playwright để tránh crash/lỗi .crdownload
 
@@ -272,7 +294,7 @@ def _fill_form(page, context, ext_path, prompt, img1_path, img2_path, video_task
 
     if is_retry:
         # Nếu là retry, ảnh đã được lưu ở session bfl.ai nên KHÔNG CẦN TẢI LẠI
-        video_tasks[task_id] = {"status": "running", "message": "Form đã sẵn sàng (bỏ qua bước tải ảnh)."}
+        video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "running", "message": "Form đã sẵn sàng (bỏ qua bước tải ảnh)."}
         return True
 
     # Bỏ ảnh cũ trước khi tải ảnh mới (kể cả khi không có ảnh mới cũng bỏ)
@@ -303,7 +325,7 @@ def _fill_form(page, context, ext_path, prompt, img1_path, img2_path, video_task
     img1_ok = False
     if img1_path and Path(img1_path).exists():
         # Upload ảnh 1 - Start frame (Spoof Canvas CHƯA được bật ở bước này)
-        video_tasks[task_id] = {"status": "running", "message": "Đang tải ảnh 1 (Start frame)..."}
+        video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "running", "message": "Đang tải ảnh 1 (Start frame)..."}
         try:
             with page.expect_file_chooser(timeout=5000) as fc_info:
                 page.locator("button[aria-label='Attach start frame']").click()
@@ -316,17 +338,17 @@ def _fill_form(page, context, ext_path, prompt, img1_path, img2_path, video_task
                 page.wait_for_timeout(2000)
                 img1_ok = True
             except Exception as e:
-                video_tasks[task_id] = {"status": "running", "message": f"Cảnh báo tải ảnh 1: {e}"}
+                video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "running", "message": f"Cảnh báo tải ảnh 1: {e}"}
 
     # ✅ Ảnh 1 đã upload thành công → Giờ mới bật Spoof Canvas an toàn
     if img1_ok:
-        video_tasks[task_id] = {"status": "running", "message": "Ảnh 1 OK! Đang kích hoạt Spoof Canvas..."}
+        video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "running", "message": "Ảnh 1 OK! Đang kích hoạt Spoof Canvas..."}
         _activate_canvas_spoof(context, ext_path)
         page.wait_for_timeout(500)
 
     # Upload ảnh 2 - End frame (optional)
     if img2_path and Path(img2_path).exists():
-        video_tasks[task_id] = {"status": "running", "message": "Đang tải ảnh 2 (End frame)..."}
+        video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "running", "message": "Đang tải ảnh 2 (End frame)..."}
         try:
             with page.expect_file_chooser(timeout=5000) as fc_info:
                 page.locator("button[aria-label='Attach end frame']").click()
@@ -429,7 +451,43 @@ def _send_video_to_telegram(video_path, token, chat_id):
     except Exception as e:
         print(f"Lỗi gửi Telegram: {e}")
 
-def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is_headless=False, enable_ext=False, enable_ext_btn2=False, tg_enabled=False, tg_token="", tg_chat_id="", gen_mode="motion_transfer", engine="chrome"):
+def _prepare_video_network(context, task_id, profile_id, generate_ip):
+    if not generate_ip:
+        video_tasks[task_id].update(
+            vpn_enabled=False,
+            message="Sinh IP đang tắt: mở Chrome bằng kết nối hiện tại.",
+        )
+        print(f"Task {task_id}: Sinh IP OFF - skip 1ClickVPN", flush=True)
+        return
+    from app.services.vpn_ip import connect_unique_vpn_ip
+    video_tasks[task_id].update(
+        status="running", vpn_enabled=True,
+        message="Đang mở tiện ích 1ClickVPN, chọn quốc gia và kết nối IP..."
+    )
+    print(f"Task {task_id}: Sinh IP ON - open 1ClickVPN and select IP", flush=True)
+    vpn_info = connect_unique_vpn_ip(context, profile_id)
+    video_tasks[task_id].update(
+        vpn_ip=vpn_info["ip"], vpn_country=vpn_info["country"],
+        message=f"Đã kết nối VPN: {vpn_info['country']} — IP {vpn_info['ip']}",
+    )
+
+
+def _existing_generation_status(context):
+    """Return an already-running generation label found in the opened profile."""
+    for page in list(getattr(context, "pages", [])):
+        if page.is_closed():
+            continue
+        try:
+            text = page.locator("body").inner_text(timeout=2500)
+        except Exception:
+            continue
+        for label in ("Generating", "Processing"):
+            if any(line.strip() == label for line in text.splitlines()):
+                return label
+    return None
+
+
+def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is_headless=False, enable_ext=False, enable_ext_btn2=False, tg_enabled=False, tg_token="", tg_chat_id="", gen_mode="motion_transfer", engine="chrome", generate_ip=False):
     """Background thread: mở higgsfield.ai, đăng nhập Microsoft, upload ảnh, nhập prompt và tạo video."""
     from playwright.sync_api import sync_playwright
     import urllib.parse
@@ -445,7 +503,7 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
     manager.randomize_fingerprint(profile_id)
     profile = manager.get_profile(profile_id)
     if not profile:
-        video_tasks[task_id] = {"status": "error", "message": "Profile not found"}
+        video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "error", "message": "Profile not found"}
         return
 
     if enable_ext:
@@ -454,7 +512,7 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
         ext_path = None
     global GLOBAL_MAX_RETRIES
 
-    video_tasks[task_id] = {"status": "running", "message": "Đang mở trình duyệt..."}
+    video_tasks.setdefault(task_id, {}).update(status="running", message="Đang mở trình duyệt...")
     video_tasks_chat[task_id] = {"messages": [], "queue": []}
     is_retrying = False
 
@@ -516,11 +574,23 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
     try:
         if engine == "cloakbrowser":
             p = None
-            context, connected_via_cdp = _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=enable_ext_btn2, is_headless=is_headless, engine=engine)
+            context, connected_via_cdp = _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=enable_ext_btn2, is_headless=is_headless, engine=engine, generate_ip=generate_ip)
         else:
             with pw_lock:
                 p = sync_playwright().start()
-            context, connected_via_cdp = _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=enable_ext_btn2, is_headless=is_headless, engine=engine)
+            context, connected_via_cdp = _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=enable_ext_btn2, is_headless=is_headless, engine=engine, generate_ip=generate_ip)
+
+        existing_status = _existing_generation_status(context)
+        if existing_status:
+            video_tasks[task_id].update(
+                status="done",
+                existing_generation=True,
+                message=f"Đã thấy video đang làm từ trước (trạng thái {existing_status}); đã đóng Chrome, không đổi IP.",
+            )
+            print(f"Task {task_id}: found existing {existing_status}; close Chrome without VPN", flush=True)
+            return
+
+        _prepare_video_network(context, task_id, profile_id, generate_ip)
             
         # Tái sử dụng tab đầu tiên nếu có để tránh mở nhiều tab
         page = None
@@ -545,7 +615,7 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
             except: pass
 
         # (ĐÃ BỎ CẮT COOKIE HIGGSFIELD ĐỂ GIỮ TRẠNG THÁI LOGIN TỪ PROFILE)
-        # video_tasks[task_id] = {"status": "running", "message": "Đang giả lập máy tính hoàn toàn mới (Clear Cookies)..."}
+        # video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "running", "message": "Đang giả lập máy tính hoàn toàn mới (Clear Cookies)..."}
         # ... đoạn code xóa cookie đã bị vô hiệu hóa ...
 
         # Thêm script tự động đóng popup liên tục
@@ -565,14 +635,14 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
         """)
 
         # ── BƯỚC 1: Mở higgsfield.ai/chat ──────────────────────────────────
-        video_tasks[task_id] = {"status": "running", "message": "Đang mở higgsfield.ai/ai/video..."}
+        video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "running", "message": "Đang mở higgsfield.ai/ai/video..."}
         page.goto("https://higgsfield.ai/ai/video?model=genjutsu", wait_until="domcontentloaded", timeout=30000)
         page.wait_for_timeout(2000)
         
         # Xử lý trang lỗi "This page is temporarily unavailable"
         try:
             if page.locator("text='This page is temporarily unavailable'").is_visible(timeout=3000):
-                video_tasks[task_id] = {"status": "running", "message": "higgsfield bị lỗi tạm thời, đang ấn Refresh..."}
+                video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "running", "message": "higgsfield bị lỗi tạm thời, đang ấn Refresh..."}
                 page.locator("button:has-text('Refresh')").click(timeout=3000)
                 page.wait_for_timeout(5000)
         except:
@@ -603,7 +673,7 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                 pass
 
         # ── BƯỚC 2: Kiểm tra đã login chưa (Dựa vào sự tồn tại của nút Log In) ──
-        video_tasks[task_id] = {"status": "running", "message": "Kiểm tra trạng thái đăng nhập..."}
+        video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "running", "message": "Kiểm tra trạng thái đăng nhập..."}
         already_logged_in = False
         try:
             # Đợi cho trang load xong và các phần tử ổn định
@@ -682,7 +752,7 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
             
             if not is_modal_open:
                 # ── BƯỚC 3: Ấn "Đăng nhập" / "Log In" ───────────────────────
-                video_tasks[task_id] = {"status": "running", "message": "Đang mở bảng Đăng nhập..."}
+                video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "running", "message": "Đang mở bảng Đăng nhập..."}
                 
                 try:
                     # Vòng lặp ấn nút Log In cho đến khi bảng hiện ra (tối đa 5 lần)
@@ -724,7 +794,7 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
 
             # ── BƯỚC 4: Ấn "Continue with Microsoft" / "Tiếp tục bằng Microsoft" ──
             try:
-                video_tasks[task_id] = {"status": "running", "message": "Đang dò tọa độ nút Microsoft để click thật..."}
+                video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "running", "message": "Đang dò tọa độ nút Microsoft để click thật..."}
                 
                 # Chờ 3s cho popup có thời gian bung ra hoàn chỉnh
                 page.wait_for_timeout(3000)
@@ -824,7 +894,7 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                 
                 if not success_click:
                     # CHẶN CHẠY MÙ QUÁNG: Báo lỗi và dừng tiến trình
-                    video_tasks[task_id] = {"status": "error", "message": "Lỗi: Quá thời gian chờ nút Continue with Microsoft."}
+                    video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "error", "message": "Lỗi: Quá thời gian chờ nút Continue with Microsoft."}
                     print("====== [LỖI] KHÔNG THỂ ẤN NÚT MICROSOFT, DỪNG TIẾN TRÌNH TRÁNH CHẠY MÙ QUÁNG ======")
                     return
                 
@@ -832,11 +902,11 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                 page.wait_for_timeout(6000)
             except Exception as e:
                 print(f"\n====== LỖI BƯỚC 4 ======\n{str(e)}\n========================\n")
-                video_tasks[task_id] = {"status": "error", "message": f"Lỗi ở bước đăng nhập Microsoft: {str(e)}"}
+                video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "error", "message": f"Lỗi ở bước đăng nhập Microsoft: {str(e)}"}
                 return # Ngăn chạy tiếp xuống các bước tạo video
 
             # ── BƯỚC 5 & 6: Xử lý Xác nhận tuổi (nếu có) và Chờ đăng nhập thành công ──
-            video_tasks[task_id] = {"status": "running", "message": "Đang chờ đăng nhập hoàn tất..."}
+            video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "running", "message": "Đang chờ đăng nhập hoàn tất..."}
             try:
                 page.wait_for_timeout(4000) # Đợi trang load xong sau khi Auth
                 
@@ -849,7 +919,7 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                             return texts.find(t => document.body && document.body.innerText.includes(t));
                         }""")
                         if limit_msg:
-                            video_tasks[task_id] = {"status": "limit", "message": f"Tài khoản đã bị Limit: {limit_msg}"}
+                            video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "limit", "message": f"Tài khoản đã bị Limit: {limit_msg}"}
                             print(f"====== [LIMIT] TÀI KHOẢN BỊ GIỚI HẠN: {limit_msg} ======")
                             return
                     except: pass
@@ -898,19 +968,24 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                     except Exception as e:
                         print(f"Lỗi khi điền lại thông tin MS login: {e}")
                     
-                    # 1.2 Xử lý Cloudflare Turnstile
+                    # 1.2 Xử lý Cloudflare Turnstile.
+                    # CAPTCHA verification is intentionally manual.  Clicking
+                    # its hidden iframe/input programmatically is unreliable
+                    # and attempts to bypass the anti-bot challenge.
                     try:
-                        cf_checkbox = page.locator('input[type="checkbox"][aria-label*="con người"], input[type="checkbox"][aria-label*="human"]')
-                        if cf_checkbox.count() > 0 and cf_checkbox.first.is_visible():
-                            cf_checkbox.first.click(force=True, position={"x": 5, "y": 5})
-                            print("Clicked Turnstile checkbox (main frame)")
-                        
-                        cf_iframe = page.frame_locator('iframe[src*="cloudflare.com"], iframe[src*="turnstile"]')
-                        cf_checkbox_iframe = cf_iframe.locator('input[type="checkbox"], body')
-                        if cf_checkbox_iframe.count() > 0:
-                            cf_checkbox_iframe.first.click(force=True)
-                            print("Clicked Turnstile checkbox (in iframe)")
-                    except: pass
+                        cf_checkbox = page.locator(
+                            'input[type="checkbox"][aria-label*="human" i], '
+                            'input[type="checkbox"][aria-label*="người" i]'
+                        )
+                        cf_frame = page.locator(
+                            'iframe[src*="challenges.cloudflare.com"], '
+                            'iframe[src*="turnstile"], iframe[title*="Cloudflare"]'
+                        )
+                        if cf_checkbox.count() > 0 or cf_frame.count() > 0:
+                            page.bring_to_front()
+                            print("Turnstile detected; waiting for manual verification")
+                    except Exception:
+                        pass
                     
                     # 1.3 Xử lý Quiz
                     cur_url = page.url
@@ -1037,19 +1112,19 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                     page.wait_for_timeout(1000)
 
                 if login_success:
-                    video_tasks[task_id] = {"status": "running", "message": "✅ Đăng nhập thành công! Đang chuẩn bị tạo video..."}
+                    video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "running", "message": "✅ Đăng nhập thành công! Đang chuẩn bị tạo video..."}
                 else:
                     if "quiz" in page.url:
                         raise Exception("Trình duyệt kẹt ở Quiz! Vui lòng hoàn thành Quiz bằng tay và thử lại.")
                     raise Exception("Không tìm thấy menu Settings, đăng nhập có thể đã thất bại.")
                     
             except Exception as e:
-                video_tasks[task_id] = {"status": "error", "message": f"Đăng nhập thất bại: {e}"}
+                video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "error", "message": f"Đăng nhập thất bại: {e}"}
                 try: context.close()
                 except: pass
                 return
         else:
-            video_tasks[task_id] = {"status": "running", "message": "✅ Đã đăng nhập sẵn! Đang chuẩn bị tạo video..."}
+            video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "running", "message": "✅ Đã đăng nhập sẵn! Đang chuẩn bị tạo video..."}
 
         page.wait_for_timeout(1500)
 
@@ -1377,7 +1452,7 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                     for attempt in range(3):
                         try:
                             print(f"=== BẮT ĐẦU UPLOAD ẢNH ({len(images_to_upload)} file) (Lần {attempt+1}) ===")
-                            video_tasks[task_id] = {"status": "running", "message": f"Đang tải {len(images_to_upload)} ảnh lên..."}
+                            video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "running", "message": f"Đang tải {len(images_to_upload)} ảnh lên..."}
                             # Web tự hiển thị ảnh mới nhất lên đầu (đảo ngược thứ tự)
                             # -> Đảo ngược list trước khi upload để kết quả cuối đúng thứ tự gốc (1,2,3)
                             upload_and_select(page, "Add reference images", list(reversed(images_to_upload)))
@@ -1406,7 +1481,7 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                                 video_btn_label = "Add a reference video to extract motion"
                         
                             print(f"=== BẮT ĐẦU UPLOAD VIDEO ({len(videos_to_upload)} file) (Lần {attempt+1}) ===")
-                            video_tasks[task_id] = {"status": "running", "message": f"Đang tải {len(videos_to_upload)} video lên..."}
+                            video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "running", "message": f"Đang tải {len(videos_to_upload)} video lên..."}
                             upload_and_select(page, video_btn_label, videos_to_upload)
                             videos_uploaded = True
                             break # Thành công thì thoát loop video
@@ -1426,7 +1501,7 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                 # ── BƯỚC 9: Bật công tắc Prompt và điền ──────────────
                 if prompt:
                     print(f"=== ĐIỀN PROMPT: {prompt[:30]}... ===")
-                    video_tasks[task_id] = {"status": "running", "message": "Đang nhập prompt..."}
+                    video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "running", "message": "Đang nhập prompt..."}
                     try:
                         # Bật công tắc "Prompt"
                         prompt_toggle = page.locator('span[aria-label="Toggle prompt"]')
@@ -1474,7 +1549,7 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
 
                 # ── BƯỚC 10: Kiểm tra Prompt, bật Use free gens và nhấn Generate ──────────────
                 print("=== BẬT FREE GENS VÀ NHẤN GENERATE ===")
-                video_tasks[task_id] = {"status": "running", "message": "Đang nhấn nút Generate..."}
+                video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "running", "message": "Đang nhấn nút Generate..."}
         
                 generate_success = False
                 for gen_attempt in range(3):
@@ -1542,99 +1617,27 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                     
                         # 5. Kiểm tra xem có thấy "Processing" không
                         try:
-                            print(f"  -> Đang chờ tín hiệu 'Processing' từ web (Lần thử {gen_attempt+1})...")
-                            processing_text = page.locator('text="Processing"').first
-                            processing_text.wait_for(state="visible", timeout=15000)
-                            print("  -> THÀNH CÔNG: Đã thấy chữ 'Processing', video đang được tạo!")
+                            print(f"  -> Đang chờ Processing/Generating (lần {gen_attempt+1})...")
+                            confirm_generation(page)
+                            print("  -> Đã thấy Processing/Generating, video đang được tạo!")
                             generate_success = True
                             break # Thoát vòng lặp retry Generate
-                        except:
-                            print(f"  -> KHÔNG THẤY 'Processing' (Lần thử {gen_attempt+1})! Web có thể bị lag, sẽ ấn lại Generate...")
-                            pass
+                        except Exception as status_error:
+                            raise RuntimeError("History: Không thấy Processing/Generating sau khi cập nhật; kiểm tra tác vụ trước khi tạo lại.") from status_error
                     
                     except Exception as e:
+                        if "History:" in str(e): raise e
                         if "ReloadRequired" in str(e): raise e
                         print(f"Lỗi nhấn Generate (Lần thử {gen_attempt+1}): {e}")
                 
                 if not generate_success:
-                    # Reload trang + bật lại free gens + thử Generate thêm 3 lần nữa
-                    # (Không raise ReloadRequired để tránh re-upload toàn bộ ảnh/video)
-                    print("  -> Đã thử Generate 3 lần không thấy Processing. Đang reload trang và thử lại...")
-                    video_tasks[task_id] = {"status": "running", "message": "⏳ Generate chưa phản hồi, đang reload trang và thử lại..."}
-                    page.reload()
-                    page.wait_for_load_state('domcontentloaded')
-                    page.wait_for_timeout(4000)
-
-                    # Thử Generate thêm 3 lần sau reload
-                    for retry_gen in range(3):
-                        try:
-                            # Bật lại free gens (có thể bị tắt sau reload)
-                            free_gens2 = page.locator('button[aria-label="Use free gens"]')
-                            if free_gens2.is_visible(timeout=3000):
-                                if free_gens2.get_attribute("aria-checked") == "false":
-                                    print(f"  -> Bật lại Use free gens sau reload (Retry {retry_gen+1})...")
-                                    free_gens2.click(timeout=3000, force=True)
-                                    page.wait_for_timeout(1000)
-
-                            # Điền lại prompt nếu bị mất
-                            if prompt:
-                                prompt_input2 = page.locator('div[aria-label="Prompt"][contenteditable="true"]').last
-                                if prompt_input2.is_visible(timeout=2000):
-                                    cur_text = prompt_input2.text_content()
-                                    if not cur_text or len(cur_text.strip()) < 2:
-                                        print(f"  -> Prompt bị mất sau reload, dán lại (Retry {retry_gen+1})...")
-                                        prompt_input2.click(timeout=3000, force=True)
-                                        page.wait_for_timeout(200)
-                                        page.keyboard.press("Control+A")
-                                        page.keyboard.press("Backspace")
-                                        page.wait_for_timeout(200)
-                                        clean_prompt2 = prompt.replace("`", "'").replace("\\", "\\\\")
-                                        page.evaluate(f"""(el) => {{
-                                            const dt = new DataTransfer();
-                                            dt.setData('text/plain', `{clean_prompt2}`);
-                                            const event = new ClipboardEvent('paste', {{ clipboardData: dt, bubbles: true, cancelable: true }});
-                                            el.dispatchEvent(event);
-                                        }}""", prompt_input2.element_handle())
-                                        page.wait_for_timeout(500)
-                                        prompt_input2.type(" ")
-
-                            # Ấn Generate lại
-                            generate_btn2 = page.locator('button:has-text("Generate")').last
-                            if generate_btn2.is_visible(timeout=3000):
-                                print(f"  -> Ấn Generate lại sau reload (Retry {retry_gen+1})...")
-                                try:
-                                    box2 = generate_btn2.bounding_box()
-                                    if box2:
-                                        page.mouse.move(box2["x"] + box2["width"]/2, box2["y"] + box2["height"]/2)
-                                        page.wait_for_timeout(200)
-                                        page.mouse.down()
-                                        page.wait_for_timeout(100)
-                                        page.mouse.up()
-                                    else:
-                                        generate_btn2.click(timeout=3000, force=True)
-                                except:
-                                    generate_btn2.click(timeout=3000, force=True)
-                                page.wait_for_timeout(2000)
-
-                            # Kiểm tra Processing
-                            processing_text2 = page.locator('text="Processing"').first
-                            processing_text2.wait_for(state="visible", timeout=15000)
-                            print(f"  -> THÀNH CÔNG sau reload: Đã thấy 'Processing' (Retry {retry_gen+1})!")
-                            generate_success = True
-                            break
-                        except Exception as eg:
-                            print(f"  -> Retry Generate {retry_gen+1}/3 sau reload thất bại: {eg}")
-
-                    if not generate_success:
-                        print("  -> Đã retry Generate sau reload nhưng vẫn không thấy Processing. Raise lỗi!")
-                        raise Exception("ReloadRequired")
-
+                    raise RuntimeError("No Processing/Generating after History refresh; check the submitted job before retrying.")
 
                 break # Thoát vòng lặp master_attempt nếu mọi thứ thành công
             except Exception as e:
                 if "ReloadRequired" in str(e):
                     print(f"--- Lỗi Upload/Generate, tải lại trang và làm lại từ đầu (Lần {master_attempt+1}/3) ---")
-                    video_tasks[task_id] = {"status": "running", "message": "Bị lỗi web, đang tải lại trang để thử lại..."}
+                    video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "running", "message": "Bị lỗi web, đang tải lại trang để thử lại..."}
                     page.reload()
                     page.wait_for_load_state('domcontentloaded')
                     page.wait_for_timeout(5000)
@@ -1643,7 +1646,7 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                     continue
                 raise e
 
-        video_tasks[task_id] = {"status": "running", "message": "✅ Đã gửi yêu cầu! Đang chờ higgsfield.ai tạo video..."}
+        video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "running", "message": "✅ Đã gửi yêu cầu! Đang chờ higgsfield.ai tạo video..."}
 
         # ── BƯỚC 11: Đợi video xuất hiện (tối đa 30 phút) ───────────────
         video_url = None
@@ -1652,19 +1655,21 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
         import random
         # Random thời gian reload lần tiếp theo (từ 4 đến 7 phút -> 240 đến 420 giây)
         next_reload_target = random.randint(240, 420)
+        was_generating = False
+        generation_recovery_reload_used = False
         
         for i in range(1800):
             page.wait_for_timeout(1000)
             
             # Kiểm tra thời gian để tải lại trang định kỳ
             if i > 0 and i >= next_reload_target:
-                print(f"--- Task {task_id}: Đã chờ {i}s, tiến hành reload trang để chống kẹt (Random +- 5 phút)...")
-                video_tasks[task_id]["message"] = f"🔄 Đang tải lại trang web để cập nhật tiến trình..."
+                print(f"--- Task {task_id}: Đã chờ {i}s, cập nhật Motion Library → History...")
+                video_tasks[task_id]["message"] = "🔄 Đang chuyển Motion Library → History để cập nhật tiến trình..."
                 try:
-                    page.reload(timeout=30000)
+                    refresh_video_history(page)
                     page.wait_for_timeout(5000)
                 except Exception as ex:
-                    print(f"Lỗi reload định kỳ: {ex}")
+                    print(f"Lỗi cập nhật History định kỳ: {ex}")
                 # Đặt lại mục tiêu reload tiếp theo (thêm 240-420s tính từ i hiện tại)
                 next_reload_target = i + random.randint(240, 420)
             
@@ -1683,10 +1688,19 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                 
             if video_tasks.get(task_id, {}).get("cancel_and_gen_requested"):
                 print(f"--- Task {task_id} nhận lệnh Cancel + Gen. Thực thi thao tác...")
+                generate_ip_before_cancel = bool(
+                    video_tasks[task_id].get("generate_ip_before_cancel")
+                )
                 video_tasks[task_id]["cancel_and_gen_requested"] = False
-                video_tasks[task_id] = {"status": "running", "message": "Đang thao tác Cancel & Gen lại..."}
+                video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "running", "message": "Đang thao tác Cancel & Gen lại..."}
                 
                 try:
+                    if generate_ip_before_cancel:
+                        video_tasks[task_id]["message"] = "Đang sinh IP mới trước khi Cancel + Gen..."
+                        from app.services.vpn_ip import connect_unique_vpn_ip
+                        vpn_info = connect_unique_vpn_ip(context, profile_id)
+                        print(f"Cancel + Gen sinh IP thành công: {vpn_info['ip']} ({vpn_info['country']})")
+
                     # 1. Click Copy
                     print(f"--- Task {task_id} (Cancel+Gen): Đang tìm thẻ Processing và ép hiện nút Copy/Cancel...")
                     page.evaluate("""() => {
@@ -1758,7 +1772,7 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                     # 4. Tải lại trang, Check Free Gens, và Click Generate (Có retry)
                     for retry_gen in range(3):
                         print(f"--- Task {task_id} (Cancel+Gen): Đang reload lại trang (Lần {retry_gen + 1}/3)...")
-                        page.reload()
+                        page.reload(timeout=30000)
                         page.wait_for_load_state('domcontentloaded')
                         print(f"--- Task {task_id} (Cancel+Gen): Đợi thêm 5s sau khi reload cho web load hẳn...")
                         page.wait_for_timeout(5000)
@@ -1800,21 +1814,22 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                         page.wait_for_timeout(4000)
                         
                         # Kiểm tra xem có Processing chưa
-                        has_processing = page.evaluate("""() => {
-                            const spans = Array.from(document.querySelectorAll('span, div'));
-                            return spans.some(el => el.innerText && el.innerText.trim() === 'Processing');
-                        }""")
-                        
+                        try:
+                            confirm_generation(page)
+                            has_processing = True
+                        except Exception:
+                            has_processing = False
+
                         if has_processing:
                             print(f"--- Task {task_id} (Cancel+Gen): ✅ Đã thấy thẻ Processing xuất hiện, quá trình tạo bắt đầu thành công!")
                             break
                         else:
                             print(f"--- Task {task_id} (Cancel+Gen): ❌ Chưa thấy thẻ Processing, thử lại quá trình tải trang và ấn Generate...")
                             
-                    video_tasks[task_id] = {"status": "running", "message": "✅ Đã Cancel và Generate lại! Đang chờ..."}
+                    video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "running", "message": "✅ Đã Cancel và Generate lại! Đang chờ..."}
                 except Exception as ex:
                     print(f"Lỗi khi thực thi Cancel + Gen: {ex}")
-                    video_tasks[task_id] = {"status": "running", "message": f"⚠️ Lỗi Cancel + Gen: {str(ex)}"}
+                    video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "running", "message": f"⚠️ Lỗi Cancel + Gen: {str(ex)}"}
                 
                 # Reset i (bộ đếm thời gian) về 0 để chờ thêm 10 phút nữa
                 i = 0
@@ -1900,6 +1915,16 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                     video_urls = new_url
                     video_url = new_url[0]
                     break
+                if was_generating and current_job_status != 'generating' and not generation_recovery_reload_used:
+                    generation_recovery_reload_used = True
+                    video_tasks[task_id]["message"] = "🔄 Generating biến mất, đang tải lại trang để lấy video..."
+                    print(f"--- Task {task_id}: Generating biến mất khi chưa có video; reload để khôi phục kết quả...")
+                    page.reload(timeout=30000)
+                    page.wait_for_load_state('domcontentloaded')
+                    page.wait_for_timeout(5000)
+                    continue
+                if current_job_status == 'generating':
+                    was_generating = True
             except:
                 current_job_status = ''
                 pass
@@ -2015,13 +2040,13 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                 
                 page.wait_for_timeout(3000)
             except Exception as e:
-                video_tasks[task_id] = {"status": "error", "message": f"Tạo thành công nhưng tải video thất bại: {e}"}
+                video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "error", "message": f"Tạo thành công nhưng tải video thất bại: {e}"}
         else:
             if video_tasks.get(task_id, {}).get("force_stop"):
                 video_tasks[task_id]["message"] = "Đã hủy tiến trình!"
                 # Không set status = done ở đây, để UI tiếp tục cập nhật tiến trình xóa acc
             else:
-                video_tasks[task_id] = {"status": "error", "message": "Timeout 10 phút: Video không xuất hiện trên higgsfield.ai."}
+                video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "error", "message": "Timeout 10 phút: Video không xuất hiện trên higgsfield.ai."}
 
         # ── BƯỚC 12: Xóa tài khoản (Delete Account) ─────────
         video_tasks[task_id]["message"] = video_tasks[task_id].get("message", "") + "\nĐang hủy hoạt động và Xóa tài khoản..."
@@ -2298,12 +2323,12 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
     
         if "higgsfield_logout" in str(e):
             print(f"--- Bị văng! Báo cho frontend tự động thử lại task {task_id}...")
-            video_tasks[task_id] = {
+            video_tasks[task_id] = {**video_tasks.get(task_id, {}), 
                 "status": "higgsfield_logout", 
                 "message": "Bị văng khỏi tài khoản, đang tự động thử lại bằng vân tay (Fingerprint) Chrome hoàn toàn mới..."
             }
             return
-        video_tasks[task_id] = {"status": "error", "message": f"Lỗi hệ thống: {e}"}
+        video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "error", "message": f"Lỗi hệ thống: {e}"}
 
     finally:
         # Tự động xóa ảnh upload sau khi task xong để tiết kiệm dung lượng
