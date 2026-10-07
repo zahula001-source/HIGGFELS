@@ -181,6 +181,7 @@ def get_chromium_runner_simple(profile_id, profile_name, user_data_dir, proxy_di
     code_no_ext = """
     # Bỏ tiện ích Profile Name Tab theo yêu cầu
 
+    # Tải extensions cá nhân của profile
     if enable_ext and profile_extensions:
         import sys
         sys.path.insert(0, str(Path(__file__).parent.parent / "app"))
@@ -191,6 +192,16 @@ def get_chromium_runner_simple(profile_id, profile_name, user_data_dir, proxy_di
                 launch_args.setdefault("extension_paths", []).extend(exts)
         except Exception as e:
             log(f"Extension resolve err: {e}")
+            
+    # Tải toàn bộ extension toàn cục trong data/extensions
+    try:
+        global_ext_dir = Path(__file__).parent.parent / "data" / "extensions"
+        if global_ext_dir.exists():
+            for ext_folder in global_ext_dir.iterdir():
+                if ext_folder.is_dir() and str(ext_folder.resolve()) not in launch_args.get("extension_paths", []):
+                    launch_args.setdefault("extension_paths", []).append(str(ext_folder.resolve()))
+    except Exception as e:
+        log(f"Global extension load err: {e}")
 
     if proxy:
         # Chrome 138+ khong con chay extension MV2 -> dung proxy trung gian 127.0.0.1
@@ -542,12 +553,18 @@ def _launch_profile(profile, req=None):
             prefs["profile"] = {}
         prefs["profile"]["name"] = profile_name
 
-        # Keep 1ClickVPN visible on Chrome's toolbar for every profile.
+        # Keep 1ClickVPN and other auto-downloaded extensions visible on Chrome's toolbar for every profile.
         extensions_prefs = prefs.setdefault("extensions", {})
         pinned_extensions = extensions_prefs.setdefault("pinned_extensions", [])
-        vpn_extension_id = "pphgdbgldlmicfdkhondlafkiomnelnk"
-        if vpn_extension_id not in pinned_extensions:
-            pinned_extensions.append(vpn_extension_id)
+        
+        # Tự động ghim tất cả các extension có trong DATA_DIR/extensions
+        extensions_dir = Path(DATA_DIR) / "extensions"
+        if extensions_dir.exists():
+            for ext_folder in extensions_dir.iterdir():
+                if ext_folder.is_dir():
+                    if ext_folder.name not in pinned_extensions:
+                        pinned_extensions.append(ext_folder.name)
+        
         
         pref_file.write_text(json.dumps(prefs, ensure_ascii=False), encoding="utf-8")
     except Exception as e:
