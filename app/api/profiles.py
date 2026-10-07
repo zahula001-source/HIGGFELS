@@ -1293,8 +1293,17 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                         # 1. Clerk Captcha (Bọc trong shadow DOM khép kín)
                         clerk_wrapper = page.locator('#clerk-captcha')
                         if clerk_wrapper.count() > 0 and clerk_wrapper.first.is_visible(timeout=500):
-                            print("Watchdog: Phát hiện hộp kiểm Cloudflare (Clerk), đang click vào wrapper...")
-                            clerk_wrapper.first.click(force=True)
+                            print("Watchdog: Phát hiện hộp kiểm Cloudflare (Clerk), đang click chuột vật lý (lệch trái)...")
+                            box = clerk_wrapper.first.bounding_box()
+                            if box:
+                                # Hộp kiểm Cloudflare thường nằm ở góc trái của khung (khoảng x + 35px)
+                                page.mouse.move(box["x"] + 45, box["y"] + box["height"] / 2)
+                                page.wait_for_timeout(300)
+                                page.mouse.down()
+                                page.wait_for_timeout(150)
+                                page.mouse.up()
+                            else:
+                                clerk_wrapper.first.click(position={"x": 45, "y": 30}, force=True)
                             page.wait_for_timeout(3000)
                             watchdog_state_since = time.monotonic()
                             cf_clicked = True
