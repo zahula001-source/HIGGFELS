@@ -98,7 +98,27 @@ def _wait_for_popup_ready(page) -> None:
 
         if page.locator(".home-page__box--type-location").count():
             return
+            
+        # Try to click common popup/overlay buttons
+        for btn_text in ["Agree", "Accept", "Continue", "Next", "Got it", "Skip", "No thanks", "Close", "Got It"]:
+            try:
+                btn = page.locator(f'text="{btn_text}"').last
+                if btn.is_visible(timeout=500):
+                    btn.click(timeout=1000)
+                    page.wait_for_timeout(1000)
+            except:
+                pass
+                
         page.wait_for_timeout(700)
+        
+    # Dump HTML for debugging
+    try:
+        html = page.content()
+        (Path(DATA_DIR) / "vpn_error.html").write_text(html, encoding="utf-8")
+        print(f"  [VPN] Đã lưu HTML màn hình lỗi vào data/vpn_error.html", flush=True)
+    except:
+        pass
+        
     raise RuntimeError("1ClickVPN khoi tao qua lau")
 
 
