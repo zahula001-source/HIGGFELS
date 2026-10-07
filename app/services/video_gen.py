@@ -1223,18 +1223,24 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                             loc4 = pg.locator(f'text="{btn_aria_label}"')
                             
                             btn = loc1.or_(loc2).or_(loc3).or_(loc4)
-                            btn.first.wait_for(state="attached", timeout=4000)
+                            try:
+                                btn.first.wait_for(state="attached", timeout=4000)
+                            except:
+                                print(f"  -> Chưa tìm thấy nút '{btn_aria_label}', thử đợi thêm 5s...")
+                                pg.wait_for_timeout(5000)
+                                try:
+                                    btn.first.wait_for(state="attached", timeout=2000)
+                                except:
+                                    print("  -> Vẫn không thấy, tiến hành F5 tải lại trang...")
+                                    pg.reload(timeout=30000)
+                                    pg.wait_for_load_state("domcontentloaded")
+                                    pg.wait_for_timeout(5000)
+                                    btn.first.wait_for(state="attached", timeout=5000)
+                                    
                             btn_to_click = btn.first
-                        except:
-                            print(f"  -> Không tìm thấy nút '{btn_aria_label}', thử dùng nút dự phòng...")
-                            if "image" in btn_aria_label.lower() or "character" in btn_aria_label.lower():
-                                fallback_btn = pg.locator('text="Add your characters"').or_(pg.locator('text="Add reference images"'))
-                            else:
-                                fallback_btn = pg.locator('text="extract motion"')
-                            
-                            try: fallback_btn.first.wait_for(state="attached", timeout=3000)
-                            except: pass
-                            btn_to_click = fallback_btn.first
+                        except Exception as e:
+                            print(f"  -> Lỗi khi tìm nút upload (đã thử F5): {e}")
+                            return
                         
                         # Thử click với expect_file_chooser xem nó có mở trực tiếp không (giao diện mới)
                         try:
