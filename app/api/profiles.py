@@ -683,11 +683,11 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                             
                             # Sử dụng JS để tìm và click chính xác
                             clicked_pwd = page.evaluate("""() => {
-                                const elements = document.querySelectorAll('span, a, div');
+                                const elements = document.querySelectorAll('span, a, div, button, [role="button"]');
                                 for (let el of elements) {
-                                    const text = (el.innerText || '').trim();
-                                    if (text === 'Sử dụng mật khẩu của bạn' || text === 'Use your password' || text.includes('Sử dụng mật khẩu')) {
-                                        if (el.getAttribute('role') === 'button' || el.tagName === 'A' || el.tabIndex === 0) {
+                                    const text = (el.innerText || el.textContent || '').trim().toLowerCase();
+                                    if (text === 'use your password' || text === 'sử dụng mật khẩu của bạn' || text.includes('sử dụng mật khẩu') || text.includes('use your password') || el.id === 'iUsePasswordLink' || el.id === 'idA_PWD_SwitchToPassword') {
+                                        if (el.getAttribute('role') === 'button' || el.tagName === 'A' || el.tabIndex === 0 || el.offsetParent !== null) {
                                             el.click();
                                             return true;
                                         }
@@ -701,8 +701,8 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                                 page.wait_for_timeout(2000)
                             else:
                                 # Fallback bằng locator Playwright
-                                use_pwd_btn = page.locator('span[role="button"]:has-text("Sử dụng mật khẩu của bạn"), span[role="button"]:has-text("Use your password"), a#iUsePasswordLink, a#idA_PWD_SwitchToPassword, a:has-text("Sử dụng mật khẩu của bạn")')
-                                if use_pwd_btn.count() > 0 and use_pwd_btn.first.is_visible():
+                                use_pwd_btn = page.locator('span[role="button"]:has-text("Use your password"), span[role="button"]:has-text("Sử dụng mật khẩu của bạn"), a:has-text("Use your password"), a:has-text("Sử dụng mật khẩu của bạn"), #iUsePasswordLink, #idA_PWD_SwitchToPassword')
+                                if use_pwd_btn.count() > 0:
                                     use_pwd_btn.first.click(force=True)
                                     print("Clicked 'Sử dụng mật khẩu của bạn' (Use your password) via Locator")
                                     page.wait_for_timeout(2000)
@@ -903,6 +903,8 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                             return True
                         use_password = first_visible(
                             'a#iUsePasswordLink, a#idA_PWD_SwitchToPassword, '
+                            'span[role="button"]:has-text("Use your password"), '
+                            'span[role="button"]:has-text("Sử dụng mật khẩu của bạn"), '
                             '[role="button"]:has-text("Use your password"), '
                             'a:has-text("Use your password"), '
                             '[role="button"]:has-text("Sử dụng mật khẩu")'

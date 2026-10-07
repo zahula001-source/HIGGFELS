@@ -97,8 +97,8 @@ def read_code_in_smail_tab(
 def click_use_password(page) -> bool:
     """Check the current DOM without waiting for a missing password input."""
     try:
-        exact = page.locator('[data-testid="viewFooter"] span[role="button"]').filter(has_text="Use your password").first
-        if exact.count() > 0 and exact.is_visible(timeout=200):
+        exact = page.locator('span[role="button"]:has-text("Use your password"), span[role="button"]:has-text("Sử dụng mật khẩu của bạn"), a:has-text("Use your password"), a:has-text("Sử dụng mật khẩu của bạn"), #iUsePasswordLink, #idA_PWD_SwitchToPassword').first
+        if exact.count() > 0:
             exact.click(force=True, timeout=3000)
             page.wait_for_timeout(500)
             return True
@@ -107,12 +107,12 @@ def click_use_password(page) -> bool:
     return page.evaluate("""() => {
         const nodes = document.querySelectorAll('button, a, [role="button"], span');
         for (const el of nodes) {
-            if (!el.getClientRects().length) continue;
-            const text = (el.innerText || '').trim().toLowerCase();
-            if (text === 'use your password' || text === 'sử dụng mật khẩu của bạn' ||
-                el.id === 'iUsePasswordLink' || el.id === 'idA_PWD_SwitchToPassword') {
-                el.click();
-                return true;
+            const text = (el.innerText || el.textContent || '').trim().toLowerCase();
+            if (text === 'use your password' || text === 'sử dụng mật khẩu của bạn' || text.includes('sử dụng mật khẩu') || text.includes('use your password') || el.id === 'iUsePasswordLink' || el.id === 'idA_PWD_SwitchToPassword') {
+                if (el.offsetParent !== null || el.getClientRects().length > 0) {
+                    el.click();
+                    return true;
+                }
             }
         }
         return false;
