@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import ipaddress
 import random
 import re
 import threading
@@ -18,6 +19,7 @@ RESERVATIONS_FILE = Path(DATA_DIR) / "vpn_ip_reservations.json"
 
 _reservation_lock = threading.RLock()
 _reserved_ips: dict[str, str] = {}
+_live_vpn_profiles: set[str] = set()
 
 
 def _load_reservations() -> None:
@@ -39,6 +41,7 @@ def _save_reservations() -> None:
 def release_vpn_ip(profile_id: str) -> None:
     """Release the reserved IP when a profile is closed by this app."""
     with _reservation_lock:
+        _live_vpn_profiles.discard(str(profile_id))
         if _reserved_ips.pop(str(profile_id), None) is not None:
             _save_reservations()
 
@@ -54,7 +57,9 @@ def _public_ip(context) -> str:
         except Exception:
             match = re.search(r"\b(?:\d{1,3}\.){3}\d{1,3}\b", body)
             ip = match.group(0) if match else ""
-        if not ip:
+        try:
+            ip = str(ipaddress.ip_address(ip))
+        except ValueError:
             raise RuntimeError("Khong doc duoc IP sau khi ket noi VPN")
         return ip
     finally:
@@ -65,7 +70,14 @@ def _public_ip(context) -> str:
 
 
 def _wait_for_popup_ready(page) -> None:
-    page.goto(POPUP_URL, wait_until="domcontentloaded", timeout=20000)
+    for attempt in range(15):
+        try:
+            page.goto(POPUP_URL, wait_until="domcontentloaded", timeout=10000)
+            break
+        except Exception:
+            if attempt == 14:
+                raise
+            page.wait_for_timeout(1000)
     page.bring_to_front()
     deadline = time.time() + 35
     while time.time() < deadline:
@@ -132,22 +144,33 @@ def connect_unique_vpn_ip(context, profile_id: str, max_attempts: int = 8) -> di
     attempted_countries: set[str] = set()
     last_error: Exception | None = None
     try:
+        print(f"  [VPN] Mở trang popup của 1ClickVPN...", flush=True)
         _wait_for_popup_ready(popup)
+        print(f"  [VPN] Popup đã sẵn sàng, lấy IP hiện tại...", flush=True)
+        previous_ip = _public_ip(context)
+        print(f"  [VPN] IP hiện tại: {previous_ip}", flush=True)
         # Make the automatic VPN operation visible instead of flashing in the background.
         popup.bring_to_front()
         popup.wait_for_timeout(1200)
-        for _ in range(max_attempts):
+        for attempt in range(max_attempts):
             try:
+                print(f"  [VPN] Đang chọn quốc gia ngẫu nhiên (Lần thử {attempt+1}/{max_attempts})...", flush=True)
                 country = _choose_random_country(popup, attempted_countries)
                 attempted_countries.add(country)
+                print(f"  [VPN] Đã chọn {country}, đang đợi kết nối...", flush=True)
                 _wait_connected(popup)
                 ip = _public_ip(context)
+                print(f"  [VPN] Đã kết nối, IP mới: {ip}", flush=True)
+                if ip == previous_ip:
+                    raise RuntimeError("VPN chưa đổi IP; không tiếp tục bằng IP cũ")
+
 
                 with _reservation_lock:
                     # Drop stale reservations left by browsers that have exited.
                     try:
                         from app.browser import is_running
-                        stale = [owner_id for owner_id in _reserved_ips if not is_running(owner_id)]
+                        stale = [owner_id for owner_id in _reserved_ips
+                                 if owner_id not in _live_vpn_profiles and not is_running(owner_id)]
                         for owner_id in stale:
                             _reserved_ips.pop(owner_id, None)
                     except Exception:
@@ -159,19 +182,23 @@ def connect_unique_vpn_ip(context, profile_id: str, max_attempts: int = 8) -> di
                     )
                     if owner is None:
                         _reserved_ips[str(profile_id)] = ip
+                        _live_vpn_profiles.add(str(profile_id))
                         _save_reservations()
+                        context.once("close", lambda *_: release_vpn_ip(profile_id))
                         popup.bring_to_front()
                         popup.wait_for_timeout(3000)
                         return {"ip": ip, "country": country}
                 last_error = RuntimeError(f"IP {ip} dang duoc profile {owner} su dung")
             except Exception as exc:
                 last_error = exc
+                print(f"  [VPN] Lỗi ở lần thử {attempt+1}: {exc}", flush=True)
 
             try:
+                print(f"  [VPN] Tải lại popup để thử lại...", flush=True)
                 popup.reload(wait_until="domcontentloaded", timeout=15000)
                 _wait_for_popup_ready(popup)
-            except Exception:
-                pass
+            except Exception as reload_err:
+                print(f"  [VPN] Lỗi khi tải lại popup: {reload_err}", flush=True)
 
         raise RuntimeError(f"Khong sinh duoc IP VPN rieng sau {max_attempts} lan: {last_error}")
     finally:

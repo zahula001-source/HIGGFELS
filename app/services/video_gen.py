@@ -95,8 +95,9 @@ def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False
                     break
             except (OSError, ValueError):
                 pass
-    if not has_vpn:
-        extension_dirs.append(str(vpn_dir.resolve()))
+        if not has_vpn:
+            extension_dirs.append(str(vpn_dir.resolve()))
+
         
     try:
         global_ext_dir = Path(DATA_DIR) / "extensions"
