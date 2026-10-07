@@ -1620,21 +1620,21 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                             
                 
                         # 3. Nhấn nút Generate như người thật
-                        generate_btn = page.locator('button:has-text("Generate")').last
+                        page.wait_for_timeout(1000) # Đợi giao diện ổn định
+                        generate_btn = page.locator('button[type="submit"]:has-text("Generate")').last
                         if generate_btn.is_visible(timeout=3000):
-                            print(f"  -> Đã thấy nút Generate, tiến hành click vật lý (Lần thử {gen_attempt+1})...")
+                            print(f"  -> Đã thấy nút Generate, tiến hành click (Lần thử {gen_attempt+1})...")
                             try:
-                                box = generate_btn.bounding_box()
-                                if box:
-                                    page.mouse.move(box["x"] + box["width"]/2, box["y"] + box["height"]/2)
-                                    page.wait_for_timeout(200)
-                                    page.mouse.down()
-                                    page.wait_for_timeout(100)
-                                    page.mouse.up()
-                                else:
-                                    generate_btn.click(timeout=3000, force=True)
-                            except:
+                                generate_btn.scroll_into_view_if_needed()
+                                page.wait_for_timeout(500)
+                                # Click bằng Playwright (có scroll & kiểm tra)
                                 generate_btn.click(timeout=3000, force=True)
+                            except:
+                                print("  -> Click thường bị lỗi, thử click bằng JavaScript...")
+                                try:
+                                    page.evaluate("(btn) => btn.click()", generate_btn.element_handle())
+                                except:
+                                    pass
                             page.wait_for_timeout(2000)
                     
                         # 4. Kiểm tra lỗi "Add one source video" sau khi nhấn Generate
