@@ -1316,8 +1316,13 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                             page.goto(HIGGSFIELD_URL, wait_until="domcontentloaded", timeout=30000)
                         login_state = wait_video_login_state(page)
                         if login_state is True:
-                            print("Đã đăng nhập thành công vào Higgsfield!")
-                            break
+                            try:
+                                page.wait_for_url(lambda u: "quiz" in u, timeout=3000)
+                                print("Đã đăng nhập nhưng bị đẩy sang trang Quiz, tiếp tục xử lý...")
+                                continue
+                            except:
+                                print("Đã đăng nhập thành công vào Higgsfield!")
+                                break
                         if login_state is None:
                             page.reload(wait_until="domcontentloaded", timeout=30000)
                             continue
@@ -1980,12 +1985,12 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                             print(f"Kiểm tra Free Gens/Quality: {live_profile.notes}")
                             # Login + Free Gens/Quality check is complete; close
                             # Chrome even when the request used keep_open defaults.
-                            keep_open = False
+                            # keep_open = False
                         elif live_profile:
-                            live_profile.notes = "không đọc được free gen"
+                            live_profile.notes = "không free"
                             manager._save()
                             print("Không tìm thấy switch Use free gens sau khi đăng nhập")
-                            keep_open = False
+                            # keep_open = False
                     else:
                         set_watchdog_note("lỗi login" if login_state is False else "chưa xác định đăng nhập")
                         print("Chưa xác nhận đăng nhập sau các lần tự thử lại; đã đưa về trang video.")
