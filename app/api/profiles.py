@@ -894,8 +894,7 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                         # Microsoft may show a method picker while a generic email
                         # input is also present. Always choose password first.
                         if (
-                            is_v2_account
-                            and time.monotonic() - use_password_last_click >= 3
+                            time.monotonic() - use_password_last_click >= 3
                             and click_use_password(page)
                         ):
                             use_password_last_click = time.monotonic()
@@ -908,7 +907,7 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                             '[role="button"]:has-text("Use your password"), '
                             'a:has-text("Use your password"), '
                             '[role="button"]:has-text("Sử dụng mật khẩu")'
-                        ) if is_v2_account else None
+                        )
                         if use_password is not None:
                             use_password.click(timeout=3000, force=True)
                             print("Watchdog: clicked 'Use your password'")
