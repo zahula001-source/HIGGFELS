@@ -1595,12 +1595,19 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                                     prompt_input.type(" ")
                 
                         # 2. Bật công tắc Use free gens
+                        print(f"  -> Đang tìm công tắc Use free gens (Lần thử {gen_attempt+1})...")
                         free_gens = page.locator('button[aria-label="Use free gens"]')
-                        if free_gens.is_visible(timeout=2000):
+                        try:
+                            free_gens.wait_for(state="visible", timeout=10000)
                             if free_gens.get_attribute("aria-checked") == "false":
-                                print(f"  -> Bật công tắc Use free gens (Lần thử {gen_attempt+1})...")
+                                print(f"  -> Trạng thái đang tắt, tiến hành Bật công tắc Use free gens...")
                                 free_gens.click(timeout=3000, force=True)
                                 page.wait_for_timeout(1000)
+                            else:
+                                print(f"  -> Công tắc Use free gens đã được bật sẵn!")
+                        except:
+                            print(f"  -> Không tìm thấy công tắc Use free gens (có thể tài khoản đã hết free gens hoặc web load chậm).")
+                            
                 
                         # 3. Nhấn nút Generate như người thật
                         generate_btn = page.locator('button:has-text("Generate")').last
