@@ -1231,12 +1231,15 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                                 try:
                                     btn.first.wait_for(state="attached", timeout=2000)
                                 except:
-                                    print("  -> Vẫn không thấy, tiến hành F5 tải lại trang...")
-                                    pg.reload(timeout=30000)
+                                    if "pricing" in pg.url or "genjutsu" not in pg.url:
+                                        print(f"  -> Đang ở nhầm trang ({pg.url}), quay lại trang tạo video...")
+                                        pg.goto("https://higgsfield.ai/ai/video?model=genjutsu", timeout=30000)
+                                    else:
+                                        print("  -> Vẫn không thấy, tiến hành F5 tải lại trang...")
+                                        pg.reload(timeout=30000)
                                     pg.wait_for_load_state("domcontentloaded")
                                     pg.wait_for_timeout(5000)
                                     btn.first.wait_for(state="attached", timeout=5000)
-                                    
                             btn_to_click = btn.first
                         except Exception as e:
                             print(f"  -> Lỗi khi tìm nút upload (đã thử F5): {e}")
