@@ -1289,21 +1289,36 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                     # Tự động click Cloudflare Turnstile nếu gặp
                     try:
                         cf_clicked = False
-                        for f in page.frames:
-                            cf_label = f.locator('label:has(input[type="checkbox"])').filter(has_text="Verify you are human")
-                            if cf_label.count() > 0 and cf_label.first.is_visible(timeout=500):
-                                print(f"Watchdog: Phát hiện Cloudflare Checkbox, đang tự động click...")
-                                cf_label.first.click(timeout=1000)
-                                page.wait_for_timeout(3000)
-                                watchdog_state_since = time.monotonic()
-                                cf_clicked = True
-                                break
+                        
+                        # 1. Clerk Captcha (Bọc trong shadow DOM khép kín)
+                        clerk_wrapper = page.locator('#clerk-captcha')
+                        if clerk_wrapper.count() > 0 and clerk_wrapper.first.is_visible(timeout=500):
+                            print("Watchdog: Phát hiện hộp kiểm Cloudflare (Clerk), đang click vào wrapper...")
+                            clerk_wrapper.first.click(force=True)
+                            page.wait_for_timeout(3000)
+                            watchdog_state_since = time.monotonic()
+                            cf_clicked = True
+                            
+                        # 2. Cloudflare Turnstile độc lập
                         if not cf_clicked:
-                            # Dự phòng tìm thẳng trên page
-                            cf_label_page = page.locator('label:has(input[type="checkbox"])').filter(has_text="Verify you are human")
+                            for frame in page.frames:
+                                if "challenges.cloudflare.com" in frame.url or "turnstile" in frame.url:
+                                    print(f"Watchdog: Phát hiện Cloudflare Frame, click giả lập...")
+                                    try:
+                                        # Click vào giữa thẻ body của frame
+                                        frame.locator("body").click(force=True, position={"x": 35, "y": 35})
+                                        page.wait_for_timeout(3000)
+                                        watchdog_state_since = time.monotonic()
+                                        cf_clicked = True
+                                        break
+                                    except: pass
+                                    
+                        # 3. Label dự phòng
+                        if not cf_clicked:
+                            cf_label_page = page.locator('label:has(input[type="checkbox"])').filter(has_text="Verify")
                             if cf_label_page.count() > 0 and cf_label_page.first.is_visible(timeout=500):
-                                print("Watchdog: Phát hiện Cloudflare Checkbox (main page), đang tự động click...")
-                                cf_label_page.first.click(timeout=1000)
+                                print("Watchdog: Phát hiện Cloudflare (Label), đang tự động click...")
+                                cf_label_page.first.click(timeout=1000, force=True)
                                 page.wait_for_timeout(3000)
                                 watchdog_state_since = time.monotonic()
                     except Exception:
@@ -1336,7 +1351,8 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                         continue
                     
                     if any(s in cur_url for s in ["/ai/video", "/supercomputer", "/canvas", "/cinema", "/marketing", "/shorts", "/mcp"]) and "quiz" not in cur_url:
-                        if page.url != HIGGSFIELD_URL:
+                        # Nếu đang ở /ai/video thì KHÔNG GOTO nữa để tránh kẹt reload!
+                        if page.url == "https://higgsfield.ai/":
                             page.goto(HIGGSFIELD_URL, wait_until="domcontentloaded", timeout=30000)
                         login_state = wait_video_login_state(page)
                         if login_state is True:
