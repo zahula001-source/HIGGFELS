@@ -546,11 +546,8 @@ def _launch_profile(profile, req=None):
         extensions_prefs = prefs.setdefault("extensions", {})
         pinned_extensions = extensions_prefs.setdefault("pinned_extensions", [])
         vpn_extension_id = "pphgdbgldlmicfdkhondlafkiomnelnk"
-        cookie_editor_id = "fhnmmidekmgocpjdceeffppcodigillk"
         if vpn_extension_id not in pinned_extensions:
             pinned_extensions.append(vpn_extension_id)
-        if cookie_editor_id not in pinned_extensions:
-            pinned_extensions.append(cookie_editor_id)
         
         pref_file.write_text(json.dumps(prefs, ensure_ascii=False), encoding="utf-8")
     except Exception as e:
@@ -561,12 +558,6 @@ def _launch_profile(profile, req=None):
     enable_ext_btn2 = req.enable_ext_btn2 if req else False
     enable_ext = req.enable_ext if req else False
     profile_extensions = getattr(profile, "extensions", "") if profile else ""
-    
-    # Auto-inject Cookie-Editor into ALL profiles
-    if cookie_editor_id not in profile_extensions:
-        profile_extensions = (profile_extensions + ";" + cookie_editor_id) if profile_extensions else cookie_editor_id
-        enable_ext = True
-        
     port = get_free_port()
     headless = getattr(req, 'headless', False) if req else False
     
