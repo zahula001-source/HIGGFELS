@@ -588,31 +588,29 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                     except Exception as e:
                         print(f"Lỗi click Microsoft: {e}")
                     
-                    # Đợi chuyển sang trang login.microsoftonline.com / login.live.com
+                    # Đợi chuyển sang trang login.microsoftonline.com / login.live.com hoặc đợi đến khi avatar xuất hiện
                     try:
-                        for _ in range(15):
+                        for _ in range(30):
                             if "login.microsoft" in page.url or "login.live" in page.url:
+                                break
+                            if "higgsfield.ai/quiz" in page.url:
+                                break
+                            if page.locator('button[aria-haspopup="menu"]:has(img.rounded-full)').is_visible():
                                 break
                             page.wait_for_timeout(500)
                     except: pass
-                    print(f"Current URL after click: {page.url}")
+                    print(f"Current URL after waiting for redirect: {page.url}")
                     
                     if ms_email and ms_password:
-                        # Đợi trang MS login hoặc trang higgsfield (nếu đã login)
-                        try:
-                            for _ in range(15):
-                                if "login.microsoft" in page.url or "login.live" in page.url or "higgsfield.ai/quiz" in page.url or "higgsfield.ai/ai/video" in page.url:
-                                    break
-                                page.wait_for_timeout(500)
-                        except: pass
-                        
                         page.wait_for_timeout(500)
                         print(f"MS login page URL: {page.url}")
                         
                         # Điền email vào ô input
                         try:
                             import time
-                            if page.url.startswith("https://higgsfield.ai") or "account.live.com" in page.url or "fido" in page.url: 
+                            if "account.live.com" in page.url or "fido" in page.url: 
+                                raise ValueError("Stuck on protection page")
+                            if page.url.startswith("https://higgsfield.ai") and not page.locator('button:has-text("Continue with Microsoft")').is_visible():
                                 raise ValueError("Already logged in or stuck on protection page, skipping email")
                             
                             # Đợi input xuất hiện hoặc nút Sử dụng mật khẩu xuất hiện
@@ -620,8 +618,8 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                             for _ in range(20):
                                 try:
                                     # Kiểm tra xem có nút "Sử dụng mật khẩu của bạn" không
-                                    use_pwd_btn = page.locator('span[role="button"]:has-text("Sử dụng mật khẩu của bạn"), span[role="button"]:has-text("Use your password"), a#iUsePasswordLink, a#idA_PWD_SwitchToPassword, a:has-text("Sử dụng mật khẩu của bạn")')
-                                    if use_pwd_btn.count() > 0 and use_pwd_btn.first.is_visible():
+                                    use_pwd_btn = page.locator('span[role="button"]:has-text("Use your password"), span[role="button"]:has-text("Sử dụng mật khẩu của bạn"), a:has-text("Use your password"), a:has-text("Sử dụng mật khẩu của bạn"), #iUsePasswordLink, #idA_PWD_SwitchToPassword')
+                                    if use_pwd_btn.count() > 0:
                                         print("Bỏ qua chờ nhập email vì đã thấy nút Sử dụng mật khẩu")
                                         raise ValueError("Thấy nút sử dụng mật khẩu")
                                         
@@ -712,11 +710,12 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                             
                         # Điền mật khẩu
                         try:
-                            if page.url.startswith("https://higgsfield.ai") or "account.live.com" in page.url or "fido" in page.url: 
+                            if "account.live.com" in page.url or "fido" in page.url: 
+                                raise ValueError("Stuck on protection page")
+                            if page.url.startswith("https://higgsfield.ai") and not page.locator('button:has-text("Continue with Microsoft")').is_visible():
                                 raise ValueError("Already logged in or stuck on protection page, skipping password")
                             
                             # Đợi ô password xuất hiện
-                            if is_v2_account:
                                 # Poll both states every 100ms: the modern Microsoft
                                 # page can render a button after the first DOM check.
                                 password_deadline = time.monotonic() + 10
