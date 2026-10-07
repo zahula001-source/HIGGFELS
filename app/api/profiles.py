@@ -1286,6 +1286,18 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                         continue
 
                     # Recover a Higgsfield SSO callback that remains on "Wait just a moment".
+                    # Tự động click Cloudflare Turnstile nếu gặp
+                    try:
+                        cf_checkbox = page.frame_locator('iframe').locator('input[type="checkbox"]').first
+                        if cf_checkbox.is_visible(timeout=500):
+                            print("Watchdog: Phát hiện Cloudflare Checkbox, đang tự động click...")
+                            cf_checkbox.click(timeout=1000, force=True)
+                            page.wait_for_timeout(3000)
+                            # Reset watchdog state since we just interacted
+                            watchdog_state_since = time.monotonic()
+                    except Exception:
+                        pass
+                        
                     callback_waiting = (
                         "/auth/sso-callback" in cur_url
                         or "Wait just a moment" in body_text
