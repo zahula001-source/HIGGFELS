@@ -589,9 +589,7 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
             )
             print(f"Task {task_id}: found existing {existing_status}; close Chrome without VPN", flush=True)
             return
-
-        _prepare_video_network(context, task_id, profile_id, generate_ip)
-            
+        
         # Tái sử dụng tab đầu tiên nếu có để tránh mở nhiều tab
         page = None
         for _ in range(5):
@@ -1556,9 +1554,20 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                     return firstItem ? firstItem.getAttribute('data-asset-id') : "none";
                 }""")
 
-                # ── BƯỚC 10: Kiểm tra Prompt, bật Use free gens và nhấn Generate ──────────────
-                print("=== BẬT FREE GENS VÀ NHẤN GENERATE ===")
-                video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "running", "message": "Đang nhấn nút Generate..."}
+                # ── BƯỚC 10: Đổi IP, Kiểm tra Prompt, bật Use free gens và nhấn Generate ──────────────
+                print("=== ĐỔI IP, BẬT FREE GENS VÀ NHẤN GENERATE ===")
+                
+                # Chuyển việc sinh IP sang bước này (sau khi đã upload xong, chuẩn bị Gen)
+                if generate_ip:
+                    print("  -> Bắt đầu đổi IP trước khi Generate...")
+                    _prepare_video_network(context, task_id, profile_id, generate_ip)
+                    print("  -> Đổi IP thành công, tải lại trang để nhận IP mới...")
+                    video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "running", "message": "Đã kết nối IP mới, đang tải lại trang..."}
+                    page.reload(timeout=30000)
+                    page.wait_for_load_state("domcontentloaded")
+                    page.wait_for_timeout(5000)
+                
+                video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "running", "message": "Đang bật Free gens và nhấn Generate..."}
         
                 generate_success = False
                 for gen_attempt in range(3):
