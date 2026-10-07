@@ -7,10 +7,8 @@ import shutil
 from pathlib import Path
 
 EXTENSIONS = [
-    "fjoaledfpmneenckfbpdfhkmimnjocfa",
     "cjmmdfeeeeefpgcnkfdakgpcdjbanpin",
     "fhhhgkkoemddgkeooalbffcmcknlombc",
-    "bihmplhobchoageeokmgbdihknkjbknd",
 ]
 
 DATA_DIR = Path(r"d:\CODE\higgsfield-VIDEOAI\data\extensions")
