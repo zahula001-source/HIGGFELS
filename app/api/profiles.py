@@ -1288,13 +1288,24 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                     # Recover a Higgsfield SSO callback that remains on "Wait just a moment".
                     # Tự động click Cloudflare Turnstile nếu gặp
                     try:
-                        cf_checkbox = page.frame_locator('iframe').locator('input[type="checkbox"]').first
-                        if cf_checkbox.is_visible(timeout=500):
-                            print("Watchdog: Phát hiện Cloudflare Checkbox, đang tự động click...")
-                            cf_checkbox.click(timeout=1000, force=True)
-                            page.wait_for_timeout(3000)
-                            # Reset watchdog state since we just interacted
-                            watchdog_state_since = time.monotonic()
+                        cf_clicked = False
+                        for f in page.frames:
+                            cf_label = f.locator('label:has(input[type="checkbox"])').filter(has_text="Verify you are human")
+                            if cf_label.count() > 0 and cf_label.first.is_visible(timeout=500):
+                                print(f"Watchdog: Phát hiện Cloudflare Checkbox, đang tự động click...")
+                                cf_label.first.click(timeout=1000)
+                                page.wait_for_timeout(3000)
+                                watchdog_state_since = time.monotonic()
+                                cf_clicked = True
+                                break
+                        if not cf_clicked:
+                            # Dự phòng tìm thẳng trên page
+                            cf_label_page = page.locator('label:has(input[type="checkbox"])').filter(has_text="Verify you are human")
+                            if cf_label_page.count() > 0 and cf_label_page.first.is_visible(timeout=500):
+                                print("Watchdog: Phát hiện Cloudflare Checkbox (main page), đang tự động click...")
+                                cf_label_page.first.click(timeout=1000)
+                                page.wait_for_timeout(3000)
+                                watchdog_state_since = time.monotonic()
                     except Exception:
                         pass
                         
