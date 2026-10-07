@@ -245,12 +245,12 @@ def get_chromium_runner_simple(profile_id, profile_name, user_data_dir, proxy_di
         if cfg.get('block_media'):
             def block_media_route(route, request):
                 if request.url.startswith("chrome-extension://"):
-                    route.continue_()
+                    route.fallback()
                     return
                 if request.resource_type in ['image', 'media', 'font'] and request.method == 'GET':
                     route.abort()
                 else:
-                    route.continue_()
+                    route.fallback()
             context.route('http*://**/*', block_media_route)
             log('Media blocking is ENABLED via route intercept (GET requests only).')
     except Exception as e:
@@ -259,26 +259,9 @@ def get_chromium_runner_simple(profile_id, profile_name, user_data_dir, proxy_di
     closed = [False]
     context.on("close", lambda *_: closed.__setitem__(0, True))
 
-    # Extension 1ClickVPN tu mo trang quang cao sau khi cai. Dong trang nay
-    # nhung van giu extension va cac tab nguoi dung binh thuong.
-    vpn_welcome_prefix = "https://www.1clickvpn.com/thank-you-ext/"
-    def suppress_vpn_welcome(page):
-        def check_navigation(frame):
-            if frame == page.main_frame and frame.url.startswith(vpn_welcome_prefix):
-                try:
-                    page.close()
-                    log("Closed 1ClickVPN welcome tab")
-                except:
-                    pass
-        page.on("framenavigated", check_navigation)
-        if page.url.startswith(vpn_welcome_prefix):
-            try: page.close()
-            except: pass
-    context.on("page", suppress_vpn_welcome)
-    for existing_page in context.pages:
-        suppress_vpn_welcome(existing_page)
+    from app.services.browser_navigation import install_vpn_welcome_guard
+    install_vpn_welcome_guard(context, log)
 
-        
     try:
         import time
         for _ in range(20):
@@ -563,8 +546,11 @@ def _launch_profile(profile, req=None):
         extensions_prefs = prefs.setdefault("extensions", {})
         pinned_extensions = extensions_prefs.setdefault("pinned_extensions", [])
         vpn_extension_id = "pphgdbgldlmicfdkhondlafkiomnelnk"
+        cookie_editor_id = "fhnmmidekmgocpjdceeffppcodigillk"
         if vpn_extension_id not in pinned_extensions:
             pinned_extensions.append(vpn_extension_id)
+        if cookie_editor_id not in pinned_extensions:
+            pinned_extensions.append(cookie_editor_id)
         
         pref_file.write_text(json.dumps(prefs, ensure_ascii=False), encoding="utf-8")
     except Exception as e:
@@ -575,6 +561,12 @@ def _launch_profile(profile, req=None):
     enable_ext_btn2 = req.enable_ext_btn2 if req else False
     enable_ext = req.enable_ext if req else False
     profile_extensions = getattr(profile, "extensions", "") if profile else ""
+    
+    # Auto-inject Cookie-Editor into ALL profiles
+    if cookie_editor_id not in profile_extensions:
+        profile_extensions = (profile_extensions + ";" + cookie_editor_id) if profile_extensions else cookie_editor_id
+        enable_ext = True
+        
     port = get_free_port()
     headless = getattr(req, 'headless', False) if req else False
     

@@ -61,9 +61,9 @@ def resolve_extension_paths(raw: str, profile_dir: Path, install: bool = True) -
         ext_id = None
         if "chromewebstore.google.com" in low or "/webstore/" in low:
             import re
-            m = re.search(r"/detail/([a-z0-9_-]+)/([a-zA-Z0-9]{32})", low)
+            m = re.search(r"/detail/(?:[a-z0-9_-]+/)?([a-z0-9]{32})", low)
             if m:
-                ext_id = m.group(2)
+                ext_id = m.group(1)
         elif len(item) == 32 and item.isalnum():
             ext_id = item
 
