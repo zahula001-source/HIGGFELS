@@ -1609,11 +1609,12 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                             raise Exception("ReloadRequired")
                             
                         if page.locator('text="Something went wrong"').is_visible(timeout=1000) or \
-                           page.locator('text="please try again"').is_visible(timeout=1000):
-                            print("  -> LỖI TẠO VIDEO: Web báo 'Something went wrong, please try again'!")
-                            # Break vòng lặp để rơi xuống block reload trang ngay lập tức
-                            generate_success = False
-                            break
+                           page.locator('text="please try again"').is_visible(timeout=1000) or \
+                           page.locator('text="Failed to fetch"').is_visible(timeout=1000) or \
+                           page.locator('text="Video duration must be between"').is_visible(timeout=1000):
+                            print("  -> LỖI TẠO VIDEO: Web báo lỗi (Failed to fetch / Something went wrong / Video duration...)!")
+                            # Ném Exception để master loop reload và check history
+                            raise Exception("ReloadAndCheck")
                     
                         # 5. Kiểm tra xem có thấy "Processing" không
                         try:
@@ -1627,7 +1628,7 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                     
                     except Exception as e:
                         if "History:" in str(e): raise e
-                        if "ReloadRequired" in str(e): raise e
+                        if "ReloadRequired" in str(e) or "ReloadAndCheck" in str(e): raise e
                         print(f"Lỗi nhấn Generate (Lần thử {gen_attempt+1}): {e}")
                 
                 if not generate_success:
@@ -1635,12 +1636,23 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
 
                 break # Thoát vòng lặp master_attempt nếu mọi thứ thành công
             except Exception as e:
-                if "ReloadRequired" in str(e):
+                if "ReloadRequired" in str(e) or "ReloadAndCheck" in str(e):
                     print(f"--- Lỗi Upload/Generate, tải lại trang và làm lại từ đầu (Lần {master_attempt+1}/3) ---")
                     video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "running", "message": "Bị lỗi web, đang tải lại trang để thử lại..."}
                     page.reload()
                     page.wait_for_load_state('domcontentloaded')
                     page.wait_for_timeout(5000)
+                    
+                    if "ReloadAndCheck" in str(e):
+                        try:
+                            print("  -> Kiểm tra xem video có đang được tạo không sau khi tải lại trang...")
+                            confirm_generation(page)
+                            print("  -> Tuy có thông báo lỗi trước đó, nhưng video ĐÃ ĐƯỢC TẠO VÀ ĐANG PROCESSING!")
+                            break # Thành công! Thoát master loop!
+                        except:
+                            print("  -> Không thấy Processing/Generating, sẽ làm lại từ đầu (bật free và tạo lại)...")
+                            pass
+                            
                     if master_attempt == 2:
                         raise Exception("Đã thử tải lại trang 3 lần nhưng vẫn thất bại!")
                     continue
@@ -1657,6 +1669,7 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
         next_reload_target = random.randint(240, 420)
         was_generating = False
         generation_recovery_reload_used = False
+        processing_wait_time = 0
         
         for i in range(1800):
             page.wait_for_timeout(1000)
@@ -1833,6 +1846,8 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                 
                 # Reset i (bộ đếm thời gian) về 0 để chờ thêm 10 phút nữa
                 i = 0
+                was_generating = False
+                processing_wait_time = 0
                 continue
             
             try:
@@ -1928,6 +1943,17 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
             except:
                 current_job_status = ''
                 pass
+                
+            if current_job_status != 'generating' and not was_generating:
+                processing_wait_time += 1
+            else:
+                processing_wait_time = 0
+
+            processing_timeout = int(video_tasks.get(task_id, {}).get("params", {}).get("processing_timeout", 120))
+            if processing_wait_time >= processing_timeout:
+                print(f"--- Task {task_id}: Đợi Processing quá {processing_timeout}s mà chưa Generating, tự động Cancel+Gen!")
+                video_tasks[task_id]["cancel_and_gen_requested"] = True
+                processing_wait_time = 0
 
             mins = i // 60
             secs = i % 60
