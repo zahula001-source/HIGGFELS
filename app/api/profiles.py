@@ -716,6 +716,7 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                                 raise ValueError("Already logged in or stuck on protection page, skipping password")
                             
                             # Đợi ô password xuất hiện
+                            if is_v2_account:
                                 # Poll both states every 100ms: the modern Microsoft
                                 # page can render a button after the first DOM check.
                                 password_deadline = time.monotonic() + 10
