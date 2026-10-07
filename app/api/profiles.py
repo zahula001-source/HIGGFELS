@@ -1653,6 +1653,28 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                             temp_email = f"{temp_user}@{temp_domain}"
                             print(f"Temp email for verification: {temp_email}")
                             
+                            # Cập nhật email khôi phục vào ms_account.txt và notes
+                            try:
+                                live_profile = manager.get_profile(profile_id)
+                                if live_profile:
+                                    ms_acc_file = Path(live_profile.user_data_dir) / "ms_account.txt"
+                                    if ms_acc_file.exists():
+                                        old_acc = ms_acc_file.read_text(encoding="utf-8").strip()
+                                        if old_acc and "|" in old_acc:
+                                            # Tránh nối chuỗi nếu đã có email khôi phục này
+                                            if temp_email not in old_acc:
+                                                new_acc = old_acc + f"|{temp_email}"
+                                                ms_acc_file.write_text(new_acc, encoding="utf-8")
+                                    
+                                    # Thêm vào thẻ notes
+                                    old_notes = live_profile.notes or ""
+                                    if temp_email not in old_notes:
+                                        live_profile.notes = (old_notes + f"\nMail khôi phục: {temp_email}").strip()
+                                        manager._save()
+                            except Exception as e:
+                                print(f"Lỗi khi lưu temp_email: {e}")
+                            
+                            
                             # Trang "Thêm địa chỉ email" - điền email temp vào
                             email_filled = False
                             try:
@@ -1723,6 +1745,26 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                                         temp_user2 = ''.join(random_mod.choices(string.ascii_lowercase, k=6)) + ''.join(random_mod.choices(string.digits, k=4))
                                         temp_email2 = f"{temp_user2}@{temp_domain2}"
                                         print(f"Retrying with new temp email: {temp_email2}")
+                                        
+                                        # Cập nhật email khôi phục thứ 2 vào ms_account.txt và notes
+                                        try:
+                                            live_profile = manager.get_profile(profile_id)
+                                            if live_profile:
+                                                ms_acc_file = Path(live_profile.user_data_dir) / "ms_account.txt"
+                                                if ms_acc_file.exists():
+                                                    old_acc = ms_acc_file.read_text(encoding="utf-8").strip()
+                                                    if old_acc and "|" in old_acc:
+                                                        if temp_email2 not in old_acc:
+                                                            new_acc = old_acc + f"|{temp_email2}"
+                                                            ms_acc_file.write_text(new_acc, encoding="utf-8")
+                                                
+                                                old_notes = live_profile.notes or ""
+                                                if temp_email2 not in old_notes:
+                                                    live_profile.notes = (old_notes + f"\nMail khôi phục (2): {temp_email2}").strip()
+                                                    manager._save()
+                                        except Exception as e:
+                                            print(f"Lỗi khi lưu temp_email2: {e}")
+                                        
                                         
                                         # Xóa email cũ và điền mới
                                         email_field2.triple_click()
