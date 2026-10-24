@@ -37,17 +37,6 @@ class ProfileManager:
             return []
 
     def _save(self):
-        # Bảo vệ: Không bao giờ ghi đè làm mất profile nếu file trên đĩa có nhiều hơn bộ nhớ
-        try:
-            disk_profiles = self._load()
-            if len(disk_profiles) > len(self.profiles):
-                known_ids = {p.id for p in self.profiles}
-                for dp in disk_profiles:
-                    if dp.id not in known_ids:
-                        self.profiles.append(dp)
-        except Exception:
-            pass
-
         tmp_file = PROFILES_FILE.with_suffix(".tmp")
         tmp_file.write_text(
             json.dumps([p.model_dump() for p in self.profiles], ensure_ascii=False, indent=2),
@@ -66,9 +55,7 @@ class ProfileManager:
 
     def list_profiles(self) -> List[Profile]:
         # Tự động nạp lại từ đĩa để luôn cập nhật danh sách mới nhất
-        loaded = self._load()
-        if len(loaded) >= len(self.profiles):
-            self.profiles = loaded
+        self.profiles = self._load()
         return self.profiles
 
     def get_profile(self, profile_id: str) -> Profile | None:
@@ -153,7 +140,13 @@ class ProfileManager:
                 shutil.rmtree(p.user_data_dir)
         except:
             pass
-        self.profiles = [x for x in self.profiles if x.id != profile_id]
+        try:
+            alt_c136 = BROWSERS_DIR / f"chrome136_{profile_id}"
+            if alt_c136.exists():
+                shutil.rmtree(alt_c136)
+        except:
+            pass
+        self.profiles = [x for x in self._load() if x.id != profile_id]
         self._save()
         return True
 
