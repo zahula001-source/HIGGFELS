@@ -47,8 +47,14 @@ class ProfileManager:
             return []
 
     def _save(self):
-        with open(PROFILES_FILE, "w", encoding="utf-8") as f:
-            json.dump([p.model_dump() for p in self.profiles], f, ensure_ascii=False, indent=2)
+        # Ghi vào file tạm trước, rồi rename để tránh corrupt nếu tắt giữa chừng
+        tmp_file = PROFILES_FILE.with_suffix(".tmp")
+        tmp_file.write_text(
+            json.dumps([p.model_dump() for p in self.profiles], ensure_ascii=False, indent=2),
+            encoding="utf-8"
+        )
+        tmp_file.replace(PROFILES_FILE)
+
 
     def _save_fingerprint_file(self, profile: Profile):
         try:
