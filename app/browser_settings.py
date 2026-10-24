@@ -1,5 +1,6 @@
 """Project-local CloakBrowser v146 selection; never modifies the user's license."""
 import os
+import json
 import shutil
 import tempfile
 import urllib.request
@@ -11,6 +12,7 @@ BINARY = Path.home() / ".cloakbrowser" / ("chromium-" + VERSION) / "chrome.exe"
 CHROME_EXTENSION_BINARY = Path(__file__).resolve().parent.parent / "data" / "browser_bins" / "chrome-136" / "chrome-win64" / "chrome.exe"
 CHROME_EXTENSION_URL = "https://storage.googleapis.com/chrome-for-testing-public/136.0.7103.113/win64/chrome-win64.zip"
 ENGINE = os.environ.setdefault("HIGGSFIELD_BROWSER_ENGINE", "chrome").lower()
+CONFIG_PATH = Path(__file__).resolve().parent.parent / "data" / "config.json"
 if ENGINE == "cloakbrowser":
     if not BINARY.is_file():
         raise RuntimeError(f"CloakBrowser v146 binary not found: {BINARY}")
@@ -46,14 +48,83 @@ def browser_launch_options():
         return {"executable_path": str(BINARY)}
     return {"executable_path": str(ensure_chrome_extension_binary())}
 
-def get_global_args(proxy=None, engine=None):
+def algodata_disabled():
+    """Disable only the AlgoData proxy; 1ClickVPN remains independent."""
+    try:
+        return bool(json.loads(CONFIG_PATH.read_text(encoding="utf-8")).get("disable_algodata"))
+    except (OSError, ValueError):
+        return False
+
+
+def network_mode(generate_ip=False):
+    return ("vpn" if generate_ip else "direct") if algodata_disabled() else "algodata"
+
+
+def filter_proxy_extensions(paths, generate_ip=False):
+    """Giữ các extension VPN cần thiết: Khi sinh IP (generate_ip), nạp cả Hola VPN và 1ClickVPN để có thể tự động fallback."""
+    proxy_off = algodata_disabled()
+
+    oneclick_manifest = CONFIG_PATH.parent / "extensions" / "1clickvpn" / "manifest.json"
+    hola_manifest = CONFIG_PATH.parent / "extensions" / "hola-vpn" / "manifest.json"
+    try:
+        oneclick_key = json.loads(oneclick_manifest.read_text(encoding="utf-8-sig")).get("key")
+    except (OSError, ValueError):
+        oneclick_key = None
+
+    allowed = []
+    seen = set()
+    for path in dict.fromkeys(paths):
+        try:
+            manifest = json.loads((Path(path) / "manifest.json").read_text(encoding="utf-8-sig"))
+        except (OSError, ValueError):
+            continue
+        permissions = manifest.get("permissions", []) + manifest.get("optional_permissions", [])
+        m_key = manifest.get("key")
+        resolved = Path(path).resolve()
+        is_oneclick = (
+            resolved == oneclick_manifest.parent.resolve()
+            or bool(oneclick_key and m_key == oneclick_key)
+            or "1clickvpn" in resolved.name.casefold()
+            or "1clickvpn" in str(manifest.get("name", "")).casefold()
+        )
+        is_hola = (
+            resolved == hola_manifest.parent.resolve()
+            or "hola-vpn" in resolved.name.casefold()
+            or "hola vpn" in str(manifest.get("short_name", "")).casefold()
+            or "hola vpn" in str(manifest.get("homepage_url", "")).casefold()
+        )
+
+        if is_oneclick or is_hola:
+            vpn_name = "1clickvpn" if is_oneclick else "hola-vpn"
+            if vpn_name in seen:
+                continue
+            seen.add(vpn_name)
+        elif proxy_off and "proxy" in permissions:
+            continue
+        allowed.append(str(resolved))
+
+    # Đảm bảo khi generate_ip thì cả 2 extension Hola và 1ClickVPN đều có mặt để fallback
+    if generate_ip:
+        if "1clickvpn" not in seen and oneclick_manifest.parent.is_dir():
+            allowed.append(str(oneclick_manifest.parent.resolve()))
+            seen.add("1clickvpn")
+        if "hola-vpn" not in seen and hola_manifest.parent.is_dir():
+            allowed.append(str(hola_manifest.parent.resolve()))
+            seen.add("hola-vpn")
+
+    return allowed
+
+
+def get_global_args(proxy=None, engine=None, generate_ip=False):
     import json
     selected_engine = (engine or os.environ.get("HIGGSFIELD_BROWSER_ENGINE", "chrome")).lower()
     try:
-        config_path = Path(__file__).parent.parent / "data" / "config.json"
+        config_path = CONFIG_PATH
         if config_path.exists():
             cfg = json.loads(config_path.read_text(encoding="utf-8"))
             extra = []
+            if cfg.get("disable_algodata") and not generate_ip:
+                extra.append("--no-proxy-server")
             if selected_engine != "cloakbrowser":
                 extra.append("--disable-features=DisableLoadExtensionCommandLineSwitch")
             if cfg.get("lightweight_cache"):
@@ -86,6 +157,8 @@ def get_global_args(proxy=None, engine=None):
     except:
         pass
     fallback = ["--force-webrtc-ip-handling-policy=disable_non_proxied_udp", "--enforce-webrtc-ip-permission-check"]
+    if algodata_disabled() and not generate_ip:
+        fallback.append("--no-proxy-server")
     if selected_engine != "cloakbrowser":
         fallback.insert(0, "--disable-features=DisableLoadExtensionCommandLineSwitch")
     return fallback
@@ -93,14 +166,8 @@ def get_global_args(proxy=None, engine=None):
 def get_algo_proxy(profile_name: str) -> dict:
     import json
     from pathlib import Path
-    try:
-        config_path = Path(__file__).parent.parent / "data" / "config.json"
-        if config_path.exists():
-            cfg = json.loads(config_path.read_text(encoding="utf-8"))
-            if cfg.get("disable_algodata"):
-                return None
-    except:
-        pass
+    if algodata_disabled():
+        return None
 
     import hashlib
     # 8-char session id from profile name for sticky session. Append _v2 for fresh IPs.

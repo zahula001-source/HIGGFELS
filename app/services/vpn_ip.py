@@ -505,7 +505,7 @@ def _disable_hola_extension(context, hola_id: str) -> None:
     try:
         page.goto("chrome://extensions/", wait_until="domcontentloaded", timeout=10000)
         page.wait_for_timeout(1500)
-        # chrome://extensions dùng shadow DOM — toggle qua JS evaluate
+        # chrome://extensions dùng shadow DOM đa tầng — tìm và toggle qua JS
         disabled = page.evaluate("""(holaId) => {
             function shadowQuery(root, selector) {
                 const el = root.querySelector(selector);
@@ -518,18 +518,27 @@ def _disable_hola_extension(context, hola_id: str) -> None:
                 }
                 return null;
             }
-            // extensions-manager -> extensions-item[id=holaId] -> toggle
-            const manager = document.querySelector('extensions-manager');
-            if (!manager || !manager.shadowRoot) return false;
-            const items = manager.shadowRoot.querySelectorAll('extensions-item');
-            for (const item of items) {
-                if (item.getAttribute('id') !== holaId) continue;
-                const toggle = shadowQuery(item.shadowRoot, 'cr-toggle');
-                if (toggle && toggle.checked) {
-                    toggle.click();
-                    return true;
+            function shadowQueryAll(root, selector) {
+                let results = Array.from(root.querySelectorAll(selector));
+                for (const child of root.querySelectorAll('*')) {
+                    if (child.shadowRoot) {
+                        results = results.concat(shadowQueryAll(child.shadowRoot, selector));
+                    }
                 }
-                return false;
+                return results;
+            }
+
+            const items = shadowQueryAll(document, 'extensions-item');
+            for (const item of items) {
+                const itemId = item.getAttribute('id') || item.id || '';
+                if (itemId.toLowerCase() === (holaId || '').toLowerCase()) {
+                    const toggle = shadowQuery(item.shadowRoot || item, 'cr-toggle');
+                    if (toggle && toggle.checked) {
+                        toggle.click();
+                        return true;
+                    }
+                    return false;
+                }
             }
             return false;
         }""", hola_id)
@@ -537,7 +546,7 @@ def _disable_hola_extension(context, hola_id: str) -> None:
             print(f"  [VPN] Đã tắt Hola VPN extension ({hola_id})", flush=True)
         else:
             print(f"  [VPN] Hola extension không tắt được qua shadow DOM (id={hola_id}), tiếp tục dùng 1ClickVPN", flush=True)
-        page.wait_for_timeout(1500)
+        page.wait_for_timeout(1000)
     except Exception as e:
         print(f"  [VPN] Không tắt được Hola extension: {e}", flush=True)
     finally:
