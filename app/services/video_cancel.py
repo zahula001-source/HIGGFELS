@@ -7,6 +7,7 @@ from pathlib import Path
 from app.core.state import video_tasks
 from app.manager import manager
 from app.browser_settings import browser_launch_options
+from app.services.higgsfield_login import read_free_gens
 
 def run_cancel_gen_automation(profile_id: str, is_headless: bool, task_id: str):
     import time
@@ -146,18 +147,14 @@ def _do_cancel(context, task_id):
     }""")
     page.wait_for_timeout(4000)
     
-    # 4. Check Use free gens
-    page.evaluate("""() => {
-        const labels = Array.from(document.querySelectorAll('label'));
-        const freeLabel = labels.find(l => l.innerText && l.innerText.includes('Use free gens'));
-        if (freeLabel) {
-            const toggle = freeLabel.parentElement.querySelector('button[role="switch"]');
-            if (toggle && toggle.getAttribute('aria-checked') !== 'true') {
-                toggle.click();
-            }
+    # 4. Enable free generations when available before submitting.
+    free_info = read_free_gens(page, timeout_ms=8000)
+    if free_info and free_info.get("count") != 0 and not free_info.get("enabled"):
+        video_tasks[task_id] = {
+            "status": "error",
+            "message": "Còn free generations nhưng không bật được; đã dừng để tránh trừ credit.",
         }
-    }""")
-    page.wait_for_timeout(1000)
+        return
     
     # 5. Click Generate
     page.evaluate("""() => {

@@ -1,3 +1,4 @@
+from app.services.video_history import confirm_generation, refresh_video_history
 import asyncio
 import threading
 import time
@@ -16,13 +17,23 @@ from app.models import ProfileCreate, LaunchRequest
 from app.manager import manager
 from app.browser import launch_profile_with_fallback, close_profile, is_running, list_running
 from app.browser_settings import browser_launch_options
+from app.services.browser_navigation import install_vpn_welcome_guard
+from app.services.higgsfield_popups import install_upgrade_plan_guard
+from app.services.higgsfield_login import read_free_gens
 
-def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool = False, _already_tried_login: bool = False, cancel_first: bool = False, engine: str = "chrome"):
+def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool = False, _already_tried_login: bool = False, cancel_first: bool = False, engine: str = "chrome", generate_ip: bool = False):
     from playwright.sync_api import sync_playwright
     import time, os
     from pathlib import Path
     
-    video_tasks[task_id] = {"status": "running", "message": "Đang mở trình duyệt để kiểm tra..."}
+    # Giữ metadata của task (đặc biệt profile_id) để nút Cancel + gen có thể
+    # tìm đúng task kể cả khi giao diện bị khôi phục lại.
+    video_tasks[task_id] = {
+        **video_tasks.get(task_id, {}),
+        "status": "running",
+        "message": "Đang mở trình duyệt để kiểm tra...",
+        "params": {**video_tasks.get(task_id, {}).get("params", {}), "profile_id": profile_id, "check_task": True},
+    }
     profile = manager.get_profile(profile_id)
     if not profile:
         video_tasks[task_id] = {"status": "error", "message": "Profile not found"}
@@ -34,10 +45,13 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
         if True:
             # Nếu chrome đang mở, ưu tiên dùng chrome đó
             from app.browser import prepare_chrome_136_profile
+            from app.browser import ensure_profile_network_mode
+            ensure_profile_network_mode(profile, generate_ip=generate_ip, engine=engine)
             runtime_dir = profile.user_data_dir if engine == "cloakbrowser" else prepare_chrome_136_profile(profile.user_data_dir)
             port_file = Path(runtime_dir) / "cdp_port.txt"
             context = None
             connected_via_cdp = False
+            browser_was_already_open = False
             if port_file.exists():
                 try:
                     port = int(port_file.read_text().strip())
@@ -45,6 +59,7 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                     print(f"Đã kết nối vào Chrome đang mở của profile {profile.name} qua CDP port {port}")
                     context = browser.contexts[0]
                     connected_via_cdp = True
+                    browser_was_already_open = True
                 except Exception as e:
                     pass
             
@@ -92,7 +107,18 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                     extension_dirs.extend(resolve_extension_paths(profile.extensions, Path(runtime_dir)))
                 except Exception as e:
                     print(f"Err loading profile extensions: {e}")
-                extension_dirs = list(dict.fromkeys(extension_dirs))
+                for vpn_name in ("1clickvpn", "urbanvpn"):
+                    vpn_dir = Path(DATA_DIR) / "extensions" / vpn_name
+                    if (vpn_dir / "manifest.json").is_file():
+                        extension_dirs.append(str(vpn_dir.resolve()))
+                from app.browser_settings import filter_proxy_extensions
+                extension_dirs = filter_proxy_extensions(extension_dirs, generate_ip=generate_ip)
+                from app.extensions import pin_oneclick_extension
+                pin_oneclick_extension(runtime_dir)
+                from app.browser_settings import algodata_disabled
+                if algodata_disabled() and not generate_ip:
+                    from app.extensions import direct_connection_extension
+                    extension_dirs.append(direct_connection_extension(runtime_dir))
                 if extension_dirs:
                     joined_extensions = ",".join(extension_dirs)
                     args.append(f"--disable-extensions-except={joined_extensions}")
@@ -114,7 +140,7 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
 
                 try:
                     from app.browser_settings import browser_launch_options, get_global_args
-                    args.extend(get_global_args(raw_proxy, engine=engine))
+                    args.extend(get_global_args(raw_proxy, engine=engine, generate_ip=generate_ip))
                     if engine == "cloakbrowser":
                         from app.browser_settings import BINARY
                         b_opts = {"executable_path": str(BINARY)}
@@ -153,7 +179,7 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                             if request.resource_type in ['image', 'media', 'font'] and request.method == 'GET':
                                 route.abort()
                             else:
-                                route.continue_()
+                                route.fallback()
                         context.route('**/*', block_media_route)
                 except: pass
                 
@@ -169,6 +195,9 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                         time.sleep(0.5)
                 except: pass
             
+            install_vpn_welcome_guard(context)
+            install_upgrade_plan_guard(context)
+
             # Tìm tab higgsfield.ai đã mở sẵn, nếu không có thì lấy tab đầu tiên
             page = None
             for pg in context.pages:
@@ -298,6 +327,8 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                     is_headless,
                     _already_tried_login=True,
                     engine=engine,
+                    cancel_first=cancel_first,
+                    generate_ip=generate_ip,
                 )
                 return
             
@@ -331,6 +362,8 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
             
             if cancel_first:
                 video_tasks[task_id]["cancel_and_gen_requested"] = True
+                video_tasks[task_id]["generate_ip_before_cancel"] = generate_ip
+                video_tasks[task_id].setdefault("restart_browser_before_cancel", browser_was_already_open)
                 
             while True:
                 try:
@@ -345,10 +378,69 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                         return
                     if video_tasks.get(task_id, {}).get("cancel_and_gen_requested"):
                         print(f"--- Task {task_id} (Check) nhận lệnh Cancel + Gen. Thực thi thao tác...")
+                        generate_ip_before_cancel = bool(
+                            video_tasks[task_id].get("generate_ip_before_cancel")
+                        )
                         video_tasks[task_id]["cancel_and_gen_requested"] = False
-                        video_tasks[task_id] = {"status": "running", "message": "Đang thao tác Cancel & Gen lại..."}
+                        video_tasks[task_id] = {
+                            **video_tasks.get(task_id, {}),
+                            "status": "running",
+                            "message": "Đang thao tác Cancel & Gen lại...",
+                        }
                     
                         try:
+                            # Mỗi lệnh gửi vào task đang chạy phải reset Chrome.
+                            # Chỉ bỏ reset cho lệnh khởi tạo vừa mở Chrome mới.
+                            resume_url = page.url
+                            if video_tasks[task_id].pop("restart_browser_before_cancel", True):
+                                video_tasks[task_id]["message"] = "Đang đóng Chrome trước khi đổi IP..."
+                                old_context = context
+                                if connected_via_cdp:
+                                    old_context.browser.new_browser_cdp_session().send("Browser.close")
+                                try:
+                                    close_profile(profile_id)
+                                except Exception as close_error:
+                                    print(f"Cancel + Gen (Check): lỗi đóng Chrome cũ: {close_error}")
+                                try:
+                                    old_context.close()
+                                except Exception:
+                                    pass
+                                time.sleep(2)
+
+                                video_tasks[task_id]["message"] = "Đang mở lại Chrome..."
+                                from app.services.video_gen import _open_browser_with_fp
+                                context, connected_via_cdp = _open_browser_with_fp(
+                                    p, profile, None, attempt=1,
+                                    enable_ext_btn2=False, is_headless=is_headless,
+                                    engine=engine, generate_ip=True,
+                                    reuse_existing=False,
+                                )
+                                page = context.pages[0] if context.pages else context.new_page()
+                            else:
+                                video_tasks[task_id]["message"] = "Chrome vừa mở xong, đang đổi IP mới..."
+
+                            video_tasks[task_id]["message"] = "Chrome đã mở, đang đổi IP mới..."
+                            from app.services.vpn_ip import connect_unique_vpn_ip
+                            vpn_info = connect_unique_vpn_ip(context, profile_id)
+                            print(f"Cancel + Gen (Check) đổi IP thành công: {vpn_info['ip']} ({vpn_info['country']})")
+                            page.goto(resume_url or "https://higgsfield.ai/ai/video?model=genjutsu", timeout=30000)
+                            page.wait_for_load_state("domcontentloaded")
+                            page.wait_for_timeout(5000)
+
+                            # Nếu job đã tự chuyển sang Generating thì không được
+                            # Cancel/Generate lần nữa, chỉ tiếp tục chờ video.
+                            resumed_status = None
+                            try:
+                                body_text = page.locator("body").inner_text(timeout=3000)
+                                if any(line.strip() == "Generating" for line in body_text.splitlines()):
+                                    resumed_status = "Generating"
+                            except Exception:
+                                pass
+                            if resumed_status == "Generating":
+                                video_tasks[task_id]["message"] = "Video đang Generating sau khi đổi IP, tiếp tục chờ..."
+                                print(f"--- Task {task_id} (Check): đã thấy Generating, bỏ qua Cancel + Gen lần nữa.")
+                                continue
+
                             # 1. Click Copy
                             print(f"--- Task {task_id} (Cancel+Gen): Đang tìm thẻ Processing và ép hiện nút Copy/Cancel...")
                             page.evaluate("""() => {
@@ -420,53 +512,110 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                             # 4. Tải lại trang, Check Free Gens, và Click Generate (Có retry)
                             for retry_gen in range(3):
                                 print(f"--- Task {task_id} (Cancel+Gen): Đang reload lại trang (Lần {retry_gen + 1}/3)...")
-                                page.reload()
-                                page.wait_for_load_state('domcontentloaded')
+                                refresh_video_history(page)
                                 print(f"--- Task {task_id} (Cancel+Gen): Đợi thêm 5s sau khi reload cho web load hẳn...")
                                 page.wait_for_timeout(5000)
+
+                                # Higgsfield can reject the selected reference
+                                # video when its duration is outside 4..30s.
+                                # Remove that media, reopen the picker, and use
+                                # the first available video before retrying Gen.
+                                duration_error = page.get_by_text(
+                                    "Video duration must be between 4 and 30 seconds",
+                                    exact=True,
+                                )
+                                if duration_error.count() and duration_error.last.is_visible(timeout=800):
+                                    print(f"--- Task {task_id} (Cancel+Gen): Phát hiện video sai thời lượng, đang xóa video và chọn lại...")
+                                    remove_video = page.locator('button[aria-label="Remove video"]:visible').last
+                                    if remove_video.count():
+                                        remove_video.click(timeout=3000, force=True)
+                                        page.wait_for_timeout(800)
+
+                                    add_reference = page.locator(
+                                        'text=/Add a reference video to (extract motion|edit)/i'
+                                    ).last
+                                    if add_reference.count() and add_reference.is_visible(timeout=3000):
+                                        add_reference.click(timeout=3000, force=True)
+                                        page.wait_for_timeout(1500)
+
+                                        # The first tile is often "Upload media";
+                                        # choose the first actual asset tile after it.
+                                        tiles = page.locator('div[data-assets-picker-selectable-card="true"]')
+                                        chosen = False
+                                        for tile_index in range(tiles.count()):
+                                            tile = tiles.nth(tile_index)
+                                            tile_text = (tile.inner_text(timeout=500) or "").lower()
+                                            if "upload media" in tile_text:
+                                                continue
+                                            try:
+                                                tile.click(timeout=2000, force=True)
+                                                chosen = True
+                                                break
+                                            except Exception:
+                                                pass
+                                        if not chosen:
+                                            # Fallback for the current picker markup:
+                                            # skip the Upload media card and click
+                                            # the next visible button/card.
+                                            page.evaluate("""() => {
+                                                const candidates = [...document.querySelectorAll(
+                                                    'button, [role="button"], div[tabindex="0"]'
+                                                )].filter(el => el.getClientRects().length);
+                                                const asset = candidates.find(el => {
+                                                    const text = (el.innerText || '').trim().toLowerCase();
+                                                    return text && !text.includes('upload media') &&
+                                                        (el.querySelector('video') || el.querySelector('img') ||
+                                                         el.querySelector('[data-testid*="video"]'));
+                                                });
+                                                if (asset) HTMLElement.prototype.click.call(asset);
+                                            }""")
+                                        page.wait_for_timeout(1500)
+                                        print(f"--- Task {task_id} (Cancel+Gen): Đã chọn lại video đầu tiên trong thư viện.")
                             
-                                # 5. Check Use free gens
+                                # 5. Find and enable Use free gens before Generate.
                                 print(f"--- Task {task_id} (Cancel+Gen): Kiểm tra công tắc 'Use free gens'...")
-                                page.evaluate("""() => {
-                                    const switches = Array.from(document.querySelectorAll('button[role="switch"]'));
-                                    for (const sw of switches.reverse()) {
-                                        let parent = sw.parentElement;
-                                        let text = '';
-                                        while (parent && parent.tagName !== 'BODY') {
-                                            text = parent.innerText || '';
-                                            if (text.includes('Use free gens')) {
-                                                if (sw.getAttribute('aria-checked') !== 'true') {
-                                                    sw.dispatchEvent(new PointerEvent('pointerdown', {bubbles: true}));
-                                                    sw.dispatchEvent(new PointerEvent('pointerup', {bubbles: true}));
-                                                    sw.click();
-                                                }
-                                                return;
-                                            }
-                                            parent = parent.parentElement;
-                                        }
+                                free_info = read_free_gens(page, timeout_ms=5000)
+                                switch_state = {
+                                    "found": free_info is not None,
+                                    "enabled": bool(free_info and free_info.get("enabled")),
+                                    "count": free_info.get("count") if free_info else None,
+                                }
+                                if not switch_state["found"]:
+                                    print(f"--- Task {task_id} (Cancel+Gen): Chưa thấy Use free gens, đợi giao diện render thêm...")
+                                    page.wait_for_timeout(4000)
+                                    free_info = read_free_gens(page, timeout_ms=3000)
+                                    switch_state = {
+                                        "found": free_info is not None,
+                                        "enabled": bool(free_info and free_info.get("enabled")),
+                                        "count": free_info.get("count") if free_info else None,
                                     }
-                                }""")
-                                page.wait_for_timeout(2000)
-                            
-                                # 6. Click Generate
+
+                                if not switch_state.get("found"):
+                                    print(f"--- Task {task_id} (Cancel+Gen): ❌ Không tìm thấy Use free gens, bỏ qua Generate và reload lại...")
+                                    continue
+                                if switch_state["count"] != 0 and not switch_state["enabled"]:
+                                    print(f"--- Task {task_id} (Cancel+Gen): ❌ Free gen còn nhưng chưa bật được, không bấm Generate để tránh trừ credit.")
+                                    continue
+
+                                # 6. Click Generate only after the switch has been handled.
                                 print(f"--- Task {task_id} (Cancel+Gen): Đang bấm nút Generate và chuyển về chế độ chờ...")
                                 page.evaluate("""() => {
-                                    const btns = Array.from(document.querySelectorAll('button'));
-                                    const genBtn = btns.find(b => b.innerText && (b.innerText.includes('Generate') || b.innerText.includes('Tạo video')));
-                                    if (genBtn && !genBtn.disabled) {
-                                        genBtn.dispatchEvent(new PointerEvent('pointerdown', {bubbles: true}));
-                                        genBtn.dispatchEvent(new PointerEvent('pointerup', {bubbles: true}));
-                                        genBtn.click();
-                                    }
+                                    const genBtn = document.querySelector('[data-tour-anchor="tour-generate-button"] button[type="submit"]') ||
+                                        [...document.querySelectorAll('button[type="submit"]')].find(b =>
+                                            !!b.getClientRects().length && !b.disabled &&
+                                            /^Generate\\b/i.test((b.innerText || '').trim())
+                                        );
+                                    if (genBtn) HTMLElement.prototype.click.call(genBtn);
                                 }""")
                                 page.wait_for_timeout(4000)
                             
                                 # Kiểm tra xem có Processing chưa
-                                has_processing = page.evaluate("""() => {
-                                    const spans = Array.from(document.querySelectorAll('span, div'));
-                                    return spans.some(el => el.innerText && el.innerText.trim() === 'Processing');
-                                }""")
-                            
+                                try:
+                                    confirm_generation(page)
+                                    has_processing = True
+                                except Exception:
+                                    has_processing = False
+
                                 if has_processing:
                                     print(f"--- Task {task_id} (Cancel+Gen): ✅ Đã thấy thẻ Processing xuất hiện, quá trình tạo bắt đầu thành công!")
                                     break
@@ -483,10 +632,10 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                     # Lấy trạng thái hiện tại
                     # Kiểm tra thời gian để tải lại trang định kỳ
                     if time.time() > next_reload_time:
-                        print(f"--- Task {task_id}: Đã đến giờ reload định kỳ (Random +- 5 phút)...")
-                        video_tasks[task_id]["message"] = f"🔄 Đang tải lại trang web để cập nhật tiến trình..."
+                        print(f"--- Task {task_id}: Cập nhật Motion Library → History định kỳ...")
+                        video_tasks[task_id]["message"] = "🔄 Đang chuyển Motion Library → History để cập nhật tiến trình..."
                         try:
-                            page.reload(timeout=30000)
+                            refresh_video_history(page)
                             page.wait_for_load_state('domcontentloaded')
                             page.wait_for_timeout(5000)
                         except: pass

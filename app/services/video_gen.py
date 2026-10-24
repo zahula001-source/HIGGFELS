@@ -18,23 +18,29 @@ from app.manager import manager
 from app.browser import launch_profile_with_fallback, close_profile, is_running, list_running
 from app.browser_settings import browser_launch_options
 from app.services.browser_navigation import install_vpn_welcome_guard
+from app.services.higgsfield_popups import install_upgrade_plan_guard
+from app.services.higgsfield_quiz import handle_quiz_step
+from app.services.higgsfield_login import read_free_gens
 
-def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False, is_headless=False, engine="chrome", generate_ip=False):
+def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False, is_headless=False, engine="chrome", generate_ip=False, reuse_existing=True):
     """Mở trình duyệt với Random FP và kích hoạt extension
     only_navigator=True: chỉ bật nút 1 (Spoof Navigator) - dùng khi cần tải ảnh
     close_old_tabs=True: đóng hết các tab cũ khi mở lên (chỉ dùng cho video creation)
     """
     # Nếu chrome đang mở, ưu tiên dùng chrome đó
     from app.browser import prepare_chrome_136_profile
+    from app.browser import ensure_profile_network_mode
+    ensure_profile_network_mode(profile, generate_ip=generate_ip, engine=engine)
     runtime_dir = profile.user_data_dir if engine == "cloakbrowser" else prepare_chrome_136_profile(profile.user_data_dir)
     port_file = Path(runtime_dir) / "cdp_port.txt"
-    if port_file.exists():
+    if reuse_existing and port_file.exists():
         try:
             port = int(port_file.read_text().strip())
             browser = p.chromium.connect_over_cdp(f"http://localhost:{port}")
             print(f"Đã kết nối vào Chrome đang mở của profile {profile.name} qua CDP port {port}")
             context = browser.contexts[0]
             install_vpn_welcome_guard(context)
+            install_upgrade_plan_guard(context)
             return context, True
         except Exception as e:
             pass
@@ -82,23 +88,18 @@ def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False
     except Exception as e:
         print(f"Err loading profile extensions: {e}")
     if generate_ip:
-        vpn_dir = Path(DATA_DIR) / "extensions" / "1clickvpn"
-        if not (vpn_dir / "manifest.json").is_file():
-            raise RuntimeError("Sinh IP: chưa cài tiện ích 1ClickVPN cho trình duyệt")
-        vpn_key = json.loads((vpn_dir / "manifest.json").read_text(encoding="utf-8-sig")).get("key")
-        has_vpn = False
-        for extension_dir in extension_dirs:
-            try:
-                manifest = json.loads((Path(extension_dir) / "manifest.json").read_text(encoding="utf-8-sig"))
-                if vpn_key and manifest.get("key") == vpn_key:
-                    has_vpn = True
-                    break
-            except (OSError, ValueError):
-                pass
-        if not has_vpn:
-            extension_dirs.append(str(vpn_dir.resolve()))
-
-        
+        oneclick_dir = Path(DATA_DIR) / "extensions" / "1clickvpn"
+        urban_dir = Path(DATA_DIR) / "extensions" / "urbanvpn"
+        has_any_vpn = (oneclick_dir / "manifest.json").is_file() or (urban_dir / "manifest.json").is_file()
+        if not has_any_vpn:
+            raise RuntimeError("Sinh IP: chưa cài tiện ích 1ClickVPN hoặc UrbanVPN cho trình duyệt")
+        # Add both candidates temporarily; filter_proxy_extensions() keeps exactly
+        # one provider, selected by active_vpn.txt, before Chrome is launched.
+        for vpn_dir in (oneclick_dir, urban_dir):
+            if (vpn_dir / "manifest.json").is_file():
+                resolved = str(vpn_dir.resolve())
+                if resolved not in extension_dirs:
+                    extension_dirs.append(resolved)
     try:
         global_ext_dir = Path(DATA_DIR) / "extensions"
         if global_ext_dir.exists():
@@ -108,7 +109,17 @@ def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False
     except Exception as e:
         print(f"Global extension load err: {e}")
         
-    extension_dirs = list(dict.fromkeys(extension_dirs))
+    from app.browser_settings import filter_proxy_extensions
+    extension_dirs = filter_proxy_extensions(extension_dirs, generate_ip=generate_ip)
+    try:
+        from app.extensions import pin_active_vpn_extension
+        pin_active_vpn_extension(runtime_dir)
+    except Exception as exc:
+        print(f"VPN pin update failed: {exc}")
+    from app.browser_settings import algodata_disabled
+    if algodata_disabled() and not generate_ip:
+        from app.extensions import direct_connection_extension
+        extension_dirs.append(direct_connection_extension(runtime_dir))
     if extension_dirs:
         joined_extensions = ",".join(extension_dirs)
         args.append(f"--disable-extensions-except={joined_extensions}")
@@ -128,7 +139,7 @@ def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False
 
     try:
         from app.browser_settings import get_global_args
-        args.extend(get_global_args(raw_proxy, engine=engine))
+        args.extend(get_global_args(raw_proxy, engine=engine, generate_ip=generate_ip))
     except Exception as e:
         pass
         
@@ -145,7 +156,7 @@ def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False
     if engine == "cloakbrowser":
         from cloakbrowser import launch_persistent_context
         # CloakBrowser tự động xử lý extension_paths và ignore_default_args
-        cloak_args = [a for a in args if not a.startswith("--load-extension") and not a.startswith("--disable-extensions")]
+        cloak_args = [a for a in args if not a.startswith("--load-extension=") and not a.startswith("--disable-extensions-except=")]
         cloak_kwargs = {
             "user_data_dir": runtime_dir,
             "headless": False,
@@ -158,7 +169,16 @@ def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False
         if extension_dirs:
             cloak_kwargs["extension_paths"] = extension_dirs
             
-        context = launch_persistent_context(**cloak_kwargs)
+        if p is None:
+            context = launch_persistent_context(**cloak_kwargs)
+        else:
+            # Dùng Playwright hiện tại; không khởi tạo Sync API lần hai.
+            from app.browser_settings import BINARY
+            context = p.chromium.launch_persistent_context(
+                runtime_dir, executable_path=str(BINARY), headless=False,
+                proxy=algo_proxy, ignore_default_args=ignore_args, args=args,
+                accept_downloads=True, downloads_path=str(Path.home() / "Downloads"),
+            )
     else:
         context = p.chromium.launch_persistent_context(
             runtime_dir,
@@ -184,6 +204,7 @@ def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False
     except: pass
 
     install_vpn_welcome_guard(context)
+    install_upgrade_plan_guard(context)
 
     # Chrome tự xử lý download 100% native - Không chặn, không xử lý bằng Playwright để tránh crash/lỗi .crdownload
 
@@ -709,13 +730,16 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                             break
                     except: pass
                     
-                    # 1. Quét tìm chữ "Use free gens" (dấu hiệu chắc chắn đã login)
+                    # 1. Quét tìm công tắc free generations (dấu hiệu chắc chắn đã login)
                     try:
-                        # Dùng JS cho chắc vì text có thể nằm rải rác
-                        has_free_gens = page.evaluate("() => document.body.innerText.toLowerCase().includes('use free gens')")
+                        has_free_gens = page.locator(
+                            '[data-generation-free-gens="true"], '
+                            '[role="switch"][aria-label="Use free gens"], '
+                            '[role="switch"][aria-label="Use free generations"]'
+                        ).first.is_visible(timeout=500)
                         if has_free_gens:
                             is_logged_in = True
-                            print("--- Đã thấy 'Use free gens' -> Đã login!")
+                            print("--- Đã thấy công tắc free generations -> Đã login!")
                             break
                     except: pass
                     
@@ -999,8 +1023,8 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                     # 1.3 Xử lý Quiz
                     cur_url = page.url
                     if "higgsfield.ai/quiz" in cur_url:
-                        if not hasattr(page, 'quiz_clicked_options'):
-                            page.quiz_clicked_options = set()
+                        if not hasattr(page, '_higgsfield_quiz_state'):
+                            page._higgsfield_quiz_state = {}
                         try:
                             error_toast = page.locator('text="Couldn\'t save your answer"')
                             if error_toast.count() > 0 and error_toast.first.is_visible():
@@ -1008,64 +1032,8 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                                 page.wait_for_timeout(3000)
                         except: pass
                         
-                        quiz_options = [
-                            "Marketing Studio", "Cinema Studio", "MCP & CLI", "Shorts studio", "Supercomputer", "Canvas",
-                            "For personal use", "Video generations", "Viral content", "Beginner", "I'm new to this",
-                            "Video", "Visual editing", 
-                            "Instagram", "TikTok", "YouTube", "Prompting is hard",
-                            "Realistic AI avatars"
-                        ]
-                        
-                        try:
-                            page.evaluate("""() => {
-                                const allEls = document.querySelectorAll('div, span, h3, p');
-                                const targetTexts = [
-                                    'Marketing Studio', 'Cinema Studio', 'MCP & CLI', 'Shorts studio', 'Canvas', 'Supercomputer',
-                                    'For personal use', 'Viral content', 'Beginner', 'Intermediate', 'Advanced', 'Expert',
-                                    'Video', 'Visual editing', 'Instagram', 'TikTok', 'YouTube', 
-                                    'I\\'m new to this', 'Prompting is hard', 'Realistic AI avatars', 'Video generations'
-                                ];
-                                for(let el of allEls) {
-                                    const t = (el.innerText || '').trim();
-                                    if(targetTexts.includes(t)) {
-                                        const clickable = el.closest('button, [role="button"]') || el.closest('div[class*="border"]') || el;
-                                        clickable.click();
-                                    }
-                                }
-                            }""")
-                            page.wait_for_timeout(1000)
-                        except: pass
-
-                        for q_text in quiz_options:
-                            if q_text in page.quiz_clicked_options: continue
-                            try:
-                                locs = page.get_by_text(q_text)
-                                if locs.count() > 0 and locs.last.is_visible():
-                                    box = locs.last.bounding_box()
-                                    if box:
-                                        page.mouse.click(box["x"] + box["width"]/2, box["y"] + box["height"]/2)
-                                        page.quiz_clicked_options.add(q_text)
-                                        page.wait_for_timeout(500)
-                                        cont_btn = page.locator('button:has-text("Continue"), button:has-text("Next"), button:has-text("Choose an option"), button:has-text("Submit")').first
-                                        if cont_btn.count() > 0 and not cont_btn.first.is_disabled(): break
-                            except: pass
-                            
-                        try:
-                            clicked = page.evaluate("""() => {
-                                const btns = Array.from(document.querySelectorAll('button')).filter(b => {
-                                    const text = (b.innerText || b.textContent || '').trim().toLowerCase();
-                                    return (text === 'continue' || text === 'next' || text === 'submit' || text.includes('choose')) && !b.disabled;
-                                });
-                                if (btns.length > 0) {
-                                    btns[btns.length - 1].click();
-                                    return true;
-                                }
-                                return false;
-                            }""")
-                            if clicked:
-                                print("Quiz: JS clicked 'Continue/Next'")
-                                page.wait_for_timeout(1000)
-                        except: pass
+                        handle_quiz_step(page, page._higgsfield_quiz_state)
+                        continue
 
                     # 1.35. Xử lý popup "Chúng tôi đang cập nhật các điều khoản" (account.live.com/tou/accrue)
                     try:
@@ -1233,12 +1201,12 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                             
                             btn = loc1.or_(loc2).or_(loc3).or_(loc4)
                             try:
-                                btn.first.wait_for(state="attached", timeout=4000)
+                                btn.first.wait_for(state="visible", timeout=15000)
                             except:
-                                print(f"  -> Chưa tìm thấy nút '{btn_aria_label}', thử đợi thêm 5s...")
+                                print(f"  -> Chưa tìm thấy nút '{btn_aria_label}', đang đợi giao diện render...")
                                 pg.wait_for_timeout(5000)
                                 try:
-                                    btn.first.wait_for(state="attached", timeout=2000)
+                                    btn.first.wait_for(state="visible", timeout=10000)
                                 except:
                                     if "pricing" in pg.url or "genjutsu" not in pg.url:
                                         print(f"  -> Đang ở nhầm trang ({pg.url}), quay lại trang tạo video...")
@@ -1248,7 +1216,7 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                                         pg.reload(timeout=30000)
                                     pg.wait_for_load_state("domcontentloaded")
                                     pg.wait_for_timeout(5000)
-                                    btn.first.wait_for(state="attached", timeout=5000)
+                                    btn.first.wait_for(state="visible", timeout=15000)
                             btn_to_click = btn.first
                         except Exception as e:
                             print(f"  -> Lỗi khi tìm nút upload (đã thử F5): {e}")
@@ -1270,12 +1238,12 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                             
                             upload_btn = pg.locator('button[aria-label="Upload media"], button:has-text("Upload media")').last
                             try:
-                                upload_btn.wait_for(state="visible", timeout=2000)
+                                upload_btn.wait_for(state="visible", timeout=10000)
                             except:
                                 # Fallback UI mới: nút '+' trong grid (không có text)
                                 grid_add_btn = pg.locator('div[style*="grid-template-columns"] button').first
                                 try:
-                                    grid_add_btn.wait_for(state="visible", timeout=2000)
+                                    grid_add_btn.wait_for(state="visible", timeout=10000)
                                     print("  -> Thấy nút '+' trong grid, dùng nút này để upload...")
                                     upload_btn = grid_add_btn
                                 except: pass
@@ -1358,10 +1326,14 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                         print(f"  -> Đang chọn {len(file_paths)} file vừa upload...")
                 
                         # Cố gắng đợi thư viện load xong
-                        pg.wait_for_timeout(2000)
+                        pg.wait_for_timeout(2500)
                 
                         # Tìm thẻ video/ảnh vừa tải lên
                         items = pg.locator('div[data-assets-picker-selectable-card="true"]')
+                        try:
+                            items.first.wait_for(state="visible", timeout=15000)
+                        except:
+                            pass
                         if items.count() == 0:
                             # Thử locator khác nếu UI thay đổi
                             items = pg.locator('button:has(img), div[role="button"]:has(img), div[role="button"]:has(video), img[alt="Asset"]').first
@@ -1431,7 +1403,7 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                         # 4.5. Nếu có nút Select / Apply / Add ở dưới cùng để xác nhận chọn file, thì bấm nó
                         try:
                             select_btn = pg.locator('button:has-text("Select"):visible, button:has-text("Apply"):visible, button:has-text("Add"):visible').first
-                            if select_btn.is_visible(timeout=1500):
+                            if select_btn.is_visible(timeout=10000):
                                 print("  -> Thấy nút Select/Apply/Add sau khi chọn file, tiến hành bấm...")
                                 select_btn.click(timeout=2000, force=True)
                                 pg.wait_for_timeout(1000)
@@ -1453,6 +1425,55 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                         print(f"Lỗi upload {btn_aria_label}: {e}")
                         raise e
 
+                def replace_invalid_reference_video(pg):
+                    """Xóa video đang chọn, rồi chọn lại video đã có trong thư viện Recent."""
+                    try:
+                        remove_btn = pg.locator('button[aria-label="Remove video"]:visible').last
+                        remove_btn.wait_for(state="visible", timeout=5000)
+                        remove_btn.click(timeout=3000, force=True)
+                        pg.wait_for_timeout(1000)
+                    except Exception as e:
+                        print(f"  -> Không xóa được video đang chọn: {e}")
+                        return False
+
+                    try:
+                        add_label = (
+                            "Add a reference video to edit"
+                            if gen_mode == "objects_swap"
+                            else "Add a reference video to extract motion"
+                        )
+                        add_btn = pg.locator(f'button[aria-label="{add_label}"]:visible').last
+                        add_btn.wait_for(state="visible", timeout=10000)
+                        add_btn.click(timeout=3000, force=True)
+                        pg.wait_for_timeout(1500)
+
+                        # Video vừa upload nằm ở đầu danh sách Recent. Chỉ chọn card
+                        # asset, không chọn nút Upload media.
+                        cards = pg.locator('div[data-assets-picker-selectable-card="true"]:visible')
+                        cards.first.wait_for(state="visible", timeout=15000)
+                        if cards.count() == 0:
+                            raise RuntimeError("Không tìm thấy video đã có trong thư viện Recent")
+                        cards.first.click(timeout=3000, force=True)
+                        pg.wait_for_timeout(1000)
+
+                        # Một số phiên bản UI có nút xác nhận sau khi chọn asset.
+                        confirm = pg.locator(
+                            'button:has-text("Select"):visible, '
+                            'button:has-text("Apply"):visible, '
+                            'button:has-text("Add"):visible'
+                        ).first
+                        try:
+                            if confirm.is_visible(timeout=1500):
+                                confirm.click(timeout=3000, force=True)
+                                pg.wait_for_timeout(1000)
+                        except: pass
+
+                        print("  -> Đã xóa video lỗi và chọn lại video từ thư viện Recent.")
+                        return True
+                    except Exception as e:
+                        print(f"  -> Không chọn lại được video từ thư viện: {e}")
+                        return False
+
                 # 1. Chuyển sang Tab đúng dựa trên gen_mode
                 try:
                     if gen_mode == "objects_swap":
@@ -1460,7 +1481,8 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                     else:
                         tab = page.locator('button[role="tab"]:has-text("Motion transfer")').first
                         
-                    if tab.is_visible(timeout=2000):
+                    tab.wait_for(state="visible", timeout=15000)
+                    if tab.is_visible(timeout=1000):
                         tab.click(timeout=3000)
                         page.wait_for_timeout(1000)
                 except: pass
@@ -1523,7 +1545,8 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                     try:
                         # Bật công tắc "Prompt"
                         prompt_toggle = page.locator('span[aria-label="Toggle prompt"]')
-                        if prompt_toggle.is_visible(timeout=3000):
+                        prompt_toggle.wait_for(state="visible", timeout=15000)
+                        if prompt_toggle.is_visible(timeout=1000):
                             if prompt_toggle.get_attribute("aria-checked") == "false":
                                 print("  -> Bật công tắc Prompt")
                                 prompt_toggle.click(timeout=3000, force=True)
@@ -1531,7 +1554,8 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                 
                         # Điền prompt
                         prompt_input = page.locator('div[aria-label="Prompt"][contenteditable="true"]').last
-                        if prompt_input.is_visible(timeout=3000):
+                        prompt_input.wait_for(state="visible", timeout=15000)
+                        if prompt_input.is_visible(timeout=1000):
                             print("  -> Thấy ô điền Prompt, tiến hành nhập text bằng cách Paste...")
                             prompt_input.click(timeout=3000, force=True)
                             page.wait_for_timeout(500)
@@ -1581,12 +1605,14 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                 video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "running", "message": "Đang bật Free gens và nhấn Generate..."}
         
                 generate_success = False
-                for gen_attempt in range(3):
+                generate_attempt_limit = 2 if master_attempt == 0 else 1
+                for gen_attempt in range(generate_attempt_limit):
                     try:
                         # 1. Kiểm tra xem ô Prompt còn text không, nếu mất thì điền lại
                         if prompt:
                             prompt_input = page.locator('div[aria-label="Prompt"][contenteditable="true"]').last
-                            if prompt_input.is_visible(timeout=2000):
+                            prompt_input.wait_for(state="visible", timeout=15000)
+                            if prompt_input.is_visible(timeout=1000):
                                 current_text = prompt_input.text_content()
                                 if not current_text or len(current_text.strip()) < 2:
                                     print(f"  -> Prompt bị mất (Lần thử {gen_attempt+1}), tiến hành dán lại...")
@@ -1605,25 +1631,24 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                                     page.wait_for_timeout(500)
                                     prompt_input.type(" ")
                 
-                        # 2. Bật công tắc Use free gens
-                        print(f"  -> Đang tìm công tắc Use free gens (Lần thử {gen_attempt+1})...")
-                        free_gens = page.locator('button[aria-label="Use free gens"]')
-                        try:
-                            free_gens.wait_for(state="visible", timeout=10000)
-                            if free_gens.get_attribute("aria-checked") == "false":
-                                print(f"  -> Trạng thái đang tắt, tiến hành Bật công tắc Use free gens...")
-                                free_gens.click(timeout=3000, force=True)
-                                page.wait_for_timeout(1000)
-                            else:
-                                print(f"  -> Công tắc Use free gens đã được bật sẵn!")
-                        except:
-                            print(f"  -> Không tìm thấy công tắc Use free gens (có thể tài khoản đã hết free gens hoặc web load chậm).")
+                        # 2. Enable free generations only when the current UI reports any remaining.
+                        print(f"  -> Đang kiểm tra công tắc/free gen (Lần thử {gen_attempt+1})...")
+                        free_info = read_free_gens(page, timeout_ms=8000)
+                        if free_info is None:
+                            print("  -> Không thấy công tắc free generations; tiếp tục theo chế độ Generate thường.")
+                        elif free_info.get("count") != 0 and not free_info.get("enabled"):
+                            raise RuntimeError("Không bật được Use free generations; dừng để tránh trừ credit.")
+                        elif free_info.get("enabled"):
+                            print(f"  -> Free generations đã bật ({free_info.get('count')} left).")
+                        else:
+                            print(f"  -> Không còn free generations ({free_info.get('count', 0)} left).")
                             
                 
                         # 3. Nhấn nút Generate như người thật
-                        page.wait_for_timeout(1000) # Đợi giao diện ổn định
+                        page.wait_for_timeout(2000) # Đợi giao diện ổn định
                         generate_btn = page.locator('button[type="submit"]:has-text("Generate")').last
-                        if generate_btn.is_visible(timeout=3000):
+                        generate_btn.wait_for(state="visible", timeout=20000)
+                        if generate_btn.is_visible(timeout=1000):
                             print(f"  -> Đã thấy nút Generate, tiến hành click (Lần thử {gen_attempt+1})...")
                             try:
                                 generate_btn.scroll_into_view_if_needed()
@@ -1644,10 +1669,19 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                             print("  -> LỖI TẠO VIDEO: Web báo thiếu 'Add one source video'!")
                             raise Exception("ReloadRequired")
                             
+                        duration_error = page.locator(
+                            'div[id="higgsfield-multiplier-motion-control-validation"]'
+                        )
+                        if duration_error.is_visible(timeout=1000):
+                            print("  -> Higgsfield báo sai thời lượng: xóa video, chọn lại video trong Recent và thử Generate lại...")
+                            if replace_invalid_reference_video(page):
+                                # Quay lại đầu lần thử để kiểm tra Use free gens rồi Generate.
+                                continue
+                            raise Exception("ReloadAndCheck")
+
                         if page.locator('text="Something went wrong"').is_visible(timeout=1000) or \
                            page.locator('text="please try again"').is_visible(timeout=1000) or \
-                           page.locator('text="Failed to fetch"').is_visible(timeout=1000) or \
-                           page.locator('text="Video duration must be between"').is_visible(timeout=1000):
+                           page.locator('text="Failed to fetch"').is_visible(timeout=1000):
                             print("  -> LỖI TẠO VIDEO: Web báo lỗi (Failed to fetch / Something went wrong / Video duration...)!")
                             # Ném Exception để master loop reload và check history
                             raise Exception("ReloadAndCheck")
@@ -1660,7 +1694,17 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                             generate_success = True
                             break # Thoát vòng lặp retry Generate
                         except Exception as status_error:
-                            raise RuntimeError("History: Không thấy Processing/Generating sau khi cập nhật; kiểm tra tác vụ trước khi tạo lại.") from status_error
+                            if gen_attempt + 1 < generate_attempt_limit:
+                                remaining_free = read_free_gens(page, immediate=True)
+                                if (
+                                    remaining_free
+                                    and remaining_free.get("enabled")
+                                    and (remaining_free.get("count") or 0) > 0
+                                ):
+                                    print("  -> Chưa thấy Processing và vẫn còn free gen; thử bấm Generate thêm một lần.")
+                                    continue
+                            print("  -> Chưa xác nhận được Processing; reload trang và kiểm tra History trước lần thử tiếp theo.")
+                            raise RuntimeError("NoProcessing: ReloadAndCheck") from status_error
                     
                     except Exception as e:
                         if "History:" in str(e): raise e
@@ -1689,6 +1733,8 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                             print("  -> Không thấy Processing/Generating, sẽ làm lại từ đầu (bật free và tạo lại)...")
                             pass
                             
+                    if "NoProcessing" in str(e) and master_attempt > 0:
+                        raise RuntimeError("Không thấy Processing sau lần Generate cuối và đã kiểm tra lại History.") from e
                     if master_attempt == 2:
                         raise Exception("Đã thử tải lại trang 3 lần nhưng vẫn thất bại!")
                     continue
@@ -1737,20 +1783,57 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                 
             if video_tasks.get(task_id, {}).get("cancel_and_gen_requested"):
                 print(f"--- Task {task_id} nhận lệnh Cancel + Gen. Thực thi thao tác...")
-                generate_ip_before_cancel = bool(
-                    video_tasks[task_id].get("generate_ip_before_cancel")
-                )
+                # Nút Cancel + gen luôn chạy theo quy trình reset toàn bộ browser
+                # và đổi IP trên browser mới, không phụ thuộc checkbox Sinh IP chung.
+                generate_ip_before_cancel = True
                 video_tasks[task_id]["cancel_and_gen_requested"] = False
                 video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "running", "message": "Đang thao tác Cancel & Gen lại..."}
                 
                 try:
-                    if generate_ip_before_cancel:
-                        video_tasks[task_id]["message"] = "Đang sinh IP mới trước khi Cancel + Gen..."
-                        from app.services.vpn_ip import connect_unique_vpn_ip
-                        vpn_info = connect_unique_vpn_ip(context, profile_id)
-                        print(f"Cancel + Gen sinh IP thành công: {vpn_info['ip']} ({vpn_info['country']})")
+                    # Task đang chạy nghĩa là Chrome đã mở khi nhận lệnh.
+                    resume_url = page.url
+                    if video_tasks[task_id].pop("restart_browser_before_cancel", True):
+                        video_tasks[task_id]["message"] = "Đang đóng Chrome để reset trước khi đổi IP..."
+                        if connected_via_cdp:
+                            context.browser.new_browser_cdp_session().send("Browser.close")
+                        try:
+                            close_profile(profile_id)
+                        except Exception as close_error:
+                            print(f"Cancel + Gen: lỗi khi đóng Chrome cũ: {close_error}")
+                        try:
+                            context.close()
+                        except Exception:
+                            pass
+                        time.sleep(2)
 
-                    # 1. Click Copy
+                        video_tasks[task_id]["message"] = "Đang mở lại Chrome..."
+                        context, connected_via_cdp = _open_browser_with_fp(
+                            p, profile, ext_path, attempt=1,
+                            enable_ext_btn2=enable_ext_btn2, is_headless=is_headless,
+                            engine=engine, generate_ip=True,
+                            reuse_existing=False,
+                        )
+                        page = context.pages[0] if context.pages else context.new_page()
+                    else:
+                        video_tasks[task_id]["message"] = "Chrome vừa mở xong, đang đổi IP mới..."
+
+                    video_tasks[task_id]["message"] = "Chrome đã mở, đang đổi IP mới..."
+                    from app.services.vpn_ip import connect_unique_vpn_ip
+                    vpn_info = connect_unique_vpn_ip(context, profile_id)
+                    print(f"Cancel + Gen đổi IP thành công: {vpn_info['ip']} ({vpn_info['country']})")
+                    page.goto(resume_url or "https://higgsfield.ai/ai/video?model=genjutsu", timeout=30000)
+                    page.wait_for_load_state("domcontentloaded")
+                    page.wait_for_timeout(5000)
+
+                    # Job cũ có thể đã tiếp tục chạy trong lúc reset Chrome.
+                    # Nếu đã là Generating thì chỉ chờ kết quả, không Cancel/Gen lại.
+                    resumed_status = _existing_generation_status(context)
+                    if resumed_status == "Generating":
+                        video_tasks[task_id]["message"] = "✅ Video đang Generating sau khi đổi IP, tiếp tục chờ video..."
+                        print(f"--- Task {task_id}: đã thấy Generating sau khi đổi IP, bỏ qua Cancel + Gen và tiếp tục chờ.")
+                        continue
+
+                    # 3. Click Copy
                     print(f"--- Task {task_id} (Cancel+Gen): Đang tìm thẻ Processing và ép hiện nút Copy/Cancel...")
                     page.evaluate("""() => {
                         const procSpans = Array.from(document.querySelectorAll('span, div'));
@@ -1784,7 +1867,7 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                     print(f"--- Task {task_id} (Cancel+Gen): Đã click Copy prompt, đang đợi 3s để web nhận thông số...")
                     page.wait_for_timeout(3000)
                     
-                    # 2. Click Cancel
+                    # 4. Click Cancel
                     print(f"--- Task {task_id} (Cancel+Gen): Đang click Cancel tiến trình...")
                     page.evaluate("""() => {
                         const procSpans = Array.from(document.querySelectorAll('span, div'));
@@ -1828,26 +1911,10 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                         
                         # 5. Check Use free gens
                         print(f"--- Task {task_id} (Cancel+Gen): Kiểm tra công tắc 'Use free gens'...")
-                        page.evaluate("""() => {
-                            const switches = Array.from(document.querySelectorAll('button[role="switch"]'));
-                            for (const sw of switches.reverse()) {
-                                let parent = sw.parentElement;
-                                let text = '';
-                                while (parent && parent.tagName !== 'BODY') {
-                                    text = parent.innerText || '';
-                                    if (text.includes('Use free gens')) {
-                                        if (sw.getAttribute('aria-checked') !== 'true') {
-                                            sw.dispatchEvent(new PointerEvent('pointerdown', {bubbles: true}));
-                                            sw.dispatchEvent(new PointerEvent('pointerup', {bubbles: true}));
-                                            sw.click();
-                                        }
-                                        return;
-                                    }
-                                    parent = parent.parentElement;
-                                }
-                            }
-                        }""")
-                        page.wait_for_timeout(2000)
+                        free_info = read_free_gens(page, timeout_ms=8000)
+                        if free_info and free_info.get("count") != 0 and not free_info.get("enabled"):
+                            print(f"--- Task {task_id} (Cancel+Gen): Free gen còn nhưng chưa bật được; bỏ lần thử này để tránh trừ credit.")
+                            continue
                         
                         # 6. Click Generate
                         print(f"--- Task {task_id} (Cancel+Gen): Đang bấm nút Generate và chuyển về chế độ chờ...")

@@ -70,7 +70,7 @@ def clean_session_hard(user_data_dir):
     except Exception as e:
         print(f"Clean hard err {e}")
 
-def get_chromium_runner_simple(profile_id, profile_name, user_data_dir, proxy_dict, fingerprint, startup_urls=None, startup_mode="once", port=None, enable_ext_btn2=False, enable_ext=True, profile_extensions="", headless=False, engine="cloakbrowser"):
+def get_chromium_runner_simple(profile_id, profile_name, user_data_dir, proxy_dict, fingerprint, startup_urls=None, startup_mode="once", port=None, enable_ext_btn2=False, enable_ext=True, profile_extensions="", headless=False, engine="cloakbrowser", generate_ip=False):
     proxy_str = repr(proxy_dict)
     user_data_dir_fs = user_data_dir.replace("\\", "/")
     log_path = str((LOGS_DIR / f"launch_{profile_id}.log").as_posix())
@@ -90,13 +90,21 @@ def get_chromium_runner_simple(profile_id, profile_name, user_data_dir, proxy_di
     lines.append(f'cookie_path = Path(r"{cookie_file}")')
     lines.append('log_file.parent.mkdir(parents=True, exist_ok=True)')
     lines.append("def log(m):")
-    lines.append("    print(str(m), flush=True)")
+    # The parent process redirects stdout to a UTF-8 log file. Some embedded
+    # Python builds still initialize stdout as cp1252, so write UTF-8 bytes
+    # directly instead of relying on the console stream's encoding.
+    lines.append("    try:")
+    lines.append("        sys.stdout.buffer.write((str(m) + '\\n').encode('utf-8', errors='replace'))")
+    lines.append("        sys.stdout.buffer.flush()")
+    lines.append("    except Exception:")
+    lines.append("        pass")
     lines.append("")
     lines.append(f'project_root = {str(BASE_DIR)!r}')
     lines.append(f'profile_id = "{profile_id}"')
     lines.append(f'profile_name = {json.dumps(profile_name)}')
     lines.append(f'user_data_dir = r"{user_data_dir_fs}"')
     lines.append(f'proxy = {proxy_str}')
+    lines.append(f'generate_ip = {bool(generate_ip)!r}')
     lines.append(f'sw = {sw}')
     lines.append(f'sh = {sh}')
     lines.append(f'random_id = {random_id}')
@@ -109,8 +117,6 @@ def get_chromium_runner_simple(profile_id, profile_name, user_data_dir, proxy_di
     lines.append(f'profile_extensions = {json.dumps(profile_extensions)}')
     
     lines.append(f'log("[{profile_id}] Chrome profile runner ID={random_id}")')
-    lines.append(f'if proxy:')
-    lines.append('    log("Proxy configured")')
     lines.append("")
     lines.append("context = None")
     lines.append("playwright = None")
@@ -179,6 +185,11 @@ def get_chromium_runner_simple(profile_id, profile_name, user_data_dir, proxy_di
     lines.append('        accept_downloads=True,')
     lines.append("    )")
     code_no_ext = """
+    from app.browser_settings import algodata_disabled, filter_proxy_extensions, get_global_args
+    if algodata_disabled():
+        proxy = None
+        log("Proxy xoay OFF; " + ("chỉ cho phép 1ClickVPN cho Sinh IP" if generate_ip else "kết nối trực tiếp, không proxy"))
+    launch_args["args"].extend(get_global_args(proxy, engine=engine, generate_ip=generate_ip))
     # Bỏ tiện ích Profile Name Tab theo yêu cầu
 
     # Tải extensions cá nhân của profile
@@ -193,15 +204,31 @@ def get_chromium_runner_simple(profile_id, profile_name, user_data_dir, proxy_di
         except Exception as e:
             log(f"Extension resolve err: {e}")
             
-    # Tải toàn bộ extension toàn cục trong data/extensions
+    # Nạp các tiện ích toàn cục rồi lọc quyền proxy theo lựa chọn mạng.
     try:
         global_ext_dir = Path(__file__).parent.parent / "data" / "extensions"
         if global_ext_dir.exists():
+            oneclick_dir = global_ext_dir / "1clickvpn"
+            oneclick_manifest = oneclick_dir / "manifest.json"
+            oneclick_loaded = oneclick_manifest.is_file()
+
             for ext_folder in global_ext_dir.iterdir():
-                if ext_folder.is_dir() and str(ext_folder.resolve()) not in launch_args.get("extension_paths", []):
-                    launch_args.setdefault("extension_paths", []).append(str(ext_folder.resolve()))
+                if not ext_folder.is_dir():
+                    continue
+
+                manifest_path = ext_folder / "manifest.json"
+                if not manifest_path.is_file():
+                    continue
+
+                resolved = str(ext_folder.resolve())
+                if resolved not in launch_args.get("extension_paths", []):
+                    launch_args.setdefault("extension_paths", []).append(resolved)
     except Exception as e:
         log(f"Global extension load err: {e}")
+
+    launch_args["extension_paths"] = filter_proxy_extensions(launch_args.get("extension_paths", []), generate_ip=generate_ip)
+    from app.extensions import pin_oneclick_extension
+    pin_oneclick_extension(user_data_dir)
 
     if proxy:
         # Chrome 138+ khong con chay extension MV2 -> dung proxy trung gian 127.0.0.1
@@ -214,6 +241,15 @@ def get_chromium_runner_simple(profile_id, profile_name, user_data_dir, proxy_di
         local_server = start_forwarder(proxy)
         launch_args["proxy"] = {"server": local_server}
         log(f"Proxy forwarder {local_server} -> {proxy['server']} user={proxy['username']}")
+
+    # Công cụ tìm kiếm cần được nạp cho cả Chrome và CloakBrowser,
+    # kể cả khi người dùng tắt các extension tùy chọn.
+    search_ext = google_search_extension(user_data_dir)
+    if search_ext not in launch_args.get("extension_paths", []):
+        launch_args.setdefault("extension_paths", []).append(search_ext)
+    if algodata_disabled() and not generate_ip:
+        from app.extensions import direct_connection_extension
+        launch_args.setdefault("extension_paths", []).append(direct_connection_extension(user_data_dir))
 
     log("Launching browser...")
     exts = launch_args.get("extension_paths", [])
@@ -235,7 +271,7 @@ def get_chromium_runner_simple(profile_id, profile_name, user_data_dir, proxy_di
         launch_args["args"] = [arg for arg in launch_args["args"] if not arg.startswith("--fingerprint")]
         log(f"Engine=chrome {chrome_136}; extension command line enabled")
     else:
-        log("Engine=cloakbrowser; Google address-bar search disabled")
+        log("Engine=cloakbrowser; Google address-bar search enabled")
         try:
             import cloakbrowser.browser
             for flag in ["--disable-extensions", "--disable-background-networking"]:
@@ -272,6 +308,8 @@ def get_chromium_runner_simple(profile_id, profile_name, user_data_dir, proxy_di
 
     from app.services.browser_navigation import install_vpn_welcome_guard
     install_vpn_welcome_guard(context, log)
+    from app.services.higgsfield_popups import install_upgrade_plan_guard
+    install_upgrade_plan_guard(context)
 
     try:
         import time
@@ -295,6 +333,19 @@ def get_chromium_runner_simple(profile_id, profile_name, user_data_dir, proxy_di
         # Playwright tự động nhét 1 tab about:blank vào, mình sẽ xóa nó đi nếu có tab cũ được khôi phục
         if context.pages:
             context.pages[0].wait_for_timeout(1000) # Đợi tab cũ khôi phục
+
+        # Đóng các tab lỗi extension hoặc tab ERR_BLOCKED_BY_CLIENT / chrome-error
+        for pg in list(context.pages):
+            try:
+                pg_url = pg.url.lower()
+                if (
+                    ("chrome-extension://" in pg_url and ("popup/index.html" in pg_url or "eppiocemhmnlbhjplcgkofciiegomcon" in pg_url))
+                    or pg_url.startswith("chrome-error://")
+                ):
+                    if len(context.pages) > 1:
+                        pg.close()
+            except Exception:
+                pass
         
         # Xóa tab about:blank nhưng KHÔNG BAO GIỜ đóng hết sạch tab
         pages = context.pages
@@ -323,6 +374,7 @@ def get_chromium_runner_simple(profile_id, profile_name, user_data_dir, proxy_di
     try:
         if startup_urls_str:
             urls = [u.strip() for u in startup_urls_str.splitlines() if u.strip()]
+            urls = [u for u in urls if not (u.startswith("chrome-extension://") and "popup/index.html" in u)]
             if startup_mode == 'once':
                 flag_file = Path(user_data_dir) / 'startup_once.flag'
                 if not flag_file.exists():
@@ -438,7 +490,12 @@ finally:
     if runner_lock is not None:
         runner_lock.close()
 """
-    lines.append(code_no_ext)
+    # The runner is saved as UTF-8 and executed as a standalone script. Dedent
+    # this embedded block before joining it to the generated top-level lines;
+    # otherwise its leading indentation makes Python treat it as an unexpected
+    # indented block. Keep the source text Unicode (write_text below is UTF-8).
+    import textwrap
+    lines.extend(textwrap.dedent(code_no_ext).strip("\n").splitlines())
     return "\n".join(lines)
 
 allocated_ports = set()
@@ -499,13 +556,23 @@ def launch_profile(profile, req=None):
 
 
 def _launch_profile(profile, req=None):
+    desired_network_mode = browser_settings.network_mode(getattr(req, "generate_ip", False))
+    restart_for_network = False
     with running_lock:
         if profile.id in running_browsers:
             proc = running_browsers[profile.id]
             if proc.poll() is None:
-                return {"status": "already_running", "pid": proc.pid}
+                if getattr(proc, "network_mode", None) == desired_network_mode:
+                    return {"status": "already_running", "pid": proc.pid}
+                restart_for_network = True
             else:
                 del running_browsers[profile.id]
+
+    if restart_for_network:
+        print(f"Cấu hình mạng đã đổi; mở lại Chrome của profile {profile.id} để áp dụng.")
+        result = close_profile(profile.id)
+        if result["status"] not in ("closed", "not_running"):
+            return result
 
     requested_engine = req.engine if req else os.environ.get("HIGGSFIELD_BROWSER_ENGINE", "chrome")
     engine = requested_engine
@@ -553,19 +620,6 @@ def _launch_profile(profile, req=None):
             prefs["profile"] = {}
         prefs["profile"]["name"] = profile_name
 
-        # Keep 1ClickVPN and other auto-downloaded extensions visible on Chrome's toolbar for every profile.
-        extensions_prefs = prefs.setdefault("extensions", {})
-        pinned_extensions = extensions_prefs.setdefault("pinned_extensions", [])
-        
-        # Tự động ghim tất cả các extension có trong DATA_DIR/extensions
-        extensions_dir = Path(DATA_DIR) / "extensions"
-        if extensions_dir.exists():
-            for ext_folder in extensions_dir.iterdir():
-                if ext_folder.is_dir():
-                    if ext_folder.name not in pinned_extensions:
-                        pinned_extensions.append(ext_folder.name)
-        
-        
         pref_file.write_text(json.dumps(prefs, ensure_ascii=False), encoding="utf-8")
     except Exception as e:
         print(f"Error setting profile name in Preferences: {e}")
@@ -584,7 +638,7 @@ def _launch_profile(profile, req=None):
             ensure_camoufox_once()
         py_code = get_camoufox_python_code_fast(profile.id, user_data_dir, getattr(profile, "os", "windows"), proxy_dict, getattr(profile, "fingerprint_preset", True))
     else:
-        py_code = get_chromium_runner_simple(profile.id, profile_name, user_data_dir, proxy_dict, profile.fingerprint, startup_urls, startup_mode, port, enable_ext_btn2, enable_ext, profile_extensions, headless=headless, engine=engine)
+        py_code = get_chromium_runner_simple(profile.id, profile_name, user_data_dir, proxy_dict, profile.fingerprint, startup_urls, startup_mode, port, enable_ext_btn2, enable_ext, profile_extensions, headless=headless, engine=engine, generate_ip=getattr(req, "generate_ip", False))
 
     tmp_script = DATA_DIR / f"runner_{profile.id}.py"
     tmp_script.write_text(py_code, encoding="utf-8")
@@ -625,6 +679,8 @@ def _launch_profile(profile, req=None):
             return {"status": "error", "message": "Browser did not become ready.\n" + txt}
         proc.profile_dir = str(user_data_dir)
         with running_lock:
+            proc.network_mode = desired_network_mode
+            proc.launch_request = req.model_copy() if req is not None else None
             running_browsers[profile.id] = proc
         return {
             "status": "launched",
@@ -639,6 +695,20 @@ def _launch_profile(profile, req=None):
 
 def launch_profile_with_fallback(profile, req=None):
     return launch_profile(profile, req)
+
+def ensure_profile_network_mode(profile, generate_ip=False, engine="chrome"):
+    """A requested login must not reuse a runner with the old proxy settings."""
+    with running_lock:
+        proc = running_browsers.get(profile.id)
+        restart = proc is not None and proc.poll() is None and getattr(proc, "network_mode", None) != browser_settings.network_mode(generate_ip)
+        previous_request = getattr(proc, "launch_request", None)
+    if restart:
+        from app.models import LaunchRequest
+        request = (previous_request.model_copy(update={"engine": engine, "generate_ip": generate_ip})
+                   if previous_request is not None else LaunchRequest(engine=engine, generate_ip=generate_ip, enable_ext=True))
+        result = launch_profile_with_fallback(profile, request)
+        if result["status"] not in ("launched", "already_running"):
+            raise RuntimeError(result.get("message", "Không mở lại được Chrome để áp dụng cài đặt proxy"))
 
 def close_profile(profile_id: str):
     with profile_lock(profile_id):

@@ -56,14 +56,17 @@ async def create_video(request: Request):
     telegram_chat_id = form.get("telegram_chat_id", "")
     gen_mode = form.get("gen_mode", "motion_transfer")
     browser_engine = form.get("browser_engine", "chrome")
+    # Older open UI tabs omit this field. Match the default checked Sinh IP
+    # setting instead of silently bypassing VPN for those requests.
+    generate_ip = str(form.get("generate_ip", "true")).strip().lower() == "true"
+    processing_timeout = int(form.get("processing_timeout", 120))
 
     # Lấy danh sách các profile đang bận
     used_profiles = set()
     for task in video_tasks.values():
         if task.get("status") in ["running", "pending"]:
             used_profiles.add(task.get("params", {}).get("profile_id"))
-    for p in list_running():
-        used_profiles.add(p["id"])
+    used_profiles.update(list_running())
 
     if not profile_id:
         # Tß╗▒ ─æß╗Öng g├ín profile rß║únh
@@ -126,10 +129,13 @@ async def create_video(request: Request):
             "tg_chat_id": telegram_chat_id,
             "gen_mode": gen_mode,
             "browser_engine": browser_engine,
+            "generate_ip": generate_ip,
+            "media_paths": saved_paths,
+            "processing_timeout": processing_timeout,
         }
     }
     
-    t = threading.Thread(target=run_video_automation, args=(task_id, prompt, saved_paths, profile_id, save_path, headless_bool, (enable_ext.lower() == "true"), (enable_ext_btn2.lower() == "true"), (telegram_enabled.lower() == "true"), telegram_token, telegram_chat_id, gen_mode, browser_engine), daemon=True)
+    t = threading.Thread(target=run_video_automation, args=(task_id, prompt, saved_paths, profile_id, save_path, headless_bool, (enable_ext.lower() == "true"), (enable_ext_btn2.lower() == "true"), (telegram_enabled.lower() == "true"), telegram_token, telegram_chat_id, gen_mode, browser_engine, generate_ip), daemon=True)
     t.start()
     
     return {"ok": True, "task_id": task_id, "profile_id": profile_id}
@@ -140,11 +146,20 @@ def api_check_video(req: CheckVideoReq):
     import uuid
     import threading
     task_id = str(uuid.uuid4())
-    video_tasks[task_id] = {"status": "pending", "message": "Chuẩn bị kiểm tra video..."}
+    video_tasks[task_id] = {
+        "status": "pending",
+        "message": "Chuẩn bị kiểm tra video...",
+        "params": {"profile_id": req.profile_id, "check_task": True},
+    }
     check_video_task_ids.add(task_id)
     def _run_and_cleanup(*args):
         try:
-            run_check_video_automation(*args, cancel_first=req.cancel_first, engine=req.engine)
+            run_check_video_automation(
+                *args,
+                cancel_first=req.cancel_first,
+                engine=req.engine,
+                generate_ip=req.generate_ip,
+            )
         finally:
             check_video_task_ids.discard(task_id)
     t = threading.Thread(target=_run_and_cleanup, args=(task_id, req.profile_id, req.is_headless), daemon=True)
@@ -152,11 +167,38 @@ def api_check_video(req: CheckVideoReq):
     return {"ok": True, "task_id": task_id}
 
 @router.post("/api/video/cancel_gen/{task_id}")
-def api_cancel_gen_task(task_id: str):
-    if task_id in video_tasks:
-        video_tasks[task_id]["cancel_and_gen_requested"] = True
-        return {"ok": True, "message": "Đã gửi lệnh Cancel + Gen cho tiến trình"}
-    return {"ok": False, "message": "Không tìm thấy tiến trình đang chạy!"}
+def api_cancel_gen_task(task_id: str, payload: dict = Body(default=None)):
+    task = video_tasks.get(task_id)
+    # Nhận cả task tạo video và task Check video đang điều khiển đúng profile.
+    # Task Check không có prompt nhưng vẫn giữ Chrome và vòng poll riêng.
+    if task and (
+        task.get("params", {}).get("prompt")
+        or task_id in check_video_task_ids
+        or task.get("params", {}).get("check_task")
+    ):
+        task["cancel_and_gen_requested"] = True
+        task["restart_browser_before_cancel"] = True
+        task["generate_ip_before_cancel"] = bool((payload or {}).get("generate_ip"))
+        return {"ok": True, "message": "Đã gửi lệnh Cancel + Gen cho tiến trình video"}
+    return JSONResponse(status_code=400, content={"ok": False, "message": "Task này không phải tiến trình tạo video hợp lệ."})
+
+@router.post("/api/video/cancel_gen_by_profile/{profile_id}")
+def api_cancel_gen_by_profile(profile_id: str, payload: dict = Body(default=None)):
+    """Fallback khi UI mất task ID nhưng profile vẫn còn task tạo video đang chạy."""
+    candidates = []
+    for task_id, task in video_tasks.items():
+        params = task.get("params", {}) if isinstance(task, dict) else {}
+        if (params.get("profile_id") == profile_id
+                and (params.get("prompt") or params.get("check_task"))
+                and task.get("status") in {"running", "pending"}):
+            candidates.append((task_id, task))
+    if not candidates:
+        return JSONResponse(status_code=404, content={"ok": False, "message": "Không tìm thấy task video đang chạy của profile này."})
+    task_id, task = candidates[-1]
+    task["cancel_and_gen_requested"] = True
+    task["restart_browser_before_cancel"] = True
+    task["generate_ip_before_cancel"] = True
+    return {"ok": True, "task_id": task_id, "message": "Đã gửi lệnh Cancel + Gen theo profile"}
 
 @router.post("/api/video/check/stop_all")
 def api_stop_all_check_video():
@@ -188,12 +230,13 @@ def retry_video(task_id: str):
     p = task["params"]
     video_tasks[task_id]["status"] = "pending"
     video_tasks[task_id]["message"] = "Đang thử lại..."
-    video_tasks[task_id].pop("force_stop", None) # Xóa cờ force_stop nếu có    media_paths = p.get("media_paths", [])
+    video_tasks[task_id].pop("force_stop", None)
+    media_paths = list(p.get("media_paths", []))
     if not media_paths:
         if p.get("img1_path"): media_paths.append(p["img1_path"])
         if p.get("img2_path"): media_paths.append(p["img2_path"])
 
-    t = threading.Thread(target=run_video_automation, args=(task_id, p["prompt"], media_paths, p.get("profile_id"), p.get("save_path"), p.get("is_headless", False), p.get("enable_ext", False), p.get("enable_ext_btn2", False), p.get("tg_enabled", False), p.get("tg_token", ""), p.get("tg_chat_id", "")), daemon=True)
+    t = threading.Thread(target=run_video_automation, args=(task_id, p["prompt"], media_paths, p.get("profile_id"), p.get("save_path"), p.get("is_headless", False), p.get("enable_ext", False), p.get("enable_ext_btn2", False), p.get("tg_enabled", False), p.get("tg_token", ""), p.get("tg_chat_id", ""), p.get("gen_mode", "motion_transfer"), p.get("browser_engine", "chrome"), p.get("generate_ip", False)), daemon=True)
     t.start()
     return {"ok": True}
 

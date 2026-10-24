@@ -15,6 +15,49 @@ from pathlib import Path
 
 ONECLICK_EXTENSION_ID = "pphgdbgldlmicfdkhondlafkiomnelnk"
 ONECLICK_PUBLIC_KEY = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqoJDyiKQ+SGDdD/sVqXBprZzGRPorww6T07qUwv0wbpH47Xiqz6pyD78qzPE2wkkYPH16fVLhSz5QK4MwoKVaF1k0r7omxlYXbkPDBu1cuRkQzKzfcmSjkl7RpZseRuX8pTyJIFaaYLVBlyzloLVpUhF1ShCntOd5p0/A+4gWwn3lVN5x8Ew/i/BW6WdTpvz/Y7jYuWUnCic3Zwxr71Yvf/N9HaXXalfLY4PN+POB7DFkfNVZsj3+oNAJpsPw8z8+r3hlaLkyXiKkJNI/dsgjAg7WvR43wo+J+qVe6o/xmdJyejlXfubEbaoKneVLkjZ0OnDo+9uHk480A1FFff+WwIDAQAB"
+HOLA_EXTENSION_NAME = "hola-vpn"
+
+
+def pin_oneclick_extension(user_data_dir: str | Path) -> None:
+    """Chrome's toolbar preference stores extension IDs, not folder names."""
+    preference = Path(user_data_dir) / "Default" / "Preferences"
+    prefs = json.loads(preference.read_text(encoding="utf-8")) if preference.is_file() else {}
+    pinned = prefs.setdefault("extensions", {}).setdefault("pinned_extensions", [])
+    pinned[:] = [item for item in pinned if item != "1clickvpn"]
+    if ONECLICK_EXTENSION_ID not in pinned:
+        pinned.append(ONECLICK_EXTENSION_ID)
+    preference.parent.mkdir(parents=True, exist_ok=True)
+    preference.write_text(json.dumps(prefs, ensure_ascii=False), encoding="utf-8")
+
+
+def pin_active_vpn_extension(user_data_dir: str | Path) -> None:
+    """Pin the stable 1ClickVPN action; Hola is loaded unpacked separately."""
+    pin_oneclick_extension(user_data_dir)
+
+
+def direct_connection_extension(user_data_dir: str | Path) -> str:
+    """Keep VPN extensions visible while enforcing the requested direct mode.
+
+    chrome.proxy can override --no-proxy-server, so direct mode needs its own
+    setting. Load this last, and omit it entirely when Sinh IP is enabled.
+    """
+    folder = Path(user_data_dir) / "automation_extensions" / "direct_connection"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "manifest.json").write_text(json.dumps({
+        "manifest_version": 3, "name": "Direct connection", "version": "1.0",
+        "permissions": ["proxy"], "background": {"service_worker": "background.js"},
+    }), encoding="utf-8")
+    (folder / "background.js").write_text("""const useDirect = () => {
+    chrome.proxy.settings.set({value: {mode: 'direct'}, scope: 'regular'});
+};
+chrome.runtime.onInstalled.addListener(useDirect);
+chrome.runtime.onStartup.addListener(useDirect);
+chrome.proxy.settings.onChange.addListener(details => {
+    if (details.value.mode !== 'direct') useDirect();
+});
+useDirect();
+""", encoding="utf-8")
+    return str(folder.resolve())
 
 
 def _extract(path: Path, dest_dir: Path, folder_name: str | None = None) -> Path:

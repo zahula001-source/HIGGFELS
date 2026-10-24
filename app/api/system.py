@@ -4,6 +4,7 @@ import time
 import os
 import json
 import shutil
+import tempfile
 from pathlib import Path
 from typing import Optional, List, Dict
 from pydantic import BaseModel
@@ -60,7 +61,16 @@ async def update_config(req: Request):
         import json
         config_path = DATA_DIR / "config.json"
         data = await req.json()
-        config_path.write_text(json.dumps(data, indent=4), encoding="utf-8")
+        # Readers in browser workers must never see a partly written config.
+        temp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=DATA_DIR, suffix=".tmp", delete=False) as output:
+                temp_path = Path(output.name)
+                json.dump(data, output, indent=4)
+            os.replace(temp_path, config_path)
+        finally:
+            if temp_path is not None:
+                temp_path.unlink(missing_ok=True)
         return {"ok": True}
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -80,7 +90,7 @@ def get_config():
 def index():
     index_file = STATIC_DIR / "index.html"
     if index_file.exists():
-        return FileResponse(str(index_file))
+        return FileResponse(str(index_file), headers={"Cache-Control": "no-store"})
     return {"message": "Antidetect Tool API running. Go to /docs for API docs"}
 
 @router.get("/api/tasks/{task_id}/chat")

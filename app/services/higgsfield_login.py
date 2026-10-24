@@ -41,30 +41,55 @@ def wait_video_login_state(page, timeout_ms=8000):
     return None
 
 
-def read_free_gens(page, timeout_ms=8000):
-    """Read the free-generation switch after login without changing it."""
+def read_free_gens(page, timeout_ms=30000, immediate=False):
+    """Read the free-generation switch after login without changing its state.
+
+    The video editor renders this control asynchronously, so it may appear
+    several seconds after the authenticated page and can use a slightly
+    different wrapper after a route refresh.
+    """
     import time
+    import re
     deadline = time.monotonic() + timeout_ms / 1000
-    while time.monotonic() < deadline:
+    while immediate or time.monotonic() < deadline:
         result = page.evaluate(r"""() => {
-            const switches = [...document.querySelectorAll(
-                'button[role="switch"][aria-label="Use free gens"], [role="switch"]'
-            )].filter(el => !!el.getClientRects().length);
-            const sw = switches.find(el => /use free gens/i.test(el.getAttribute('aria-label') || el.innerText || ''));
-            if (!sw) return null;
-            const card = sw.closest('.rounded-xl') || sw.parentElement?.parentElement;
-            const text = (card?.innerText || '').replace(/\s+/g, ' ');
-            const match = text.match(/use free gens\s*(\d+)/i);
-            const count = match ? Number(match[1]) : null;
+            const visible = el => !!el && !!el.getClientRects().length &&
+                getComputedStyle(el).visibility !== 'hidden';
+            const control = document.querySelector('[data-generation-free-gens="true"]');
+            const switches = [...document.querySelectorAll('[role="switch"]')].filter(visible);
+            const sw = control?.querySelector('[role="switch"]') || switches.find(el => {
+                const label = el.getAttribute('aria-label') || '';
+                const text = el.innerText || el.textContent || '';
+                return /use\s+free\s+generations|use\s+free\s+gens/i.test(`${label} ${text}`);
+            });
+            if (!sw || !visible(sw)) return null;
+            const checkbox = control?.querySelector('input[type="checkbox"]');
+            const countText = control?.querySelector('[aria-live]')?.textContent?.trim() ||
+                (control?.innerText || control?.textContent || '').replace(/\s+/g, ' ');
             return {
-                enabled: sw.getAttribute('aria-checked') === 'true',
-                disabled: !!sw.disabled || sw.getAttribute('aria-disabled') === 'true',
-                count
+                enabled: sw.getAttribute('aria-checked') === 'true' ||
+                    sw.hasAttribute('data-checked') || sw.getAttribute('data-state') === 'checked' ||
+                    !!checkbox?.checked,
+                disabled: !!sw.disabled || sw.getAttribute('aria-disabled') === 'true' ||
+                    !!checkbox?.disabled,
+                countText
             };
         }""")
+        if result is not None and result.get('count') is None:
+            count_text = result.get('countText') or ''
+            match = re.search(r'(\d+)\s+left\b', count_text, re.IGNORECASE)
+            if not match:
+                match = re.search(r'use\s+free\s+gens?\s*(\d+)', count_text, re.IGNORECASE)
+            result['count'] = int(match.group(1)) if match else None
+        if immediate:
+            return result
         if result is not None and not result.get('enabled') and not result.get('disabled') and result.get('count') != 0:
             try:
-                page.locator('button[role="switch"][aria-label="Use free gens"]').click(force=True, timeout=2000)
+                page.locator(
+                    '[data-generation-free-gens="true"] [role="switch"], '
+                    '[role="switch"][aria-label="Use free gens"], '
+                    '[role="switch"][aria-label="Use free generations"]'
+                ).first.click(force=True, timeout=2000)
                 page.wait_for_timeout(350)
                 continue
             except Exception:
@@ -75,12 +100,12 @@ def read_free_gens(page, timeout_ms=8000):
     return None
 
 
-def read_quality(page, timeout_ms=6000):
+def read_quality(page, timeout_ms=6000, immediate=False):
     """Read the selected Quality value (480p/720p) after the editor renders."""
     import re
     import time
     deadline = time.monotonic() + timeout_ms / 1000
-    while time.monotonic() < deadline:
+    while immediate or time.monotonic() < deadline:
         value = page.evaluate(r"""() => {
             const nodes = [...document.querySelectorAll(
                 'button[aria-label="Quality"], [role="button"], button, div.rounded-xl'
@@ -93,7 +118,7 @@ def read_quality(page, timeout_ms=6000):
             }
             return '';
         }""")
-        if value:
+        if value or immediate:
             return value
         page.wait_for_timeout(250)
     return ""
