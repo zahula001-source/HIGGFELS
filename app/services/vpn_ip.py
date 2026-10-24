@@ -498,20 +498,83 @@ def _connect_hola_vpn(context, profile_id: str, max_attempts: int = 8) -> dict[s
             pass
 
 
-def connect_unique_vpn_ip(context, profile_id: str, max_attempts: int = 8) -> dict[str, str]:
-    """Connect to a unique VPN IP using the selected provider (Hola VPN or 1ClickVPN)."""
-    if get_active_vpn() == "hola-vpn":
-        return _connect_hola_vpn(context, profile_id, max_attempts=max_attempts)
+
+def _disable_hola_extension(context, hola_id: str) -> None:
+    """Tắt Hola VPN extension qua chrome://extensions để tránh xung đột với 1ClickVPN."""
+    page = context.new_page()
+    try:
+        page.goto("chrome://extensions/", wait_until="domcontentloaded", timeout=10000)
+        page.wait_for_timeout(1500)
+        # chrome://extensions dùng shadow DOM — toggle qua JS evaluate
+        disabled = page.evaluate("""(holaId) => {
+            function shadowQuery(root, selector) {
+                const el = root.querySelector(selector);
+                if (el) return el;
+                for (const child of root.querySelectorAll('*')) {
+                    if (child.shadowRoot) {
+                        const found = shadowQuery(child.shadowRoot, selector);
+                        if (found) return found;
+                    }
+                }
+                return null;
+            }
+            // extensions-manager -> extensions-item[id=holaId] -> toggle
+            const manager = document.querySelector('extensions-manager');
+            if (!manager || !manager.shadowRoot) return false;
+            const items = manager.shadowRoot.querySelectorAll('extensions-item');
+            for (const item of items) {
+                if (item.getAttribute('id') !== holaId) continue;
+                const toggle = shadowQuery(item.shadowRoot, 'cr-toggle');
+                if (toggle && toggle.checked) {
+                    toggle.click();
+                    return true;
+                }
+                return false;
+            }
+            return false;
+        }""", hola_id)
+        if disabled:
+            print(f"  [VPN] Đã tắt Hola VPN extension ({hola_id})", flush=True)
+        else:
+            print(f"  [VPN] Hola extension không tắt được qua shadow DOM (id={hola_id}), tiếp tục dùng 1ClickVPN", flush=True)
+        page.wait_for_timeout(1500)
+    except Exception as e:
+        print(f"  [VPN] Không tắt được Hola extension: {e}", flush=True)
+    finally:
+        try:
+            page.close()
+        except Exception:
+            pass
+
+
+def _connect_1clickvpn(context, profile_id: str, max_attempts: int = 8) -> dict[str, str]:
+    """Kết nối 1ClickVPN và trả về IP mới độc nhất."""
     popup = context.new_page()
-    attempted = set()
+    attempted: set[str] = set()
     try:
         _wait_for_popup_ready(popup)
-        previous = _public_ip(context)
-        for _ in range(max_attempts):
+        try:
+            previous = _public_ip(context)
+        except Exception:
+            previous = ""
+        print(f"  [VPN] 1ClickVPN: IP gốc = {previous or '(không đọc được)'}", flush=True)
+
+        for attempt in range(max_attempts):
             country = _choose_random_country(popup, attempted)
             attempted.add(country)
             _wait_connected(popup)
-            ip = _public_ip(context)
+            popup.wait_for_timeout(3000)
+            try:
+                ip = _public_ip(context)
+            except Exception:
+                ip = ""
+
+            if not ip:
+                print(f"  [VPN] 1ClickVPN: chưa đọc được IP ({attempt+1}/{max_attempts}), thử lại...", flush=True)
+                popup.reload(wait_until="domcontentloaded", timeout=15000)
+                _wait_for_popup_ready(popup)
+                continue
+
             if ip != previous:
                 with _reservation_lock:
                     try:
@@ -532,15 +595,71 @@ def connect_unique_vpn_ip(context, profile_id: str, max_attempts: int = 8) -> di
                         _live_vpn_profiles.add(str(profile_id))
                         _save_reservations()
                         context.once("close", lambda *_: release_vpn_ip(profile_id))
+                        print(f"  [VPN] 1ClickVPN đã kết nối thành công: IP {ip} ({country})", flush=True)
                         return {"ip": ip, "country": country}
+                    print(f"  [VPN] 1ClickVPN: IP {ip} ({country}) bị profile khác dùng, thử quốc gia khác ({attempt+1}/{max_attempts})...", flush=True)
+            else:
+                print(f"  [VPN] 1ClickVPN: IP chưa đổi ({attempt+1}/{max_attempts}), thử quốc gia khác...", flush=True)
+
             popup.reload(wait_until="domcontentloaded", timeout=15000)
             _wait_for_popup_ready(popup)
-        raise RuntimeError("1ClickVPN did not provide a new IP")
+
+        raise RuntimeError(f"1ClickVPN không sinh được IP mới sau {max_attempts} lần thử")
     finally:
         try:
             popup.close()
         except Exception:
             pass
+
+
+def connect_unique_vpn_ip(context, profile_id: str, max_attempts: int = 8) -> dict[str, str]:
+    """Kết nối VPN với IP độc nhất.
+
+    Logic ưu tiên:
+    1. Thử Hola VPN trước (tối đa 2 lần).
+    2. Nếu Hola thất bại → tự động tắt Hola extension và chuyển sang 1ClickVPN.
+    3. Nếu setting chọn sẵn 1ClickVPN → dùng 1ClickVPN luôn.
+    """
+    active = get_active_vpn()
+
+    if active == "1clickvpn":
+        # Người dùng đã chọn 1ClickVPN thủ công
+        return _connect_1clickvpn(context, profile_id, max_attempts=max_attempts)
+
+    # --- Thử Hola VPN trước (2 lần) ---
+    hola_attempts = 2
+    print(f"  [VPN] Thử Hola VPN trước ({hola_attempts} lần)...", flush=True)
+    hola_error: Exception | None = None
+    try:
+        result = _connect_hola_vpn(context, profile_id, max_attempts=hola_attempts)
+        return result
+    except Exception as e:
+        hola_error = e
+        print(f"  [VPN] Hola VPN thất bại sau {hola_attempts} lần: {e}", flush=True)
+
+    # --- Fallback sang 1ClickVPN ---
+    print("  [VPN] Chuyển sang 1ClickVPN...", flush=True)
+
+    # Tắt Hola extension để tránh xung đột
+    try:
+        hola_id = _get_hola_extension_id(context)
+        _disable_hola_extension(context, hola_id)
+    except Exception as e:
+        print(f"  [VPN] Bỏ qua bước tắt Hola: {e}", flush=True)
+
+    # Chờ extension bị tắt ổn định
+    import time as _time
+    _time.sleep(2)
+
+    try:
+        result = _connect_1clickvpn(context, profile_id, max_attempts=max_attempts)
+        # Lưu lại rằng lần sau dùng 1ClickVPN luôn (tuỳ chọn, bỏ comment nếu muốn)
+        # set_active_vpn("1clickvpn")
+        return result
+    except Exception as e2:
+        raise RuntimeError(
+            f"Cả Hola VPN ({hola_error}) lẫn 1ClickVPN ({e2}) đều thất bại"
+        ) from e2
 
 
 _load_reservations()
