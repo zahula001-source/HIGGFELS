@@ -14,13 +14,14 @@ from app.core.state import pw_lock, video_tasks, video_tasks_chat, check_video_t
 from app.core.config import BASE_DIR, STATIC_DIR, DATA_DIR, PROFILES_FILE
 from app.models import ProfileCreate, LaunchRequest
 from app.manager import manager
-from app.browser import launch_profile_with_fallback, close_profile, is_running, list_running
+from app.browser import launch_profile_with_fallback, close_profile, is_running, list_running, ensure_profile_network_mode
 from app.browser_settings import browser_launch_options, VERSION as CLOAK_VERSION
 from app.services.microsoft_recovery import (
     MailboxAccessDenied,
     click_use_password,
     fetch_roundcube_messages,
     read_code_in_smail_tab,
+    read_code_in_fviainboxes_tab,
     parse_microsoft_account,
 )
 from app.services.higgsfield_login import (
@@ -29,8 +30,268 @@ from app.services.higgsfield_login import (
     read_free_gens,
     read_quality,
 )
+from app.services.higgsfield_popups import install_upgrade_plan_guard
+from app.services.higgsfield_quiz import handle_quiz_step
+from app.services.browser_navigation import navigate_higgsfield
 
 router = APIRouter()
+
+
+def _normalize_account_email(raw) -> str:
+    """Extract a comparable email from ms_account/email fields."""
+    if isinstance(raw, dict):
+        raw = raw.get("email") or raw.get("ms_email") or ""
+    value = str(raw or "").strip().split("|", 1)[0].strip().lower()
+    return value if "@" in value else ""
+
+
+def _is_microsoft_security_key_challenge(url: str) -> bool:
+    from urllib.parse import urlsplit
+
+    parsed = urlsplit(str(url or "").lower())
+    if parsed.hostname not in {
+        "login.live.com", "login.microsoftonline.com", "login.microsoft.com", "account.live.com",
+    }:
+        return False
+    path = parsed.path.lower()
+    return "/fido" in path or "/passkey" in path or path.endswith("/fido") or path.endswith("/passkey")
+
+
+def _is_microsoft_kmsi_page(page) -> bool:
+    try:
+        current_url = str(getattr(page, "url", "") or "").lower()
+        if "kmsi" in current_url:
+            return True
+        if hasattr(page, "evaluate"):
+            return bool(page.evaluate("""() => {
+                const text = (document.body ? document.body.innerText : '').toLowerCase();
+                if (text.includes('verify your email') || text.includes('xác minh email') || 
+                    text.includes('send code') || text.includes('gửi mã') ||
+                    text.includes('enter code') || text.includes('nhập mã') ||
+                    text.includes('alternate email') || text.includes('proof')) {
+                    return false;
+                }
+                if (text.includes('stay signed in') || text.includes('duy trì đăng nhập') || text.includes('do this to reduce the number of times')) return true;
+                if (document.getElementById('KmsiCheckboxField') || document.querySelector('input[name="DontShowAgain"]')) return true;
+                const btn = document.getElementById('idSIButton9') || document.querySelector('button[data-testid="primaryButton"]');
+                if (btn) {
+                    const t = (btn.innerText || btn.value || '').trim().toLowerCase();
+                    if (t === 'yes' || t === 'có') return true;
+                }
+                return false;
+            }"""))
+    except Exception:
+        pass
+    return False
+
+
+def _click_microsoft_kmsi_yes(page) -> bool:
+    """Tự động tick 'Don't show this again' (nếu có) và click nút 'Yes' / 'Có' trên màn hình Stay signed in."""
+    if not _is_microsoft_kmsi_page(page):
+        return False
+
+    try:
+        clicked = page.evaluate("""() => {
+            const bodyText = (document.body ? document.body.innerText : '').toLowerCase();
+            const isKmsi = bodyText.includes('stay signed in') || 
+                           bodyText.includes('duy trì đăng nhập') || 
+                           bodyText.includes('do this to reduce the number of times') ||
+                           document.getElementById('KmsiCheckboxField') !== null ||
+                           document.querySelector('input[name="DontShowAgain"]') !== null;
+            if (!isKmsi) return false;
+
+            // Checkbox "Không hiển thị lại thông báo này" / "Don't show this again"
+            const cb = document.getElementById('KmsiCheckboxField') || document.querySelector('input[name="DontShowAgain"]');
+            if (cb && !cb.checked) {
+                try { cb.click(); } catch (e) {}
+            }
+
+            // Nút Yes / Có (idSIButton9 hoặc primaryButton)
+            const yesBtn = document.getElementById('idSIButton9') || 
+                           document.querySelector('button[data-testid="primaryButton"]') ||
+                           document.querySelector('input[type="submit"][value="Yes"]') ||
+                           document.querySelector('input[type="submit"][value="Có"]') ||
+                           document.querySelector('button[type="submit"]');
+            
+            if (yesBtn) {
+                const btnText = (yesBtn.innerText || yesBtn.value || '').trim().toLowerCase();
+                if (btnText === 'yes' || btnText === 'có' || isKmsi) {
+                    yesBtn.click();
+                    return true;
+                }
+            }
+            const btns = document.querySelectorAll('button, input[type="submit"], [role="button"]');
+            for (let b of btns) {
+                const t = (b.innerText || b.value || '').trim().toLowerCase();
+                if (t === 'yes' || t === 'có') {
+                    b.click();
+                    return true;
+                }
+            }
+            return false;
+        }""")
+        if clicked:
+            return True
+    except Exception:
+        pass
+
+    try:
+        kmsi_btn = page.locator(
+            'button:has-text("Yes"), input[value="Yes"], button:has-text("Có"), input[value="Có"], #idSIButton9, button[data-testid="primaryButton"]'
+        ).first
+        if kmsi_btn.count() > 0 and kmsi_btn.is_visible(timeout=500):
+            try:
+                cb = page.locator('#KmsiCheckboxField, input[name="DontShowAgain"]').first
+                if cb.count() > 0 and not cb.is_checked():
+                    cb.check(timeout=500)
+            except Exception:
+                pass
+            kmsi_btn.click(force=True, timeout=2000)
+            return True
+    except Exception:
+        pass
+    return False
+
+
+
+def _send_escape_to_security_window(user32, ctypes_module) -> bool:
+    dialogs = []
+    callback_type = ctypes_module.WINFUNCTYPE(ctypes_module.c_bool, ctypes_module.c_void_p, ctypes_module.c_void_p)
+
+    def collect_dialog(hwnd, _extra):
+        if not user32.IsWindowVisible(hwnd):
+            return True
+        title_length = user32.GetWindowTextLengthW(hwnd)
+        if not title_length:
+            return True
+        title_buffer = ctypes_module.create_unicode_buffer(title_length + 1)
+        user32.GetWindowTextW(hwnd, title_buffer, len(title_buffer))
+        title = title_buffer.value.casefold()
+        if any(label in title for label in ("windows security", "bảo mật windows", "security key setup")):
+            dialogs.append(hwnd)
+        return True
+
+    callback = callback_type(collect_dialog)
+    user32.EnumWindows(callback, 0)
+    if not dialogs:
+        return False
+
+    vk_escape = 0x1B
+    key_up = 0x0002
+    wm_keydown = 0x0100
+    wm_keyup = 0x0101
+    for hwnd in dialogs:
+        if user32.SetForegroundWindow(hwnd) and user32.GetForegroundWindow() == hwnd:
+            user32.keybd_event(vk_escape, 0, 0, 0)
+            user32.keybd_event(vk_escape, 0, key_up, 0)
+            return True
+        if user32.PostMessageW(hwnd, wm_keydown, vk_escape, 0):
+            user32.PostMessageW(hwnd, wm_keyup, vk_escape, 0)
+            return True
+    return False
+
+
+def _send_escape_to_foreground_security_prompt() -> bool:
+    """Dismiss only a visible Windows Security dialog; never send Enter/OK."""
+    if os.name != "nt":
+        return False
+    try:
+        import ctypes
+        return _send_escape_to_security_window(ctypes.windll.user32, ctypes)
+    except Exception:
+        return False
+
+
+def _dismiss_microsoft_security_key_challenge(page) -> bool:
+    """Cancel the optional FIDO setup when possible; never interact with its OK button."""
+    if not _is_microsoft_security_key_challenge(page.url) or _is_microsoft_kmsi_page(page):
+        return True
+
+    for _ in range(6):
+        if _send_escape_to_foreground_security_prompt():
+            print("Sent Escape to the foreground Windows Security prompt")
+            page.wait_for_timeout(500)
+            if not _is_microsoft_security_key_challenge(page.url) or _is_microsoft_kmsi_page(page):
+                return True
+
+        try:
+            page.keyboard.press("Escape")
+        except Exception:
+            pass
+        if not _is_microsoft_security_key_challenge(page.url) or _is_microsoft_kmsi_page(page):
+            return True
+
+        try:
+            cancel_buttons = page.locator(
+                '#iCancel, a#iCancel, button#iCancel, input[value="Hủy"], '
+                'input[value="Cancel"], a:has-text("Hủy"), button:has-text("Hủy"), '
+                'a:has-text("Cancel"), button:has-text("Cancel"), '
+                'a:has-text("Bỏ qua"), button:has-text("Bỏ qua"), a:has-text("Skip"), button:has-text("Skip"), '
+                'a:has-text("No thanks"), button:has-text("No thanks"), a:has-text("Để sau"), button:has-text("Để sau")'
+            )
+            for index in range(cancel_buttons.count()):
+                cancel_button = cancel_buttons.nth(index)
+                if not cancel_button.is_visible(timeout=300):
+                    continue
+                cancel_button.click(timeout=1500, force=True)
+                page.wait_for_timeout(500)
+                if not _is_microsoft_security_key_challenge(page.url) or _is_microsoft_kmsi_page(page):
+                    return True
+                break
+        except Exception:
+            pass
+        page.wait_for_timeout(400)
+    return not _is_microsoft_security_key_challenge(page.url) or _is_microsoft_kmsi_page(page)
+
+
+def _wait_for_microsoft_security_key_resolution(page, poll_ms: int = 1000, max_wait_sec: int = 4) -> bool:
+    """Keep the browser task alive until the security prompt is resolved or tab closes."""
+    deadline = time.time() + max_wait_sec
+    try:
+        while time.time() < deadline:
+            if page.is_closed():
+                return False
+            if not _is_microsoft_security_key_challenge(page.url) or _is_microsoft_kmsi_page(page):
+                return True
+            if _send_escape_to_foreground_security_prompt():
+                print("Sent Escape to foreground Windows Security prompt during wait")
+            if _click_microsoft_kmsi_yes(page):
+                return True
+            page.wait_for_timeout(poll_ms)
+        return True
+    except Exception:
+        return False
+
+
+def _check_higgsfield_signup_consent(page) -> bool | None:
+    """Check the visible signup consent when present; None means no such step."""
+    label = page.locator(
+        'label:has(input[type="checkbox"]):has-text("I agree to the Terms of Use")'
+    ).first
+    if not label.count() or not label.is_visible(timeout=300):
+        return None
+
+    checkbox = label.locator('input[type="checkbox"]').first
+    if checkbox.is_checked():
+        return True
+    label.click(force=True, timeout=2500)
+    return checkbox.is_checked()
+
+
+def _profile_account_emails(exclude_profile_id: str | None = None) -> set[str]:
+    emails: set[str] = set()
+    for profile in manager.list_profiles():
+        if exclude_profile_id and profile.id == exclude_profile_id:
+            continue
+        account_file = Path(profile.user_data_dir) / "ms_account.txt"
+        try:
+            if account_file.exists():
+                email = _normalize_account_email(account_file.read_text(encoding="utf-8"))
+                if email:
+                    emails.add(email)
+        except Exception:
+            continue
+    return emails
 
 @router.get("/api/profiles")
 def get_profiles():
@@ -116,6 +377,26 @@ def duplicate_profile(profile_id: str):
         raise HTTPException(404, "Profile not found")
     return new_p.model_dump()
 
+def _is_manual_launch(req):
+    if req is None:
+        return False
+    supplied = req.model_fields_set
+    if "manual_open" in supplied:
+        return req.manual_open
+    # The original launchProfile handler sent both fields, unlike the separate
+    # Check Free Gen, batch-check and Tạo acc + login handlers. Support an old
+    # page still open in Chrome without changing those workflows.
+    return {"enable_ext_btn2", "keep_open_after_check"}.issubset(supplied)
+
+
+@router.post("/api/profiles/{profile_id}/launch-manual")
+def launch_manual_profile_endpoint(profile_id: str, req: LaunchRequest = None):
+    req = req or LaunchRequest()
+    req.manual_open = True
+    req.keep_open_after_check = True
+    return launch_profile_endpoint(profile_id, req)
+
+
 @router.post("/api/profiles/{profile_id}/launch")
 def launch_profile_endpoint(profile_id: str, req: LaunchRequest = None):
     profile = manager.get_profile(profile_id)
@@ -154,14 +435,27 @@ def launch_profile_endpoint(profile_id: str, req: LaunchRequest = None):
         profile.extensions = (profile.extensions + ";" + ext_path).strip(";")
         profile.extensions = profile.extensions.replace(";;", ";")
 
+    manual_open = _is_manual_launch(req)
+    if manual_open:
+        req.manual_open = True
+        req.keep_open_after_check = True
     result = launch_profile_with_fallback(profile, req)
     
     if result["status"] in ["launched", "already_running"]:
+        if manual_open:
+            with _signup_lock:
+                _manual_open_sessions[profile_id] = result["pid"]
+            print(f"Mở Chrome thủ công [{profile_id}]: chỉ check nhanh, giữ mở đến khi bạn tự đóng.")
         try:
             # Auto login immediately when opening chrome
-            # Nếu được gọi từ "Tạo acc + login", UI sẽ truyền keep_open_after_check=False
+            # UI quyết định giữ hay đóng Chrome qua keep_open_after_check.
             keep_open_after = getattr(req, "keep_open_after_check", True) if req else True
-            auto_signup_endpoint(profile_id, keep_open=keep_open_after, generate_ip=req.generate_ip, engine=req.engine)
+            auto_signup_endpoint(
+                profile_id, keep_open=keep_open_after,
+                generate_ip=req.generate_ip if req else False,
+                engine=req.engine if req else "chrome",
+                manual_open=manual_open,
+            )
         except Exception as e:
             print(f"Failed to trigger auto login: {e}")
 
@@ -183,6 +477,9 @@ def toggle_auto_random_fp_endpoint(profile_id: str, payload: dict = Body(...)):
 @router.post("/api/profiles/{profile_id}/close")
 def close_profile_endpoint(profile_id: str):
     result = close_profile(profile_id)
+    if result.get("status") in ("closed", "not_running"):
+        with _signup_lock:
+            _manual_open_sessions.pop(profile_id, None)
     return result
 
 @router.put("/api/profiles/{profile_id}/name")
@@ -316,9 +613,26 @@ def import_bundle(payload: dict = Body(...)):
     
     created = []
     errors = []
+    skipped = []
+    existing_emails = _profile_account_emails()
     for entry in bundle:
         try:
             name = entry.get("name", "Profile")
+            account_raw = (
+                entry.get("ms_account")
+                or entry.get("email")
+                or entry.get("ms_email")
+                or ""
+            )
+            account_email = _normalize_account_email(account_raw)
+            if account_email and account_email in existing_emails:
+                skipped.append({
+                    "name": name,
+                    "email": account_email,
+                    "reason": "Email đã tồn tại, bỏ qua để tránh trùng thẻ",
+                })
+                continue
+
             from app.models import ProfileCreate
             
             pc = ProfileCreate(
@@ -326,7 +640,9 @@ def import_bundle(payload: dict = Body(...)):
                 os=entry.get("os", "windows"),
                 browser="chromium",
                 proxy=entry.get("proxy"),
-                notes=entry.get("notes", ""),
+                # Profile nhập cookie chỉ ở trạng thái chờ kiểm tra; không kế
+                # thừa nhãn Free Gen/720p của profile nguồn trong bundle.
+                notes="đã nhập cookie - chưa check",
                 fingerprint_preset=True
             )
             new_p = manager.create_profile(
@@ -349,10 +665,18 @@ def import_bundle(payload: dict = Body(...)):
                 manager.import_cookies(new_p.id, entry["imported_cookies"])
             
             created.append({"id": new_p.id, "name": new_p.name})
+            if account_email:
+                existing_emails.add(account_email)
         except Exception as e:
             errors.append({"name": entry.get("name", "?"), "error": str(e)})
     
-    return {"ok": True, "created": len(created), "profiles": created, "errors": errors}
+    return {
+        "ok": True,
+        "created": len(created),
+        "profiles": created,
+        "skipped": skipped,
+        "errors": errors,
+    }
 
 @router.get("/api/profiles/{profile_id}/logs")
 def get_logs(profile_id: str):
@@ -362,35 +686,67 @@ def get_logs(profile_id: str):
     return {"log": log_file.read_text(encoding="utf-8", errors="ignore")[-5000:]}
 
 _running_signups = set()
+_signup_options = {}
+_manual_open_sessions = {}
 _signup_lock = threading.Lock()
 
 @router.post("/api/profiles/{profile_id}/auto-signup")
-def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: bool = False, engine: str = "chrome"):
+def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: bool = False, engine: str = "chrome", manual_open: bool = False):
     import threading
     from pathlib import Path
 
     profile = manager.get_profile(profile_id)
     if not profile: raise HTTPException(404, "Profile not found")
-    
+
     from app.browser import prepare_chrome_136_profile
     runtime_dir = profile.user_data_dir if engine == "cloakbrowser" else prepare_chrome_136_profile(profile.user_data_dir)
     port_file = Path(runtime_dir) / "cdp_port.txt"
-    if not port_file.exists():
-        raise HTTPException(400, "Profile đang không chạy hoặc không có CDP port. Hãy mở lại Chrome!")
-        
-    try:
-        port = int(port_file.read_text().strip())
-    except:
-        raise HTTPException(400, "Invalid CDP port.")
 
     with _signup_lock:
+        manual_pid = _manual_open_sessions.get(profile_id)
+        if manual_pid is not None:
+            # Protect only this manually opened runner, not a later new session.
+            if list_running().get(profile_id) == manual_pid:
+                manual_open = True
+                keep_open = True
+            else:
+                _manual_open_sessions.pop(profile_id, None)
         if profile_id in _running_signups:
+            # A click on Tạo acc + login may arrive while the automatic login
+            # started by /launch is already running. Apply its close preference
+            # to that worker instead of discarding the new request.
+            options = _signup_options.get(profile_id)
+            if options is not None:
+                options["manual_open"] = options.get("manual_open", False) or manual_open
+                options["keep_open"] = keep_open or options["manual_open"]
             print(f"Bỏ qua: Auto signup cho profile {profile_id} đã đang chạy.")
             return {"ok": True, "message": "Auto Login đã đang chạy."}
         _running_signups.add(profile_id)
+        signup_options = {"keep_open": keep_open or manual_open, "manual_open": manual_open}
+        _signup_options[profile_id] = signup_options
+
+    try:
+        ensure_profile_network_mode(profile, generate_ip=generate_ip, engine=engine)
+        if not port_file.exists():
+            raise HTTPException(400, "Profile đang không chạy hoặc không có CDP port. Hãy mở lại Chrome!")
+        try:
+            int(port_file.read_text().strip())
+        except Exception as port_error:
+            raise HTTPException(400, "Invalid CDP port.") from port_error
+    except RuntimeError as network_error:
+        with _signup_lock:
+            _running_signups.discard(profile_id)
+            _signup_options.pop(profile_id, None)
+        raise HTTPException(400, str(network_error)) from network_error
+    except HTTPException:
+        with _signup_lock:
+            _running_signups.discard(profile_id)
+            _signup_options.pop(profile_id, None)
+        raise
 
     def run_auto_signup():
         nonlocal keep_open
+        check_completed = False
         import random, time
         # --- Tối ưu: Stagger startup (giãn cách thời gian mở) để các luồng không tranh chấp tài nguyên và không spam API cùng 1 miligiây ---
         time.sleep(random.uniform(0.5, 3.5))
@@ -422,6 +778,8 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                     except: pass
                     return
 
+                install_upgrade_plan_guard(context)
+
                 if generate_ip:
                     try:
                         from app.services.vpn_ip import connect_unique_vpn_ip
@@ -429,6 +787,11 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                         print(f"Sinh IP thanh cong: {vpn_info['ip']} ({vpn_info['country']})")
                     except Exception as vpn_error:
                         print(f"Sinh IP that bai, dung tao acc de tranh trung IP: {vpn_error}")
+                        p_obj = manager.get_profile(profile_id)
+                        if p_obj:
+                            from app.services.vpn_ip import get_active_vpn
+                            p_obj.notes = f"Lỗi VPN ({get_active_vpn()})"
+                            manager._save()
                         return
                     
                 # Tìm tab đang ở trang higgsfield, nếu không có thì mở mới
@@ -449,8 +812,15 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                         page = context.new_page()
                     
                     if page.url != HIGGSFIELD_URL:
-                        page.goto(HIGGSFIELD_URL, timeout=30000)
-                        page.wait_for_load_state("domcontentloaded")
+                        # Preserve onboarding and Microsoft login already in progress.
+                        from urllib.parse import urlsplit
+                        current = urlsplit(page.url)
+                        login_in_progress = (
+                            current.hostname == "higgsfield.ai"
+                            and (current.path == "/quiz" or current.path.startswith("/auth/"))
+                        ) or current.hostname in ("login.microsoftonline.com", "login.live.com", "account.live.com")
+                        if not login_in_progress:
+                            navigate_higgsfield(page, HIGGSFIELD_URL)
                     
                     page.bring_to_front()
                     page.wait_for_timeout(2000)
@@ -462,8 +832,6 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                         # Bỏ qua redirect để bấm nút trực tiếp
                 except Exception as e:
                     print(f"Lỗi khi lấy/tạo tab Higgsfield: {e}")
-                    try: p.stop()
-                    except: pass
                     return
                 
                 # B1: Click nút Login hoặc Sign up (nếu đang ở trang chủ https://higgsfield.ai)
@@ -475,42 +843,68 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                         ms_btn_visible = True
                 except: pass
 
-                if initial_login_state is not True and not ms_btn_visible and "auth/sign-in" not in page.url:
-                    clicked_auth_btn = False
+                def accept_cookie_notice():
                     try:
-                        login_btn = page.locator("a:has-text('Login'), button:has-text('Login')")
-                        if login_btn.count() > 0 and login_btn.first.is_visible():
-                            login_btn.first.click(timeout=2000, force=True)
-                            clicked_auth_btn = True
-                            print("Clicked Login button")
-                    except: pass
-                    
-                    if not clicked_auth_btn:
+                        dialog = page.locator('div[role="dialog"][aria-label="cookieconsent"]')
+                        accept = dialog.locator('a.cc-btn.cc-allow')
+                        if not accept.is_visible(timeout=300):
+                            return False
+                        accept.scroll_into_view_if_needed(timeout=1000)
+                        accept.click(timeout=2500, force=True)
                         try:
-                            signup_btn = page.locator("a:has-text('Sign up'), button:has-text('Sign up')")
-                            if signup_btn.count() > 0 and signup_btn.first.is_visible():
-                                signup_btn.first.click(timeout=2000, force=True)
-                                clicked_auth_btn = True
-                                print("Clicked Sign up button")
-                        except: pass
-                    
-                    if not clicked_auth_btn:
-                        # Fallback: tìm bằng JS
-                        try:
-                            page.evaluate("""() => {
-                                const els = document.querySelectorAll('a, button');
-                                for (let el of els) {
-                                    if (el.offsetWidth === 0 && el.offsetHeight === 0) continue;
-                                    const t = (el.innerText || '').trim().toLowerCase();
-                                    if (t === 'login' || t === 'sign up' || t === 'signup') {
-                                        el.click();
-                                        return;
-                                    }
-                                }
+                            dialog.wait_for(state="hidden", timeout=3000)
+                        except Exception:
+                            clicked = page.evaluate("""() => {
+                                const button = document.querySelector(
+                                    'div[role="dialog"][aria-label="cookieconsent"] a.cc-btn.cc-allow'
+                                );
+                                if (!button) return false;
+                                HTMLElement.prototype.click.call(button);
+                                return true;
                             }""")
-                            print("Clicked auth button via JS fallback")
-                        except Exception as e:
-                            print(f"Fallback click err (tab might be closed/navigating): {e}")
+                            if not clicked:
+                                return False
+                            dialog.wait_for(state="hidden", timeout=3000)
+                        print("Accepted cookies with the Accept All Cookies button")
+                        return True
+                    except Exception as cookie_error:
+                        print(f"Cookie consent click failed: {cookie_error}")
+                        return False
+
+                if initial_login_state is not True and not ms_btn_visible and "auth/sign-in" not in page.url and "higgsfield.ai/quiz" not in page.url:
+                    accept_cookie_notice()
+                    for selector, label in (
+                        (".hfnav-auth-login", "Login"),
+                        (".hfnav-auth-signup", "Sign up"),
+                    ):
+                        try:
+                            auth_button = page.locator(selector).first
+                            if not auth_button.is_visible(timeout=500):
+                                continue
+                            auth_button.scroll_into_view_if_needed(timeout=1000)
+                            auth_button.click(timeout=2500, force=True)
+                            print(f"Clicked visible {label} button")
+                        except Exception as auth_error:
+                            print(f"Could not click {label} button: {auth_error}")
+                            continue
+
+                        for _ in range(12):
+                            try:
+                                microsoft_option = page.locator(
+                                    'button:has-text("Continue with Microsoft"):visible'
+                                )
+                                if microsoft_option.count() and microsoft_option.first.is_visible(timeout=300):
+                                    ms_btn_visible = True
+                                    break
+                            except Exception:
+                                pass
+                            if "login.microsoft" in page.url or "login.live" in page.url or "higgsfield.ai/quiz" in page.url:
+                                break
+                            page.wait_for_timeout(500)
+                        if ms_btn_visible or "login.microsoft" in page.url or "login.live" in page.url or "higgsfield.ai/quiz" in page.url:
+                            break
+                        print(f"{label} did not open Microsoft sign-in; trying the other button.")
+                        accept_cookie_notice()
                 
                 # B2: Đợi popup "Welcome to Higgsfield" xuất hiện hoặc phát hiện đã login
                 already_logged_in = initial_login_state is True
@@ -526,6 +920,8 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                         if video_login_state(page) is True:
                             print("Đã phát hiện avatar/free gens, đã login sẵn!")
                             already_logged_in = True
+                            break
+                        if page.locator('button:has-text("Continue with Microsoft"):visible').count() > 0:
                             break
                         wel_loc = page.locator("text=Welcome to Higgsfield")
                         if wel_loc.count() > 0 and wel_loc.first.is_visible():
@@ -562,31 +958,27 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                 if not already_logged_in:
                     # B3: Click "Continue with Microsoft"
                     try:
-                        # Đóng popup Cookie nếu che mất giao diện
-                        try:
-                            cookie_btn = page.locator('.cc-allow, text="Chấp nhận tất cả Cookies", text="Accept all Cookies"').first
-                            if cookie_btn.is_visible(timeout=500):
-                                cookie_btn.click(force=True)
-                                print("Closed Cookie popup on initial login")
-                        except: pass
-                        
-                        ms_btn = page.locator("button:has-text('Continue with Microsoft')")
-                        if ms_btn.count() > 0:
-                            ms_btn.first.click(timeout=3000, force=True)
-                            print("Clicked 'Continue with Microsoft'!")
-                        else:
-                            page.evaluate("""() => {
-                                const btns = document.querySelectorAll('button');
-                                for (let b of btns) {
-                                    if ((b.innerText || '').includes('Continue with Microsoft')) {
-                                        b.click();
-                                        return;
-                                    }
-                                }
-                            }""")
-                            print("Clicked Microsoft via JS fallback")
+                        accept_cookie_notice()
+                        consent_checked = _check_higgsfield_signup_consent(page)
+                        if consent_checked is False:
+                            raise RuntimeError("Could not check the signup Terms of Use consent")
+                        if consent_checked is True:
+                            print("Checked Higgsfield signup consent")
+                        ms_btn = page.locator('button:has-text("Continue with Microsoft"):visible').first
+                        if not ms_btn.is_visible(timeout=1000):
+                            raise RuntimeError("Microsoft sign-in option did not appear after Login/Sign up")
+                        ms_btn.scroll_into_view_if_needed(timeout=1000)
+                        ms_btn.click(timeout=3000, force=True)
+                        print("Clicked 'Continue with Microsoft'!")
                     except Exception as e:
-                        print(f"Lỗi click Microsoft: {e}")
+                        keep_open = True
+                        signup_options["keep_open"] = True
+                        live_profile = manager.get_profile(profile_id)
+                        if live_profile:
+                            live_profile.notes = "⚠️ Cần đăng nhập thủ công"
+                            manager._save()
+                        print(f"Login entry did not reach Microsoft sign-in: {e}; keeping Chrome open.")
+                        return
                     
                     # Đợi chuyển sang trang login.microsoftonline.com / login.live.com hoặc đợi đến khi avatar xuất hiện
                     try:
@@ -600,6 +992,32 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                             page.wait_for_timeout(500)
                     except: pass
                     print(f"Current URL after waiting for redirect: {page.url}")
+
+                    from urllib.parse import urlsplit
+                    auth_url = urlsplit(page.url)
+                    auth_transitioned = (
+                        auth_url.hostname in {
+                            "login.microsoftonline.com", "login.microsoft.com",
+                            "login.live.com", "account.live.com",
+                        }
+                        or (
+                            auth_url.hostname == "higgsfield.ai"
+                            and (
+                                auth_url.path == "/quiz"
+                                or auth_url.path.startswith("/auth/")
+                                or auth_url.path == "/auth/sign-in"
+                            )
+                        )
+                    )
+                    if not already_logged_in and not auth_transitioned:
+                        keep_open = True
+                        signup_options["keep_open"] = True
+                        live_profile = manager.get_profile(profile_id)
+                        if live_profile:
+                            live_profile.notes = "⚠️ Cần đăng nhập thủ công"
+                            manager._save()
+                        print("Login chưa chuyển khỏi homepage sau khi bấm; giữ Chrome để đăng nhập thủ công.")
+                        return
                     
                     if ms_email and ms_password:
                         page.wait_for_timeout(500)
@@ -828,7 +1246,7 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                     
                 # === Vòng lặp toàn cầu xử lý các trang sau khi đăng nhập (Quiz, Yes/Accept, FIDO, Turnstile) ===
                 print("Handling post-login popups...")
-                global_quiz_clicked_options = set()
+                quiz_state = {}
                 quiz_completed = False
                 captcha_active = False
                 keep_open_before_captcha = keep_open
@@ -862,6 +1280,25 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                     except Exception:
                         pass
 
+                def wait_for_security_key_resolution():
+                    nonlocal keep_open
+                    _dismiss_microsoft_security_key_challenge(page)
+                    if _click_microsoft_kmsi_yes(page):
+                        print("Watchdog: Đã bấm 'Yes' tại trang Stay signed in sau khi tắt Security Key!")
+                        return True
+                    keep_open = True
+                    set_watchdog_note("⚠️ Xác minh bảo mật Microsoft")
+                    try:
+                        page.bring_to_front()
+                    except Exception:
+                        pass
+                    print("Microsoft yêu cầu xác nhận Security Key/Passkey; thử đóng và tiếp tục...")
+                    resolved = _wait_for_microsoft_security_key_resolution(page, max_wait_sec=4)
+                    restore_watchdog_note()
+                    if _click_microsoft_kmsi_yes(page):
+                        print("Watchdog: Đã bấm 'Yes' tại trang Stay signed in!")
+                    return True
+
                 def handle_microsoft_credentials():
                     """Handle V1 login and V2 recovery-email verification forms."""
                     nonlocal recovery_known_uids, recovery_baseline_ready
@@ -891,6 +1328,12 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                                     pass
                             return None
 
+                        # Microsoft "Stay signed in?" (Duy trì đăng nhập?)
+                        if _click_microsoft_kmsi_yes(page):
+                            print("Watchdog: Đã bấm 'Yes' tại trang Stay signed in (Duy trì đăng nhập)!")
+                            page.wait_for_timeout(1500)
+                            return True
+
                         # Microsoft may show a method picker while a generic email
                         # input is also present. Always choose password first.
                         if (
@@ -917,7 +1360,7 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                         # should receive the code. Click the row matching its domain
                         # (the local part is normally masked in the UI).
                         if (
-                            is_v2_account and recovery_email and recovery_password
+                            is_v2_account and recovery_email
                             and page.locator('input[type="password"]:visible').count() == 0
                         ):
                             recovery_domain = recovery_email.rsplit("@", 1)[-1].lower()
@@ -981,8 +1424,9 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                                 return True
 
                             recovery_input = first_visible(
-                                '#iProofEmail, input[name="ProofConfirmation"], '
-                                'input[autocomplete="email"], input[type="email"]'
+                                '#iProofEmail, input[name="ProofConfirmation"], input[name*="Proof" i], input[id*="Proof" i], '
+                                'input[autocomplete="email"], input[type="email"], '
+                                'input[placeholder*="email" i], input[aria-label*="email" i]'
                             )
                             is_recovery_confirmation = (
                                 recovery_input is not None
@@ -990,11 +1434,27 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                                     exact_recovery_input is not None
                                     or
                                     "send code" in body_lower
+                                    or "gửi mã" in body_lower
                                     or "verify your email" in body_lower
-                                    or "enter the email address" in body_lower
                                     or "xác minh email" in body_lower
+                                    or "enter the email address" in body_lower
+                                    or "nhập địa chỉ email" in body_lower
+                                    or "alternate email" in body_lower
                                 )
                             )
+                            if not is_recovery_confirmation and (
+                                "verify your email" in body_lower
+                                or "xác minh email" in body_lower
+                                or "send code" in body_lower
+                                or "gửi mã" in body_lower
+                                or "alternate email" in body_lower
+                            ) and exact_otp_input is None:
+                                recovery_input = first_visible(
+                                    'input[type="text"]:not([type="hidden"]), input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="radio"]):not([type="checkbox"])'
+                                )
+                                if recovery_input is not None:
+                                    is_recovery_confirmation = True
+
                             if is_recovery_confirmation:
                                 # Legacy account.live.com already appends the domain.
                                 domain_label = first_visible('#iConfirmProofEmailDomain')
@@ -1003,7 +1463,28 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                                     displayed_domain = domain_label.inner_text().strip().lower()
                                     if displayed_domain == "@" + recovery_domain:
                                         proof_text = recovery_email.rsplit("@", 1)[0]
+                                try:
+                                    recovery_input.click(timeout=1000)
+                                except Exception:
+                                    pass
                                 recovery_input.fill(proof_text, timeout=3000)
+                                try:
+                                    page.evaluate(r"""(val) => {
+                                        const el = document.getElementById('iProofEmail') || 
+                                                   document.querySelector('input[name="ProofConfirmation"]') || 
+                                                   document.querySelector('input[type="email"]') || 
+                                                   document.querySelector('input[type="text"]:not([type="hidden"])');
+                                        if (!el) return;
+                                        el.focus();
+                                        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+                                        if (setter) setter.call(el, val);
+                                        el.dispatchEvent(new Event('input', { bubbles: true }));
+                                        el.dispatchEvent(new Event('change', { bubbles: true }));
+                                        el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+                                    }""", proof_text)
+                                except Exception:
+                                    pass
+
                                 if not recovery_baseline_ready and not recovery_api_denied:
                                     try:
                                         recovery_known_uids, _ = fetch_roundcube_messages(
@@ -1018,7 +1499,7 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                                 send_button = first_visible(
                                     '#iSelectProofAction, #idSubmit_SAOTCS_SendCode, #idSIButton9, '
                                     'button[data-testid="primaryButton"], '
-                                    'button:has-text("Send code"), input[type="submit"]'
+                                    'button:has-text("Send code"), button:has-text("Gửi mã"), input[type="submit"]'
                                 )
                                 if send_button is not None and send_button.is_enabled():
                                     send_button.click(timeout=3000)
@@ -1027,13 +1508,13 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                                 recovery_code_requested = True
                                 recovery_last_poll = 0.0
                                 recovery_last_web_code = ""
-                                print("Watchdog: entered recovery email and requested code")
+                                print(f"Watchdog: entered recovery email ({proof_text}) and requested code")
                                 return True
 
                             otp_input = (
                                 exact_otp_input
                                 if exact_otp_input is not None
-                                else first_visible('input[inputmode="numeric"]')
+                                else first_visible('input[inputmode="numeric"], input[name="otc"], #iOttText, input[autocomplete="one-time-code"]')
                             )
                             if otp_input is not None:
                                 try:
@@ -1044,36 +1525,65 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                                         error_text = verify_error.inner_text(timeout=500).lower()
                                         if "didn't work" in error_text or "did not work" in error_text:
                                             recovery_code_requested = True
-                                            print("Watchdog: Microsoft rejected OTP; refreshing smail1s inbox")
+                                            print("Watchdog: Microsoft rejected OTP; refreshing mailbox")
                                 except Exception:
                                     pass
                             if otp_input is not None and recovery_code_requested:
-                                if recovery_api_denied:
+                                if recovery_email.lower().endswith("@fviainboxes.com"):
                                     keep_open = True
-                                    set_watchdog_note("⚠️ Xác minh OTP: smail1s chặn API")
+                                    set_watchdog_note("📧 Đang lấy mã OTP từ fviainboxes.com...")
                                     try:
-                                        web_code = read_code_in_smail_tab(
-                                            context,
-                                            recovery_email,
-                                            recovery_password,
-                                            refresh=True,
+                                        web_code = read_code_in_fviainboxes_tab(
+                                            context, recovery_email, refresh=True,
                                             exclude_codes={recovery_last_web_code},
                                         )
                                     except Exception as web_mail_error:
-                                        print(f"Tab smail1s: {web_mail_error}")
+                                        print(f"fviainboxes tab: {web_mail_error}")
                                         return False
                                     if web_code:
                                         otp_input.fill(web_code, timeout=3000)
                                         manual_next = first_visible(
                                             '#iVerifyCodeAction, #idSubmit_SAOTCC_Continue, '
-                                            '#idSIButton9, button[data-testid="primaryButton"]'
+                                            '#idSIButton9, button[data-testid="primaryButton"], '
+                                            'button:has-text("Next"), button:has-text("Verify"), button:has-text("Xác nhận"), button:has-text("Tiếp theo"), input[type="submit"]'
                                         )
                                         if manual_next is not None and manual_next.is_enabled():
                                             manual_next.click(timeout=3000)
-                                            recovery_last_web_code = web_code
-                                            recovery_code_requested = False
-                                            print("Watchdog: submitted OTP from smail1s tab")
-                                            return True
+                                        else:
+                                            otp_input.press("Enter")
+                                        recovery_last_web_code = web_code
+                                        recovery_code_requested = False
+                                        print(f"Watchdog: submitted OTP {web_code} from fviainboxes tab")
+                                        return True
+                                    return False
+
+                                if recovery_api_denied:
+                                    keep_open = True
+                                    set_watchdog_note("⚠️ Xác minh OTP: smail1s chặn API")
+                                    try:
+                                        web_code = read_code_in_smail_tab(
+                                            context, recovery_email, recovery_password,
+                                            refresh=True,
+                                            exclude_codes={recovery_last_web_code},
+                                        )
+                                    except Exception as web_mail_error:
+                                        print(f"Mailbox tab: {web_mail_error}")
+                                        return False
+                                    if web_code:
+                                        otp_input.fill(web_code, timeout=3000)
+                                        manual_next = first_visible(
+                                            '#iVerifyCodeAction, #idSubmit_SAOTCC_Continue, '
+                                            '#idSIButton9, button[data-testid="primaryButton"], '
+                                            'button:has-text("Next"), input[type="submit"]'
+                                        )
+                                        if manual_next is not None and manual_next.is_enabled():
+                                            manual_next.click(timeout=3000)
+                                        else:
+                                            otp_input.press("Enter")
+                                        recovery_last_web_code = web_code
+                                        recovery_code_requested = False
+                                        print("Watchdog: submitted OTP from smail1s tab")
+                                        return True
                                     return False
                                 now = time.monotonic()
                                 if now - recovery_last_poll < 4:
@@ -1108,10 +1618,21 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                                     print(f"Recovery mailbox poll error: {otp_error}")
                                 return False
 
-                        email_input = first_visible(
-                            '#i0116:not([type="hidden"]), input[name="loginfmt"], '
-                            'input[type="email"], input[autocomplete="username"]'
-                        )
+                        if (
+                            "verify your email" in body_lower
+                            or "xác minh email" in body_lower
+                            or "send code" in body_lower
+                            or "gửi mã" in body_lower
+                            or "enter code" in body_lower
+                            or "nhập mã" in body_lower
+                            or "alternate email" in body_lower
+                        ):
+                            email_input = None
+                        else:
+                            email_input = first_visible(
+                                '#i0116:not([type="hidden"]), input[name="loginfmt"], '
+                                'input[autocomplete="username"]'
+                            )
                         if email_input is not None:
                             if email_input.input_value() != ms_email:
                                 email_input.fill(ms_email, timeout=3000)
@@ -1232,14 +1753,34 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                         for pg in context.pages:
                             if not pg.is_closed() and pg != page:
                                 if "higgsfield.ai" in pg.url:
-                                    print("Phát hiện tab mới được mở, chuyển sang tab mới và đóng tab cũ...")
-                                    try: page.close()
-                                    except: pass
+                                    if signup_options["manual_open"]:
+                                        print("Mở Chrome: chuyển sang tab mới, giữ nguyên tab cũ.")
+                                    else:
+                                        print("Phát hiện tab mới được mở, chuyển sang tab mới và đóng tab cũ...")
+                                        try: page.close()
+                                        except: pass
                                     page = pg
                                     page.bring_to_front()
                                     break
                                     
                     cur_url = page.url
+
+                    # Ưu tiên kiểm tra và tự động bấm "Yes" tại trang "Stay signed in?" (Duy trì đăng nhập)
+                    if _click_microsoft_kmsi_yes(page):
+                        print("Watchdog: Đã bấm 'Yes' tại trang Stay signed in (Duy trì đăng nhập)!")
+                        page.wait_for_timeout(2000)
+                        continue
+
+                    if _is_microsoft_security_key_challenge(cur_url) or _send_escape_to_foreground_security_prompt():
+                        _dismiss_microsoft_security_key_challenge(page)
+                        page.wait_for_timeout(800)
+                        if _click_microsoft_kmsi_yes(page):
+                            print("Watchdog: Đã tắt Security Key và bấm 'Yes' tại trang Stay signed in!")
+                            page.wait_for_timeout(2000)
+                            continue
+                        if not wait_for_security_key_resolution():
+                            return
+                        continue
 
                     # Cloudflare Turnstile cannot be safely completed by DOM clicking.
                     # Detect it immediately, surface the affected window, then resume as
@@ -1486,176 +2027,22 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                         except Exception as e:
                             pass
 
-                        # 2. Click ngẫu nhiên các đáp án bằng Tọa độ chuột vật lý
-                        quiz_options = [
-                            "Trending presets & apps", "Video generations", 
-                            "Voiceover, music & dubbing", "Lipsync & Talking avatars", "Upscale",
-                            "Realistic AI avatars", "Image editing & Inpaint", "Image generations",
-                            "For personal use", "Viral content", "Beginner", "Intermediate", "Advanced", "Expert",
-                            "Instagram", "TikTok", "YouTube", 
-                            "I'm new to this", "Prompting is hard",
-                            "Canvas", "MCP & CLI", "Marketing Studio", "Shorts studio", "Cinema Studio", "Supercomputer",
-                            "Viral content & UGC videos", "High-converting marketing", "Just exploring", 
-                            "Cinematic visuals & AI films", "Create avatars & product visuals", 
-                            "Automate workflows with Supercomputer & MCP/CLI", "For my team/organization",
-                            "Just me", "2-5", "6-20", "21-100", "100+", 
-                            "Automate our workflow with Supercomputer & MCP/CLI", "Produce content at scale across the team",
-                            "Custom terms & pricing", "Certifications (SOC 2, GDPR)", "Security & legal compliance",
-                            "Personal support & AI educator", "No training on your data", "Shared team workspace"
-                        ]
-                        # ⚡ Quét TẤT CẢ đáp án đang hiển thị bằng 1 lần JS duy nhất (nhanh hơn rất nhiều so với
-                        # lặp từng locator). Chọn ngẫu nhiên 1 đáp án chưa click, scroll vào giữa và trả về tọa độ.
-                        try:
-                            picked = page.evaluate("""([options, clicked]) => {
-                                const optSet = new Set(options);
-                                const clickedSet = new Set(clicked);
-                                const found = new Map();
-                                const els = document.querySelectorAll('button, [role="button"], [role="radio"], [role="checkbox"], label, div, span, p, h3, h4, li');
-                                for (const el of els) {
-                                    const txt = (el.innerText || '').trim();
-                                    if (!txt || txt.length > 80 || !optSet.has(txt) || clickedSet.has(txt) || found.has(txt)) continue;
-                                    if (el.closest('a, nav, header')) continue;
-                                    const target = el.closest('button, [role="button"], [role="radio"], [role="checkbox"], label') || el;
-                                    const r = target.getBoundingClientRect();
-                                    if (r.width < 2 || r.height < 2) continue;
-                                    const st = getComputedStyle(target);
-                                    if (st.visibility === 'hidden' || st.display === 'none' || target.disabled) continue;
-                                    found.set(txt, target);
-                                }
-                                const keys = Array.from(found.keys());
-                                if (keys.length === 0) return null;
-                                const key = keys[Math.floor(Math.random() * keys.length)];
-                                const t = found.get(key);
-                                t.scrollIntoView({block: 'center', inline: 'center'});
-                                const r = t.getBoundingClientRect();
-                                return {text: key, x: r.left + r.width / 2, y: r.top + r.height / 2};
-                            }""", [quiz_options, list(global_quiz_clicked_options)])
-                        except Exception:
-                            picked = None
-
-                        if picked:
-                            try:
-                                page.mouse.click(picked["x"], picked["y"])
-                                print(f"Quiz: Mouse clicked option '{picked['text']}'")
-                                global_quiz_clicked_options.add(picked["text"])
-                            except Exception: pass
-
-                        # 3. Bấm Continue ngay khi nút được bật (poll tối đa ~2s thay vì chờ cứng)
-                        try:
-                            clicked = False
-                            for _w in range(10):
-                                clicked = page.evaluate("""() => {
-                                    const btns = Array.from(document.querySelectorAll('button')).filter(b => {
-                                        const text = (b.innerText || b.textContent || '').trim().toLowerCase();
-                                        return (text === 'continue' || text === 'next' || text === 'submit' || text.includes('choose')) && !b.disabled && b.getAttribute('aria-disabled') !== 'true';
-                                    });
-                                    if (btns.length > 0) {
-                                        btns[btns.length - 1].click();
-                                        return true;
-                                    }
-                                    return false;
-                                }""")
-                                if clicked or not picked:
-                                    break
-                                page.wait_for_timeout(200)
-                            if clicked:
-                                print("Quiz: JS clicked 'Continue/Next'")
-                                page.wait_for_timeout(500)
-                        except Exception: pass
-
+                        handle_quiz_step(page, quiz_state)
+                        if time.monotonic() - quiz_state.get("step_since", time.monotonic()) >= 90:
+                            print("Quiz: câu hỏi không chuyển sau 90 giây; giữ Chrome mở để kiểm tra và thử lại.")
+                            return
                         continue
 
-                        # (Code cũ bên dưới không còn chạy — giữ lại để tham khảo)
-                        import random
-                        random.shuffle(quiz_options)
-
-                        for q_text in quiz_options:
-                            if q_text in global_quiz_clicked_options:
-                                continue
-                            try:
-                                # 1. Ưu tiên Button / Role=Button
-                                locs = page.locator(f'button:has-text("{q_text}"), div[role="button"]:has-text("{q_text}")')
-                                target = None
-                                if locs.count() > 0:
-                                    target = locs.last
-                                else:
-                                    # 2. Fallback: Tìm thẻ div/span/label chứa chính xác đoạn text đó (tránh Header/Nav)
-                                    exact_locs = page.locator(f'text="{q_text}"')
-                                    for i in range(exact_locs.count()):
-                                        el = exact_locs.nth(i)
-                                        # Bỏ qua nếu là thẻ <a> (để tránh click nhầm link trên menu)
-                                        tag_name = el.evaluate("el => el.tagName").upper()
-                                        if tag_name != "A":
-                                            target = el
-                                            break
-                                
-                                if target and target.is_visible():
-                                    target.scroll_into_view_if_needed()
-                                    page.wait_for_timeout(200)
-                                    box = target.bounding_box()
-                                    if box:
-                                        page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
-                                        print(f"Quiz: Mouse clicked option '{q_text}'")
-                                        global_quiz_clicked_options.add(q_text)
-                                        page.wait_for_timeout(800)
-                                        
-                                        cont_btn = page.locator('button:has-text("Continue"), button:has-text("Next"), button:has-text("Choose an option"), button:has-text("Submit")').first
-                                        if cont_btn.count() > 0 and not cont_btn.first.is_disabled():
-                                            break
-                            except: pass
-                                
-                        # 3. Bấm Continue sau khi đã chọn xong
-                        try:
-                            clicked = page.evaluate("""() => {
-                                const btns = Array.from(document.querySelectorAll('button')).filter(b => {
-                                    const text = (b.innerText || b.textContent || '').trim().toLowerCase();
-                                    return (text === 'continue' || text === 'next' || text === 'submit' || text.includes('choose')) && !b.disabled;
-                                });
-                                if (btns.length > 0) {
-                                    btns[btns.length - 1].click();
-                                    return true;
-                                }
-                                return false;
-                            }""")
-                            if clicked:
-                                print("Quiz: JS clicked 'Continue/Next'")
-                                page.wait_for_timeout(1500)
-                        except Exception: pass
-                            
-                        continue
-                        
                     # 0.3 Xử lý form Passkey/FIDO2 (Windows Security popup)
-                    if "fido" in cur_url or "passkey" in cur_url:
-                        print("Phát hiện trang cài đặt Security Key (FIDO), đang cố gắng hủy...")
-                        try:
-                            # Thử nhấn Escape để đóng popup của Windows (nếu có)
-                            page.keyboard.press("Escape")
-                            page.wait_for_timeout(500)
-                            page.keyboard.press("Escape")
-                            page.wait_for_timeout(500)
-                            
-                            # Click nút Hủy trên giao diện HTML
-                            cancel_btn = page.locator('button:has-text("Cancel"), a:has-text("Cancel"), button:has-text("Hủy"), a:has-text("Hủy"), #iCancel')
-                            if cancel_btn.count() > 0:
-                                cancel_btn.first.click(force=True)
-                                print("Clicked 'Hủy' (Cancel) for Security Key setup via locator")
-                            else:
-                                # JS fallback
-                                page.evaluate("""() => {
-                                    const all = document.querySelectorAll('button, a, input[type=button]');
-                                    for (let el of all) {
-                                        const t = (el.innerText || el.value || '').trim().toLowerCase();
-                                        if (t === 'hủy' || t === 'cancel') {
-                                            el.click();
-                                            return;
-                                        }
-                                    }
-                                }""")
-                                print("Clicked 'Hủy' via JS fallback")
-                        except Exception as e:
-                            print(f"Lỗi khi hủy FIDO: {e}")
-                        page.wait_for_timeout(2000)
-                        continue
+                    if _is_microsoft_security_key_challenge(cur_url):
+                        _dismiss_microsoft_security_key_challenge(page)
+                        page.wait_for_timeout(800)
+                        if _click_microsoft_kmsi_yes(page):
+                            print("Watchdog: Đã tắt Security Key và bấm 'Yes' tại trang Stay signed in!")
+                            page.wait_for_timeout(2000)
+                            continue
+                        if not wait_for_security_key_resolution():
+                            return
                         continue
 
                     # 0.3.5 Xử lý trang "Cho rằng chúng tôi bảo vệ quá mức..." (Bỏ qua cập nhật email bảo vệ)
@@ -1885,7 +2272,11 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                             if tiep_theo_btn.count() > 0 and tiep_theo_btn.first.is_visible():
                                 tiep_theo_btn.first.click()
                                 print("Clicked 'Tiếp theo' on Microsoft ToS update page!")
-                                page.wait_for_timeout(2000)
+                                page.wait_for_timeout(1500)
+                                _send_escape_to_foreground_security_prompt()
+                                if _click_microsoft_kmsi_yes(page):
+                                    print("Watchdog: Đã bấm 'Yes' tại trang Stay signed in ngay sau ToS!")
+                                page.wait_for_timeout(1000)
                                 continue
                             else:
                                 clicked = page.evaluate("""() => {
@@ -1901,7 +2292,11 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                                 }""")
                                 if clicked:
                                     print("Clicked 'Tiếp theo' on Microsoft ToS via JS!")
-                                    page.wait_for_timeout(2000)
+                                    page.wait_for_timeout(1500)
+                                    _send_escape_to_foreground_security_prompt()
+                                    if _click_microsoft_kmsi_yes(page):
+                                        print("Watchdog: Đã bấm 'Yes' tại trang Stay signed in ngay sau ToS!")
+                                    page.wait_for_timeout(1000)
                                     continue
                     except Exception as e:
                         pass
@@ -1990,17 +2385,21 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                         print(f"Error re-filling password: {e}")
                         
                     # 5. Trang thiết lập Security Key (bảng đen FIDO2) -> Bấm Hủy (Cancel)
-                    if "fido" in cur_url or "fido/create" in cur_url:
-                        # Cố gắng tắt dialog native của Windows (Security key)
-                        page.keyboard.press("Escape")
-                        page.wait_for_timeout(500)
-                        cancel_btn = page.locator('#iCancel, a#iCancel, button#iCancel, input[value="Hủy"], input[value="Cancel"], a:has-text("Hủy"), button:has-text("Hủy")')
-                        if cancel_btn.count() > 0 and cancel_btn.first.is_visible():
-                            cancel_btn.first.click()
-                            print("Clicked Cancel for Security Key setup")
+                    if _is_microsoft_security_key_challenge(cur_url):
+                        _dismiss_microsoft_security_key_challenge(page)
+                        page.wait_for_timeout(800)
+                        if _click_microsoft_kmsi_yes(page):
+                            print("Watchdog: Đã tắt Security Key và bấm 'Yes' tại trang Stay signed in!")
+                            page.wait_for_timeout(2000)
                             continue
+                        if not wait_for_security_key_resolution():
+                            return
+                        continue
                             
                     # 7. Nút Có (Yes) / Chấp nhận (Accept) - Duy trì đăng nhập / Cho phép ứng dụng
+                    if _click_microsoft_kmsi_yes(page):
+                        print("Watchdog: Đã bấm 'Yes' tại trang Stay signed in!")
+                        continue
                     yes_btn = page.locator('button[data-testid="appConsentPrimaryButton"], input#idSIButton9, button#idSIButton9, button#acceptButton, input#acceptButton, button#idBtn_Accept, input#idBtn_Accept, input[value*="Có"], input[value*="Yes"], input[value*="Chấp nhận"], input[value*="Accept"], button:has-text("Có"), button:has-text("Yes"), button:has-text("Chấp nhận")')
                     if yes_btn.count() > 0 and yes_btn.first.is_visible():
                         yes_btn.first.click(force=True)
@@ -2043,17 +2442,58 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
 
                 restore_watchdog_note()
 
+                # Hai nút Mở Chrome chỉ đọc UI hiện có, không điều hướng/reload
+                # hoặc đợi switch. Các luồng Check Free Gen khác giữ cách cũ.
+                if signup_options["manual_open"]:
+                    from urllib.parse import urlsplit, parse_qs
+                    url = urlsplit(page.url)
+                    if (
+                        url.hostname == "higgsfield.ai" and url.path == "/ai/video"
+                        and parse_qs(url.query).get("model") == ["genjutsu"]
+                    ):
+                        free_info = read_free_gens(page, immediate=True)
+                        live_profile = manager.get_profile(profile_id)
+                        if free_info is not None and live_profile:
+                            free_count = free_info.get("count")
+                            has_free = not free_info.get("disabled") and (free_count is None or free_count > 0)
+                            quality = read_quality(page, immediate=True) if has_free else ""
+                            live_profile.notes = (
+                                f"free gen {free_count} {quality}" if has_free and free_count is not None and quality
+                                else f"free gen {free_count}" if has_free and free_count is not None
+                                else f"free gen {quality}" if has_free and quality
+                                else "free gen" if has_free else "không free"
+                            )
+                            manager._save()
+                            check_completed = True
+                            print(f"Kiểm tra nhanh Free Gens/Quality: {live_profile.notes}")
+                        else:
+                            print("Mở Chrome: chưa thấy Use free gens, bỏ qua kiểm tra và giữ nguyên tag.")
+                    else:
+                        print("Mở Chrome: không ở trang Genjutsu, bỏ qua kiểm tra Free Gens.")
+                    return
+
                 # Login status comes only from the rendered video navigation.
                 try:
                     if page.url != HIGGSFIELD_URL:
-                        page.goto(HIGGSFIELD_URL, wait_until="domcontentloaded", timeout=30000)
+                        navigate_higgsfield(page, HIGGSFIELD_URL)
                     login_state = wait_video_login_state(page)
                     if login_state is not True:
                         page.reload(wait_until="domcontentloaded", timeout=30000)
                         login_state = wait_video_login_state(page)
                     if login_state is True:
                         print("Đã đăng nhập: trang video không còn nút Login/Sign up.")
-                        free_info = read_free_gens(page)
+                        # Higgsfield renders this switch asynchronously after
+                        # login. Wait longer and refresh once before deciding
+                        # that the account has no Free Gen control.
+                        free_info = read_free_gens(page, timeout_ms=30000)
+                        if free_info is None:
+                            print("Chưa thấy switch Use free gens; tải lại trang để chờ UI ổn định...")
+                            try:
+                                page.reload(wait_until="domcontentloaded", timeout=30000)
+                                page.wait_for_timeout(5000)
+                            except Exception as reload_error:
+                                print(f"Lỗi tải lại trang để đọc Free Gen: {reload_error}")
+                            free_info = read_free_gens(page, timeout_ms=30000)
                         live_profile = manager.get_profile(profile_id)
                         if free_info and live_profile:
                             free_count = free_info.get("count")
@@ -2073,15 +2513,20 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                             else:
                                 live_profile.notes = "không free"
                             manager._save()
+                            check_completed = True
                             print(f"Kiểm tra Free Gens/Quality: {live_profile.notes}")
-                            # Login + Free Gens/Quality check is complete; close
-                            # Chrome even when the request used keep_open defaults.
-                            # keep_open = False
                         elif live_profile:
+                            # Đã thử đọc UI một lần và đã reload lại trang nhưng
+                            # vẫn không thấy switch Use free gens. Xem đây là
+                            # tài khoản không free, lưu nhãn và để finally đóng
+                            # Chrome theo luồng kiểm tra thông thường.
                             live_profile.notes = "không free"
                             manager._save()
-                            print("Không tìm thấy switch Use free gens sau khi đăng nhập")
-                            # keep_open = False
+                            check_completed = True
+                            keep_open = False
+                            with _signup_lock:
+                                signup_options["keep_open"] = False
+                            print("Vẫn không thấy switch Use free gens sau khi reload; đã gắn nhãn không free")
                     else:
                         set_watchdog_note("lỗi login" if login_state is False else "chưa xác định đăng nhập")
                         print("Chưa xác nhận đăng nhập sau các lần tự thử lại; đã đưa về trang video.")
@@ -2090,20 +2535,36 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
         except Exception as e:
             print(f"Auto signup FATAL err: {e}")
         finally:
-            with _signup_lock:
-                if profile_id in _running_signups:
-                    _running_signups.remove(profile_id)
+            if signup_options["manual_open"] or not check_completed:
+                keep_open = True
+            elif check_completed:
+                # OTP/Captcha may temporarily set keep_open=True. Once login
+                # and the Free Gen check succeed, honor the request again.
+                with _signup_lock:
+                    keep_open = signup_options["keep_open"]
             try:
-                if not keep_open:
+                if not keep_open or (not check_completed and not signup_options["manual_open"]):
                     p.stop()
             except: pass
             try:
                 if not keep_open:
-                    close_profile(profile.id)
-                    print(f"Đã đóng Chrome cho profile {profile.name} sau khi hoàn tất cập nhật.")
-                else:
+                    close_result = close_profile(profile.id)
+                    if close_result.get("status") == "closed":
+                        print(f"Đã đóng Chrome cho profile {profile.name} sau khi hoàn tất cập nhật.")
+                    elif close_result.get("status") == "not_running":
+                        print(f"Chrome cho profile {profile.name} đã đóng trước đó.")
+                    else:
+                        print(f"Không đóng được Chrome cho profile {profile.name}: {close_result.get('message', close_result)}")
+                elif check_completed:
                     print(f"Giữ Chrome mở cho profile {profile.name} theo yêu cầu.")
-            except: pass
+                else:
+                    print(f"Giữ Chrome mở cho profile {profile.name} vì chưa hoàn tất kiểm tra hoặc cần xác minh.")
+            except Exception as close_error:
+                print(f"Lỗi đóng Chrome cho profile {profile.name}: {close_error}")
+            finally:
+                with _signup_lock:
+                    _running_signups.discard(profile_id)
+                    _signup_options.pop(profile_id, None)
 
     threading.Thread(target=run_auto_signup, daemon=True).start()
     return {"ok": True, "message": "Bắt đầu Auto Login Higgsfield (Microsoft)..."}
@@ -2124,6 +2585,10 @@ def set_ms_account(profile_id: str, payload: dict = Body(...)):
     
     email = parts[0].strip()
     password = parts[1].strip()
+
+    normalized_email = _normalize_account_email(email)
+    if normalized_email in _profile_account_emails(exclude_profile_id=profile_id):
+        raise HTTPException(409, f"Email {email} đã tồn tại ở profile khác, không lưu trùng")
     
     acc_file = Path(profile.user_data_dir) / "ms_account.txt"
     acc_file.parent.mkdir(parents=True, exist_ok=True)
