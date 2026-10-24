@@ -323,6 +323,10 @@ def get_profiles():
                 
         # MS account
         ms_acc_file = Path(p.user_data_dir) / "ms_account.txt"
+        if not ms_acc_file.exists():
+            alt_acc = Path("data/browsers") / f"chrome136_{p.id}" / "ms_account.txt"
+            if alt_acc.exists():
+                ms_acc_file = alt_acc
         d["ms_account"] = ""
         d["ms_email"] = ""
         if ms_acc_file.exists():
@@ -332,6 +336,11 @@ def get_profiles():
                 d["ms_email"] = acc_text.split("|")[0].strip() if "|" in acc_text else acc_text
             except:
                 pass
+        if not d["ms_email"] and p.name and "@" in p.name:
+            import re
+            m = re.search(r'[\w\.-]+@[\w\.-]+\.\w+', p.name)
+            if m:
+                d["ms_email"] = m.group(0)
                 
         result.append(d)
     return result
