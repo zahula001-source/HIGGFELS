@@ -1326,6 +1326,11 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                         if microsoft_host not in allowed_hosts:
                             return False
 
+                        try:
+                            body_lower = page.locator("body").inner_text(timeout=1000).lower()
+                        except Exception:
+                            body_lower = ""
+
                         def first_visible(selector):
                             candidates = page.locator(selector)
                             for candidate_index in range(candidates.count()):
@@ -1374,9 +1379,8 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                         ):
                             recovery_domain = recovery_email.rsplit("@", 1)[-1].lower()
                             recovery_prefix = recovery_email.split("@", 1)[0][:2].lower()
-                            body_lower = page.locator("body").inner_text(timeout=1000).lower()
                             exact_recovery_input = first_visible(
-                                '#iProofEmail, input[name="ProofConfirmation"]'
+                                'input#iProofEmail, #iProofEmail:not([type="radio"]):not([type="checkbox"]), input[name="ProofConfirmation"]:not([type="radio"]), input[name="iProofEmail"]:not([type="radio"])'
                             )
                             exact_otp_input = first_visible(
                                 '#iOttText, input[name="otc"], input[autocomplete="one-time-code"]'
@@ -1433,9 +1437,15 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                                 return True
 
                             recovery_input = first_visible(
-                                '#iProofEmail, input[name="ProofConfirmation"], input[name*="Proof" i], input[id*="Proof" i], '
-                                'input[autocomplete="email"], input[type="email"], '
-                                'input[placeholder*="email" i], input[aria-label*="email" i]'
+                                'input#iProofEmail, #iProofEmail:not([type="radio"]):not([type="checkbox"]), '
+                                'input[name="ProofConfirmation"]:not([type="radio"]):not([type="checkbox"]), '
+                                'input[name="iProofEmail"]:not([type="radio"]):not([type="checkbox"]), '
+                                'input[type="email"]:not([type="radio"]):not([type="checkbox"]), '
+                                'input[autocomplete="email"]:not([type="radio"]):not([type="checkbox"]), '
+                                'input[placeholder*="email" i]:not([type="radio"]):not([type="checkbox"]), '
+                                'input[aria-label*="email" i]:not([type="radio"]):not([type="checkbox"]), '
+                                'input[name*="Proof" i]:not([type="radio"]):not([type="checkbox"]):not([type="hidden"]), '
+                                'input[id*="Proof" i]:not([type="radio"]):not([type="checkbox"]):not([type="hidden"])'
                             )
                             is_recovery_confirmation = (
                                 recovery_input is not None
@@ -1469,9 +1479,13 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                                 domain_label = first_visible('#iConfirmProofEmailDomain')
                                 proof_text = recovery_email
                                 if domain_label is not None:
-                                    displayed_domain = domain_label.inner_text().strip().lower()
-                                    if displayed_domain == "@" + recovery_domain:
-                                        proof_text = recovery_email.rsplit("@", 1)[0]
+                                    try:
+                                        displayed_domain = domain_label.inner_text().strip().lower()
+                                        if displayed_domain and displayed_domain == "@" + recovery_domain:
+                                            proof_text = recovery_email.rsplit("@", 1)[0]
+                                    except Exception:
+                                        pass
+                                print(f"Watchdog: điền email khôi phục ({proof_text}) vào ô xác minh...")
                                 try:
                                     recovery_input.click(timeout=1000)
                                 except Exception:
@@ -1480,9 +1494,10 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                                 try:
                                     page.evaluate(r"""(val) => {
                                         const el = document.getElementById('iProofEmail') || 
+                                                   document.querySelector('input[name="iProofEmail"]') || 
                                                    document.querySelector('input[name="ProofConfirmation"]') || 
-                                                   document.querySelector('input[type="email"]') || 
-                                                   document.querySelector('input[type="text"]:not([type="hidden"])');
+                                                   document.querySelector('input[type="email"]:not([type="radio"])') || 
+                                                   document.querySelector('input[type="text"]:not([type="hidden"]):not([type="radio"])');
                                         if (!el) return;
                                         el.focus();
                                         const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
