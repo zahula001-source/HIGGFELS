@@ -119,8 +119,9 @@ def _wait_for_popup_ready(page) -> None:
     page.bring_to_front()
     reset_attempted = False
 
-    deadline = time.time() + 35
+    deadline = time.time() + 60
     registration_retries = 0
+    max_registration_retries = 4
     while time.time() < deadline:
         body = page.locator("body").inner_text(timeout=3000)
         body_lower = body.casefold()
@@ -134,7 +135,7 @@ def _wait_for_popup_ready(page) -> None:
                 print("  [VPN] 1ClickVPN stuck initializing; clicking Reset once...", flush=True)
                 reset.first.click(timeout=2000)
                 page.wait_for_timeout(2500)
-                deadline = time.time() + 35
+                deadline = time.time() + 60
                 continue
             raise RuntimeError(
                 "1ClickVPN remains stuck initializing after Reset; restart the Chrome profile "
@@ -146,13 +147,14 @@ def _wait_for_popup_ready(page) -> None:
 
         if "Registration error" in body:
             retry = page.get_by_text("Retry", exact=True)
-            if registration_retries < 2 and retry.count() and retry.first.is_visible():
+            if registration_retries < max_registration_retries and retry.count() and retry.first.is_visible():
                 registration_retries += 1
-                print(f"  [VPN] 1ClickVPN báo 'Registration error', thử bấm Retry ({registration_retries}/2)...", flush=True)
+                print(f"  [VPN] 1ClickVPN báo 'Registration error', thử bấm Retry ({registration_retries}/{max_registration_retries})...", flush=True)
                 retry.first.click()
                 page.wait_for_timeout(4000)
+                deadline = max(deadline, time.time() + 30)
                 continue
-            raise RuntimeError("1ClickVPN bị lỗi HTTP 429: Too many requests! (Registration error)")
+            raise RuntimeError(f"1ClickVPN bị lỗi HTTP 429: Too many requests sau {max_registration_retries} lần thử! (Registration error)")
 
         decline = page.get_by_text("Decline", exact=True)
         if decline.count() and decline.first.is_visible():
@@ -646,8 +648,8 @@ def connect_unique_vpn_ip(context, profile_id: str, max_attempts: int = 8) -> di
         hola_error = e
         print(f"  [VPN] Hola VPN thất bại sau {hola_attempts} lần: {e}", flush=True)
 
-    # --- Fallback sang 1ClickVPN ---
-    print("  [VPN] Chuyển sang 1ClickVPN...", flush=True)
+    # --- Fallback sang 1ClickVPN (thử tối đa 4 lần) ---
+    print("  [VPN] Chuyển sang 1ClickVPN (thử tối đa 4 lần)...", flush=True)
 
     # Tắt Hola extension để tránh xung đột
     try:
@@ -660,15 +662,21 @@ def connect_unique_vpn_ip(context, profile_id: str, max_attempts: int = 8) -> di
     import time as _time
     _time.sleep(2)
 
-    try:
-        result = _connect_1clickvpn(context, profile_id, max_attempts=max_attempts)
-        # Lưu lại rằng lần sau dùng 1ClickVPN luôn (tuỳ chọn, bỏ comment nếu muốn)
-        # set_active_vpn("1clickvpn")
-        return result
-    except Exception as e2:
-        raise RuntimeError(
-            f"Cả Hola VPN ({hola_error}) lẫn 1ClickVPN ({e2}) đều thất bại"
-        ) from e2
+    oneclick_attempts = 4
+    oneclick_last_error = None
+    for oc_try in range(1, oneclick_attempts + 1):
+        try:
+            result = _connect_1clickvpn(context, profile_id, max_attempts=max_attempts)
+            return result
+        except Exception as e2:
+            oneclick_last_error = e2
+            print(f"  [VPN] 1ClickVPN thất bại lần {oc_try}/{oneclick_attempts}: {e2}", flush=True)
+            if oc_try < oneclick_attempts:
+                _time.sleep(3)
+
+    raise RuntimeError(
+        f"Cả Hola VPN ({hola_error}) lẫn 1ClickVPN (sau {oneclick_attempts} lần: {oneclick_last_error}) đều thất bại"
+    ) from oneclick_last_error
 
 
 _load_reservations()
