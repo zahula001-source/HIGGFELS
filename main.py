@@ -8,6 +8,13 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 import time
+import sys
+
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 
 from app.core.config import STATIC_DIR
 from app.api.profiles import router as profiles_router
@@ -36,7 +43,7 @@ if STATIC_DIR.exists():
 
 @app.get("/")
 def read_root():
-    return FileResponse(STATIC_DIR / "index.html")
+    return FileResponse(STATIC_DIR / "index.html", headers={"Cache-Control": "no-store"})
 
 if __name__ == "__main__":
     # KHỞI CHẠY BACKGROUND WATCHER DOWNLOADS ĐỂ TỰ ĐỘNG ĐỔI ĐUÔI FILE LẠ THÀNH .MP4/.JPG

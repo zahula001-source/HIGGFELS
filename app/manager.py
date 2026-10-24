@@ -22,21 +22,11 @@ class ProfileManager:
         if not PROFILES_FILE.exists():
             PROFILES_FILE.write_text("[]", encoding="utf-8")
         self.profiles: List[Profile] = self._load()
-        self._cleanup_orphaned_folders()
+        # Không tự động xóa thư mục browser để bảo toàn dữ liệu người dùng
 
     def _cleanup_orphaned_folders(self):
-        import shutil
-        active_ids = {p.id for p in self.profiles}
-        if BROWSERS_DIR.exists():
-            for d in BROWSERS_DIR.iterdir():
-                if d.is_dir() and d.name.startswith("profile_"):
-                    # Extract ID from 'profile_xxx'
-                    pid = d.name.replace("profile_", "")
-                    if pid not in active_ids:
-                        try:
-                            shutil.rmtree(d)
-                        except:
-                            pass
+        # Đã vô hiệu hóa để tránh mất dữ liệu profile
+        pass
 
     def _load(self) -> List[Profile]:
         try:
@@ -47,14 +37,23 @@ class ProfileManager:
             return []
 
     def _save(self):
-        # Ghi vào file tạm trước, rồi rename để tránh corrupt nếu tắt giữa chừng
+        # Bảo vệ: Không bao giờ ghi đè làm mất profile nếu file trên đĩa có nhiều hơn bộ nhớ
+        try:
+            disk_profiles = self._load()
+            if len(disk_profiles) > len(self.profiles):
+                known_ids = {p.id for p in self.profiles}
+                for dp in disk_profiles:
+                    if dp.id not in known_ids:
+                        self.profiles.append(dp)
+        except Exception:
+            pass
+
         tmp_file = PROFILES_FILE.with_suffix(".tmp")
         tmp_file.write_text(
             json.dumps([p.model_dump() for p in self.profiles], ensure_ascii=False, indent=2),
             encoding="utf-8"
         )
         tmp_file.replace(PROFILES_FILE)
-
 
     def _save_fingerprint_file(self, profile: Profile):
         try:
@@ -66,9 +65,18 @@ class ProfileManager:
             print(f"Save fp file error {e}")
 
     def list_profiles(self) -> List[Profile]:
+        # Tự động nạp lại từ đĩa để luôn cập nhật danh sách mới nhất
+        loaded = self._load()
+        if len(loaded) >= len(self.profiles):
+            self.profiles = loaded
         return self.profiles
 
     def get_profile(self, profile_id: str) -> Profile | None:
+        for p in self.profiles:
+            if p.id == profile_id:
+                return p
+        # Thử nạp lại từ file nếu chưa thấy
+        self.profiles = self._load()
         for p in self.profiles:
             if p.id == profile_id:
                 return p
