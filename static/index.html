@@ -509,26 +509,10 @@ function restoreOneClickVpnToggle() {
 
 function onGenerateIpChange(el) {
   localStorage.setItem('globalGenerateIp', el.checked);
-  if (el.checked) {
-    const hmaEl = document.getElementById("globalGenerateHma");
-    if (hmaEl && hmaEl.checked) {
-      hmaEl.checked = false;
-      localStorage.setItem('globalGenerateHma', 'false');
-    }
-  }
 }
 
-async function onGenerateHmaChange(el) {
+function onGenerateHmaChange(el) {
   localStorage.setItem('globalGenerateHma', el.checked);
-  if (el.checked) {
-    const extVpnEl = document.getElementById("globalGenerateIp");
-    if (extVpnEl && extVpnEl.checked) {
-      extVpnEl.checked = false;
-      localStorage.setItem('globalGenerateIp', 'false');
-    }
-    // Tích vào kích hoạt ngay logic nút 6 của HMA VPN
-    await triggerHmaRotate();
-  }
 }
 
 async function triggerHmaRotate() {

@@ -745,31 +745,59 @@ def _connect_1clickvpn(context, profile_id: str, max_attempts: int = 8) -> dict[
             pass
 
 
-def connect_unique_vpn_ip(context, profile_id: str, max_attempts: int = 4) -> dict[str, str]:
-    """Kết nối VPN với IP độc nhất.
-
-    Logic mới:
-    1. Thử 1ClickVPN trước 4 lần.
-    2. Nếu 1ClickVPN không được sau 4 lần:
-       -> Tắt 1ClickVPN đi.
-       -> Mở Urban VPN lên thử 4 lần.
-    3. Hoàn toàn loại bỏ Hola VPN.
+def connect_unique_vpn_ip(context, profile_id: str, max_attempts: int = 1) -> dict[str, str]:
+    """Ket noi VPN voi IP doc nhat theo logic:
+    1. Thu sinh IP bang 1ClickVPN lan 1.
+    2. Neu 1ClickVPN lan 1 loi:
+       -> Kich hoat Sinh IP HMA (Logic nut 6: rotate_hma_random_country).
+       -> Thu lai 1ClickVPN lan 2.
+    3. Neu van khong duoc:
+       -> Tat 1ClickVPN, doi sang UrbanVPN lan 1.
+    4. Neu UrbanVPN lan 1 loi:
+       -> Kich hoat Sinh IP HMA.
+       -> Thu lai UrbanVPN lan 2.
+    5. Neu van khong duoc sau tat ca -> Bao loi.
     """
-    print("  [VPN] Bat dau thu 1ClickVPN truoc (toi da 4 lan)...", flush=True)
-    oneclick_error: Exception | None = None
+    attempts = max(1, max_attempts or 1)
+
+    def _trigger_hma(reason: str):
+        print(f"  [VPN] {reason} -> Dang kich hoat Sinh IP HMA (Logic nut 6)...", flush=True)
+        try:
+            from app.services.hma_vpn import rotate_hma_random_country
+            hma_info = rotate_hma_random_country()
+            print(f"  [VPN] Sinh IP HMA thanh cong: {hma_info.get('ip')} ({hma_info.get('country')})", flush=True)
+        except Exception as hma_error:
+            print(f"  [VPN] Kich hoat Sinh IP HMA that bai hoac khong kha dung: {hma_error}", flush=True)
+        import time as _t
+        _t.sleep(2)
+
+    # ── BUOC 1: Thu 1ClickVPN Lan 1 ──
+    print("  [VPN] [BUOC 1] Bat dau thu sinh IP bang 1ClickVPN (Lan 1)...", flush=True)
     try:
-        result = _connect_1clickvpn(context, profile_id, max_attempts=4)
+        result = _connect_1clickvpn(context, profile_id, max_attempts=attempts)
         try:
             set_active_vpn("1clickvpn")
         except Exception:
             pass
         return result
-    except Exception as e:
-        oneclick_error = e
-        print(f"  [VPN] 1ClickVPN that bai sau 4 lan: {e}", flush=True)
+    except Exception as e_1click_1:
+        print(f"  [VPN] 1ClickVPN Lan 1 that bai: {e_1click_1}", flush=True)
 
-    # 1ClickVPN không được -> Tắt 1ClickVPN và chuyển sang Urban VPN
-    print("  [VPN] 1ClickVPN khong ket noi duoc -> Tat 1ClickVPN va chuyen sang Urban VPN (thu 4 lan)...", flush=True)
+    # ── BUOC 2: Kich hoat HMA xong thu lai 1ClickVPN Lan 2 ──
+    _trigger_hma("1ClickVPN Lan 1 loi")
+    print("  [VPN] [BUOC 2] Thu sinh lai IP bang 1ClickVPN (Lan 2)...", flush=True)
+    try:
+        result = _connect_1clickvpn(context, profile_id, max_attempts=attempts)
+        try:
+            set_active_vpn("1clickvpn")
+        except Exception:
+            pass
+        return result
+    except Exception as e_1click_2:
+        print(f"  [VPN] 1ClickVPN Lan 2 van that bai: {e_1click_2}", flush=True)
+
+    # ── BUOC 3: Tat 1ClickVPN va chuyen sang UrbanVPN Lan 1 ──
+    print("  [VPN] [BUOC 3] 1ClickVPN khong duoc sau 2 lan -> Tat 1ClickVPN va chuyen sang UrbanVPN (Lan 1)...", flush=True)
     try:
         _disconnect_1clickvpn(context)
     except Exception:
@@ -777,26 +805,36 @@ def connect_unique_vpn_ip(context, profile_id: str, max_attempts: int = 4) -> di
     try:
         _disable_extension(context, ONECLICK_EXTENSION_ID)
     except Exception as e:
-        print(f"  [VPN] Bo qua buoc tat 1ClickVPN: {e}", flush=True)
+        print(f"  [VPN] Bo qua buoc tat extension 1ClickVPN: {e}", flush=True)
 
     import time as _time
     _time.sleep(2)
 
-    urban_error: Exception | None = None
     try:
-        result = _connect_urban_vpn(context, profile_id, max_attempts=4)
+        result = _connect_urban_vpn(context, profile_id, max_attempts=attempts)
         try:
             set_active_vpn("urbanvpn")
         except Exception:
             pass
         return result
-    except Exception as e:
-        urban_error = e
-        print(f"  [VPN] Urban VPN that bai sau 4 lan: {e}", flush=True)
+    except Exception as e_urban_1:
+        print(f"  [VPN] UrbanVPN Lan 1 that bai: {e_urban_1}", flush=True)
 
-    raise RuntimeError(
-        f"Ca 1ClickVPN (sau 4 lan: {oneclick_error}) lan Urban VPN (sau 4 lan: {urban_error}) deu that bai"
-    ) from urban_error
+    # ── BUOC 4: Kich hoat HMA xong thu lai UrbanVPN Lan 2 ──
+    _trigger_hma("UrbanVPN Lan 1 loi")
+    print("  [VPN] [BUOC 4] Thu sinh lai IP bang UrbanVPN (Lan 2)...", flush=True)
+    try:
+        result = _connect_urban_vpn(context, profile_id, max_attempts=attempts)
+        try:
+            set_active_vpn("urbanvpn")
+        except Exception:
+            pass
+        return result
+    except Exception as e_urban_2:
+        print(f"  [VPN] UrbanVPN Lan 2 van that bai: {e_urban_2}", flush=True)
+        raise RuntimeError(
+            f"Sinh IP EXTVPN that bai sau ca 1ClickVPN (Lan 1 & 2) va UrbanVPN (Lan 1 & 2): {e_urban_2}"
+        ) from e_urban_2
 
 
 _load_reservations()

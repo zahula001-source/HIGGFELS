@@ -786,19 +786,7 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
 
                 install_upgrade_plan_guard(context)
 
-                if generate_hma:
-                    try:
-                        from app.services.hma_vpn import rotate_hma_random_country
-                        hma_info = rotate_hma_random_country()
-                        print(f"Sinh IP HMA thanh cong: {hma_info.get('ip')} ({hma_info.get('country')})")
-                    except Exception as hma_error:
-                        print(f"Sinh IP HMA that bai: {hma_error}")
-                        p_obj = manager.get_profile(profile_id)
-                        if p_obj:
-                            p_obj.notes = "Lỗi HMA VPN"
-                            manager._save()
-                        return
-                elif generate_ip:
+                if generate_ip:
                     try:
                         from app.services.vpn_ip import connect_unique_vpn_ip
                         vpn_info = connect_unique_vpn_ip(context, profile_id)
@@ -809,6 +797,18 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                         if p_obj:
                             from app.services.vpn_ip import get_active_vpn
                             p_obj.notes = f"Lỗi VPN ({get_active_vpn()})"
+                            manager._save()
+                        return
+                elif generate_hma:
+                    try:
+                        from app.services.hma_vpn import rotate_hma_random_country
+                        hma_info = rotate_hma_random_country()
+                        print(f"Sinh IP HMA thanh cong: {hma_info.get('ip')} ({hma_info.get('country')})")
+                    except Exception as hma_error:
+                        print(f"Sinh IP HMA that bai: {hma_error}")
+                        p_obj = manager.get_profile(profile_id)
+                        if p_obj:
+                            p_obj.notes = "Lỗi HMA VPN"
                             manager._save()
                         return
                     

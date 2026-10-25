@@ -167,6 +167,20 @@ class VpnIpTests(unittest.TestCase):
         self.assertEqual(result["ip"], "3.3.3.3")
         self.assertEqual(vpn_ip._reserved_ips["video-owner"], "2.2.2.2")
 
+    def test_1click_fail_rotates_hma_and_retries_then_urban_fallback(self):
+        context = Mock()
+        hma_mock = Mock(return_value={"ip": "8.8.8.8", "country": "Singapore"})
+        with patch("app.services.hma_vpn.rotate_hma_random_country", hma_mock), \
+                patch.object(vpn_ip, "_connect_1clickvpn", side_effect=[RuntimeError("1click 1 error"), RuntimeError("1click 2 error")]), \
+                patch.object(vpn_ip, "_disconnect_1clickvpn"), \
+                patch.object(vpn_ip, "_disable_extension"), \
+                patch.object(vpn_ip, "_connect_urban_vpn", side_effect=[RuntimeError("urban 1 error"), {"ip": "9.9.9.9", "country": "Germany"}]), \
+                patch("time.sleep"):
+            result = vpn_ip.connect_unique_vpn_ip(context, "test-p")
+            self.assertEqual(result["ip"], "9.9.9.9")
+            self.assertEqual(result["country"], "Germany")
+            self.assertEqual(hma_mock.call_count, 2)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

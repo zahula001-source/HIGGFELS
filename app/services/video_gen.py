@@ -484,6 +484,20 @@ def _send_video_to_telegram(video_path, token, chat_id):
         print(f"Lỗi gửi Telegram: {e}")
 
 def _prepare_video_network(context, task_id, profile_id, generate_ip, generate_hma=False):
+    if generate_ip:
+        from app.services.vpn_ip import connect_unique_vpn_ip
+        video_tasks[task_id].update(
+            status="running", vpn_enabled=True,
+            message="Đang kết nối Sinh IP EXTVPN (1Click -> HMA -> Urban -> HMA)..."
+        )
+        print(f"Task {task_id}: Sinh IP EXTVPN ON - bat dau quy trinh 1Click -> HMA -> Urban -> HMA", flush=True)
+        vpn_info = connect_unique_vpn_ip(context, profile_id)
+        video_tasks[task_id].update(
+            vpn_ip=vpn_info["ip"], vpn_country=vpn_info["country"],
+            message=f"Đã kết nối VPN: {vpn_info['country']} — IP {vpn_info['ip']}",
+        )
+        return
+
     if generate_hma:
         video_tasks[task_id].update(
             status="running", vpn_enabled=True,
@@ -500,24 +514,11 @@ def _prepare_video_network(context, task_id, profile_id, generate_ip, generate_h
         )
         return
 
-    if not generate_ip:
-        video_tasks[task_id].update(
-            vpn_enabled=False,
-            message="Sinh IP đang tắt: mở Chrome bằng kết nối hiện tại.",
-        )
-        print(f"Task {task_id}: Sinh IP OFF - skip 1ClickVPN", flush=True)
-        return
-    from app.services.vpn_ip import connect_unique_vpn_ip
     video_tasks[task_id].update(
-        status="running", vpn_enabled=True,
-        message="Đang mở tiện ích 1ClickVPN, chọn quốc gia và kết nối IP..."
+        vpn_enabled=False,
+        message="Sinh IP đang tắt: mở Chrome bằng kết nối hiện tại.",
     )
-    print(f"Task {task_id}: Sinh IP ON - open 1ClickVPN and select IP", flush=True)
-    vpn_info = connect_unique_vpn_ip(context, profile_id)
-    video_tasks[task_id].update(
-        vpn_ip=vpn_info["ip"], vpn_country=vpn_info["country"],
-        message=f"Đã kết nối VPN: {vpn_info['country']} — IP {vpn_info['ip']}",
-    )
+    print(f"Task {task_id}: Sinh IP OFF - skip VPN", flush=True)
 
 
 def _existing_generation_status(context):
