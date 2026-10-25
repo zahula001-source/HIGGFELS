@@ -2,10 +2,17 @@ import asyncio
 import threading
 import time
 import os
+import sys
 import json
 import shutil
 from pathlib import Path
 from typing import Optional, List, Dict
+
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 from pydantic import BaseModel
 from fastapi import APIRouter, HTTPException, Body, Request, Form
 from fastapi.responses import FileResponse, JSONResponse
@@ -712,6 +719,18 @@ def check_free_gen_full_flow(page, profile_id: str, timeout_ms: int = 15000) -> 
     if not live_profile:
         return False
 
+    def _save_tag(val: str):
+        if hasattr(manager, "update_notes"):
+            manager.update_notes(profile_id, val)
+        ref = manager.get_profile(profile_id)
+        if ref:
+            ref.notes = val
+        live_profile.notes = val
+        try:
+            manager._save()
+        except Exception:
+            pass
+
     def _eval_free_info(info, is_lite=False):
         if not info:
             return None
@@ -743,9 +762,8 @@ def check_free_gen_full_flow(page, profile_id: str, timeout_ms: int = 15000) -> 
     free_info = read_free_gens(page, timeout_ms=timeout_ms)
     tag = _eval_free_info(free_info, is_lite=False)
     if tag:
-        live_profile.notes = tag
-        manager._save()
-        print(f"Kiểm tra Free Gens thành công (genjutsu): {live_profile.notes}")
+        _save_tag(tag)
+        print(f"Kiểm tra Free Gens thành công (genjutsu): {tag}")
         return True
 
     # Không thấy -> Reload lại trang phát nữa! (Lần 2)
@@ -759,9 +777,8 @@ def check_free_gen_full_flow(page, profile_id: str, timeout_ms: int = 15000) -> 
     free_info = read_free_gens(page, timeout_ms=timeout_ms)
     tag = _eval_free_info(free_info, is_lite=False)
     if tag:
-        live_profile.notes = tag
-        manager._save()
-        print(f"Kiểm tra Free Gens thành công sau khi reload (genjutsu): {live_profile.notes}")
+        _save_tag(tag)
+        print(f"Kiểm tra Free Gens thành công sau khi reload (genjutsu): {tag}")
         return True
 
     # ──── BƯỚC 2: Check ở genjutsu-lite (Lần 1) ────
@@ -775,9 +792,8 @@ def check_free_gen_full_flow(page, profile_id: str, timeout_ms: int = 15000) -> 
     free_info_lite = read_free_gens(page, timeout_ms=timeout_ms)
     tag_lite = _eval_free_info(free_info_lite, is_lite=True)
     if tag_lite:
-        live_profile.notes = tag_lite
-        manager._save()
-        print(f"Kiểm tra Free Gens thành công (genjutsu-lite): {live_profile.notes}")
+        _save_tag(tag_lite)
+        print(f"Kiểm tra Free Gens thành công (genjutsu-lite): {tag_lite}")
         return True
 
     # Không thấy -> Reload lại trang phát nữa! (Lần 2)
@@ -791,15 +807,13 @@ def check_free_gen_full_flow(page, profile_id: str, timeout_ms: int = 15000) -> 
     free_info_lite = read_free_gens(page, timeout_ms=timeout_ms)
     tag_lite = _eval_free_info(free_info_lite, is_lite=True)
     if tag_lite:
-        live_profile.notes = tag_lite
-        manager._save()
-        print(f"Kiểm tra Free Gens thành công sau khi reload (genjutsu-lite): {live_profile.notes}")
+        _save_tag(tag_lite)
+        print(f"Kiểm tra Free Gens thành công sau khi reload (genjutsu-lite): {tag_lite}")
         return True
 
     # ──── BƯỚC 3: Cả 2 trang đều không thấy -> Gắn tag là 'không free' ────
     print(f"[{profile_id}] Cả 2 trang genjutsu và genjutsu-lite đều không thấy Use free gens; đã gắn nhãn không free")
-    live_profile.notes = "không free"
-    manager._save()
+    _save_tag("không free")
     return True
 
 
@@ -903,7 +917,10 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                         p_obj = manager.get_profile(profile_id)
                         if p_obj:
                             from app.services.vpn_ip import get_active_vpn
-                            p_obj.notes = f"Lỗi VPN ({get_active_vpn()})"
+                            vpn_note = f"Lỗi VPN ({get_active_vpn()})"
+                            if hasattr(manager, "update_notes"):
+                                manager.update_notes(profile_id, vpn_note)
+                            p_obj.notes = vpn_note
                             manager._save()
                         return
                 elif generate_hma:
@@ -915,6 +932,8 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                         print(f"Sinh IP HMA that bai: {hma_error}")
                         p_obj = manager.get_profile(profile_id)
                         if p_obj:
+                            if hasattr(manager, "update_notes"):
+                                manager.update_notes(profile_id, "Lỗi HMA VPN")
                             p_obj.notes = "Lỗi HMA VPN"
                             manager._save()
                         return
@@ -1100,6 +1119,8 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                         signup_options["keep_open"] = True
                         live_profile = manager.get_profile(profile_id)
                         if live_profile:
+                            if hasattr(manager, "update_notes"):
+                                manager.update_notes(profile_id, "⚠️ Cần đăng nhập thủ công")
                             live_profile.notes = "⚠️ Cần đăng nhập thủ công"
                             manager._save()
                         print(f"Login entry did not reach Microsoft sign-in: {e}; keeping Chrome open.")
@@ -1139,6 +1160,8 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                         signup_options["keep_open"] = True
                         live_profile = manager.get_profile(profile_id)
                         if live_profile:
+                            if hasattr(manager, "update_notes"):
+                                manager.update_notes(profile_id, "⚠️ Cần đăng nhập thủ công")
                             live_profile.notes = "⚠️ Cần đăng nhập thủ công"
                             manager._save()
                         print("Login chưa chuyển khỏi homepage sau khi bấm; giữ Chrome để đăng nhập thủ công.")
@@ -1389,6 +1412,8 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
 
                 def set_watchdog_note(note):
                     try:
+                        if hasattr(manager, "update_notes"):
+                            manager.update_notes(profile_id, note)
                         live_profile = manager.get_profile(profile_id)
                         if live_profile and live_profile.notes != note:
                             live_profile.notes = note
@@ -1400,6 +1425,8 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                     try:
                         live_profile = manager.get_profile(profile_id)
                         if live_profile and (live_profile.notes or "").startswith("⚠️ Xác minh"):
+                            if hasattr(manager, "update_notes"):
+                                manager.update_notes(profile_id, original_profile_note)
                             live_profile.notes = original_profile_note
                             manager._save()
                     except Exception:

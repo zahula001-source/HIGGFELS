@@ -672,6 +672,8 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                     
                         p_obj = manager.get_profile(profile_id)
                         if p_obj and p_obj.notes != "free gen":
+                            if hasattr(manager, "update_notes"):
+                                manager.update_notes(profile_id, "free gen")
                             p_obj.notes = "free gen"
                             manager._save()
                         
@@ -704,6 +706,8 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                         video_tasks[task_id]["message"] = "✅ Video đã sẵn sàng, đang tải xuống..."
                         p_obj = manager.get_profile(profile_id)
                         if p_obj:
+                            if hasattr(manager, "update_notes"):
+                                manager.update_notes(profile_id, "đã ra video")
                             p_obj.notes = "đã ra video"
                             manager._save()
                         break
@@ -721,6 +725,8 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                             video_tasks[task_id]["message"] = "✅ Video đã sẵn sàng, đang tải xuống..."
                             p_obj = manager.get_profile(profile_id)
                             if p_obj:
+                                if hasattr(manager, "update_notes"):
+                                    manager.update_notes(profile_id, "đã ra video")
                                 p_obj.notes = "đã ra video"
                                 manager._save()
                             break
@@ -813,6 +819,8 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                     # Cập nhật tag thành 'đã ra video' sau khi tải thành công
                     p_obj = manager.get_profile(profile_id)
                     if p_obj:
+                        if hasattr(manager, "update_notes"):
+                            manager.update_notes(profile_id, "đã ra video")
                         p_obj.notes = "đã ra video"
                         manager._save()
                 except Exception as e:

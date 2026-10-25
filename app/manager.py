@@ -2,6 +2,7 @@ from . import browser_settings
 import json
 import os
 import random
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict
@@ -15,6 +16,7 @@ BROWSERS_DIR = DATA_DIR / "browsers"
 
 class ProfileManager:
     def __init__(self):
+        self._lock = threading.RLock()
         DATA_DIR.mkdir(exist_ok=True)
         BROWSERS_DIR.mkdir(exist_ok=True)
         (DATA_DIR / "logs").mkdir(exist_ok=True)
@@ -29,20 +31,43 @@ class ProfileManager:
         pass
 
     def _load(self) -> List[Profile]:
-        try:
-            data = json.loads(PROFILES_FILE.read_text(encoding="utf-8"))
-            return [Profile(**p) for p in data]
-        except Exception as e:
-            print(f"Load error {e}")
-            return []
+        with self._lock:
+            try:
+                data = json.loads(PROFILES_FILE.read_text(encoding="utf-8"))
+                return [Profile(**p) for p in data]
+            except Exception as e:
+                print(f"Load error {e}")
+                return []
 
     def _save(self):
-        tmp_file = PROFILES_FILE.with_suffix(".tmp")
-        tmp_file.write_text(
-            json.dumps([p.model_dump() for p in self.profiles], ensure_ascii=False, indent=2),
-            encoding="utf-8"
-        )
-        tmp_file.replace(PROFILES_FILE)
+        with self._lock:
+            tmp_file = PROFILES_FILE.with_suffix(".tmp")
+            tmp_file.write_text(
+                json.dumps([p.model_dump() for p in self.profiles], ensure_ascii=False, indent=2),
+                encoding="utf-8"
+            )
+            tmp_file.replace(PROFILES_FILE)
+
+    def update_notes(self, profile_id: str, notes: str) -> bool:
+        """Cập nhật ghi chú/tag cho profile một cách nguyên tử, chống ghi đè đa luồng."""
+        with self._lock:
+            current_profiles = self._load()
+            found = False
+            for p in current_profiles:
+                if p.id == profile_id:
+                    p.notes = notes
+                    found = True
+                    break
+            if found:
+                self.profiles = current_profiles
+                self._save()
+                return True
+            for p in self.profiles:
+                if p.id == profile_id:
+                    p.notes = notes
+                    self._save()
+                    return True
+            return False
 
     def _save_fingerprint_file(self, profile: Profile):
         try:
@@ -55,19 +80,21 @@ class ProfileManager:
 
     def list_profiles(self) -> List[Profile]:
         # Tự động nạp lại từ đĩa để luôn cập nhật danh sách mới nhất
-        self.profiles = self._load()
-        return self.profiles
+        with self._lock:
+            self.profiles = self._load()
+            return list(self.profiles)
 
     def get_profile(self, profile_id: str) -> Profile | None:
-        for p in self.profiles:
-            if p.id == profile_id:
-                return p
-        # Thử nạp lại từ file nếu chưa thấy
-        self.profiles = self._load()
-        for p in self.profiles:
-            if p.id == profile_id:
-                return p
-        return None
+        with self._lock:
+            for p in self.profiles:
+                if p.id == profile_id:
+                    return p
+            # Thử nạp lại từ file nếu chưa thấy
+            self.profiles = self._load()
+            for p in self.profiles:
+                if p.id == profile_id:
+                    return p
+            return None
 
     def create_profile(self, name: str, os: str = "windows", browser: str = "chromium", proxy=None, notes=None, fingerprint_preset=True) -> Profile:
         pid = Profile.generate_id()

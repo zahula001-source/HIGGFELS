@@ -2263,6 +2263,8 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                 
                 # Cập nhật thẻ profile thành "đã ra video"
                 try:
+                    if hasattr(manager, "update_notes"):
+                        manager.update_notes(profile_id, "đã ra video")
                     p_obj = manager.get_profile(profile_id)
                     if p_obj:
                         p_obj.notes = "đã ra video"
