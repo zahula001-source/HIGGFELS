@@ -536,7 +536,7 @@ def _existing_generation_status(context):
     return None
 
 
-def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is_headless=False, enable_ext=False, enable_ext_btn2=False, tg_enabled=False, tg_token="", tg_chat_id="", gen_mode="motion_transfer", engine="chrome", generate_ip=False, generate_hma=False):
+def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is_headless=False, enable_ext=False, enable_ext_btn2=False, tg_enabled=False, tg_token="", tg_chat_id="", gen_mode="motion_transfer", engine="chrome", generate_ip=False, generate_hma=False, higgs_model="vip"):
     """Background thread: mở higgsfield.ai, đăng nhập Microsoft, upload ảnh, nhập prompt và tạo video."""
     from playwright.sync_api import sync_playwright
     import urllib.parse
@@ -682,8 +682,9 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
         """)
 
         # ── BƯỚC 1: Mở higgsfield.ai/chat ──────────────────────────────────
-        video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "running", "message": "Đang mở higgsfield.ai/ai/video..."}
-        video_model_url = "https://higgsfield.ai/ai/video?model=genjutsu-lite" if (profile and getattr(profile, "notes", None) and "lite" in profile.notes.lower()) else "https://higgsfield.ai/ai/video?model=genjutsu"
+        is_lite = (higgs_model and "lite" in str(higgs_model).lower()) or (profile and getattr(profile, "notes", None) and "lite" in str(profile.notes).lower())
+        video_model_url = "https://higgsfield.ai/ai/video?model=genjutsu-lite" if is_lite else "https://higgsfield.ai/ai/video?model=genjutsu"
+        video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "running", "message": f"Đang mở higgsfield.ai ({'LITE' if is_lite else 'VIP'})..."}
         page.goto(video_model_url, wait_until="domcontentloaded", timeout=30000)
         page.wait_for_timeout(2000)
         
@@ -1228,8 +1229,7 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                                 except:
                                     if "pricing" in pg.url or "genjutsu" not in pg.url:
                                         print(f"  -> Đang ở nhầm trang ({pg.url}), quay lại trang tạo video...")
-                                        back_url = "https://higgsfield.ai/ai/video?model=genjutsu-lite" if (profile and getattr(profile, "notes", None) and "lite" in profile.notes.lower()) else "https://higgsfield.ai/ai/video?model=genjutsu"
-                                        pg.goto(back_url, timeout=30000)
+                                        pg.goto(video_model_url, timeout=30000)
                                     else:
                                         print("  -> Vẫn không thấy, tiến hành F5 tải lại trang...")
                                         pg.reload(timeout=30000)
@@ -1839,8 +1839,7 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                     from app.services.vpn_ip import connect_unique_vpn_ip
                     vpn_info = connect_unique_vpn_ip(context, profile_id)
                     print(f"Cancel + Gen đổi IP thành công: {vpn_info['ip']} ({vpn_info['country']})")
-                    fallback_model_url = "https://higgsfield.ai/ai/video?model=genjutsu-lite" if (profile and getattr(profile, "notes", None) and "lite" in profile.notes.lower()) else "https://higgsfield.ai/ai/video?model=genjutsu"
-                    page.goto(resume_url or fallback_model_url, timeout=30000)
+                    page.goto(resume_url or video_model_url, timeout=30000)
                     page.wait_for_load_state("domcontentloaded")
                     page.wait_for_timeout(5000)
 

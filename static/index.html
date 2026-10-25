@@ -1758,13 +1758,22 @@ async function addVideoForm(force_fId = null, forceProfileId = null) {
             <textarea id="videoPrompt_${fId}" class="textarea" rows="2" style="min-height:52px;resize:none;" placeholder="VD: video mèo cute..."></textarea>
           </div>
 
-          <!-- Setting: Gen Mode -->
-          <div class="form-group" style="margin:0;">
-            <label>⚙️ Tính năng</label>
-            <select id="videoGenMode_${fId}" class="select" style="height:36px;font-size:12px;padding:4px 8px;">
-              <option value="motion_transfer" selected>Motion transfer (Mặc định)</option>
-              <option value="objects_swap">Objects swap</option>
-            </select>
+          <!-- Setting: Gen Mode & Model -->
+          <div style="display:flex;gap:8px;">
+            <div class="form-group" style="margin:0;flex:1;">
+              <label>⚙️ Tính năng</label>
+              <select id="videoGenMode_${fId}" class="select" style="height:36px;font-size:12px;padding:4px 8px;">
+                <option value="motion_transfer" selected>Motion transfer (Mặc định)</option>
+                <option value="objects_swap">Objects swap</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin:0;flex:1;">
+              <label>🤖 Model</label>
+              <select id="videoHiggsModel_${fId}" class="select" style="height:36px;font-size:12px;padding:4px 8px;font-weight:600;color:#facc15;" onchange="this.dataset.userManuallySet='1'; saveUIState()">
+                <option value="vip" selected>👑 VIP (Mặc định)</option>
+                <option value="lite">⚡ LITE</option>
+              </select>
+            </div>
           </div>
 
           <!-- Setting (Model, Duration, Ratio) - Ẩn đi theo yêu cầu -->
@@ -1962,6 +1971,21 @@ function handleVideoProfileChange(fId, selectEl) {
         current.dataset.previousValue = selected;
         updateVideoCardTitle(fId, current);
     }
+    if (selected) {
+        const pObj = (allProfiles || []).find(p => p.id === selected);
+        if (pObj) {
+            const pNote = ((pObj.notes || '') + ' ' + (pObj.name || '')).toLowerCase();
+            const modelSelect = document.getElementById(`videoHiggsModel_${fId}`);
+            if (modelSelect && !modelSelect.dataset.userManuallySet) {
+                if (pNote.includes('lite')) {
+                    modelSelect.value = 'lite';
+                } else if (pNote.includes('vip') || pNote.includes('720')) {
+                    modelSelect.value = 'vip';
+                }
+            }
+        }
+    }
+    saveUIState();
 }
 
 function updateVideoCardTitle(fId, selectEl) {
@@ -2106,6 +2130,7 @@ async function cloneVideoCard(sourceFid) {
   const values = {
     prompt: document.getElementById(`videoPrompt_${sourceFid}`)?.value || '',
     genMode: document.getElementById(`videoGenMode_${sourceFid}`)?.value || 'motion_transfer',
+    higgsModel: document.getElementById(`videoHiggsModel_${sourceFid}`)?.value || 'vip',
     model: document.getElementById(`videoModel_${sourceFid}`)?.value || '',
     duration: document.getElementById(`videoDuration_${sourceFid}`)?.value || '',
     ratio: document.getElementById(`videoRatio_${sourceFid}`)?.value || '',
@@ -2118,6 +2143,7 @@ async function cloneVideoCard(sourceFid) {
   const setValue = (id, value) => { const el = document.getElementById(`${id}_${newFid}`); if (el && value) el.value = value; };
   setValue('videoPrompt', values.prompt);
   setValue('videoGenMode', values.genMode);
+  setValue('videoHiggsModel', values.higgsModel);
   setValue('videoModel', values.model);
   setValue('videoDuration', values.duration);
   setValue('videoRatio', values.ratio);
@@ -2245,7 +2271,8 @@ async function startCancelAndGen(fId) {
                           is_headless: isHeadless,
                           cancel_first: true,
                           engine,
-                          generate_ip: true
+                          generate_ip: true,
+                          higgs_model: document.getElementById(`videoHiggsModel_${fId}`)?.value || 'vip'
                       })
                   });
                   const startedData = await started.json();
@@ -2355,6 +2382,7 @@ async function startVideoCreationDynamic(fId) {
   formData.append("video_duration", document.getElementById(`videoDuration_${fId}`).value);
   formData.append("video_ratio", document.getElementById(`videoRatio_${fId}`).value);
   formData.append("gen_mode", document.getElementById(`videoGenMode_${fId}`).value);
+  formData.append("higgs_model", document.getElementById(`videoHiggsModel_${fId}`)?.value || "vip");
   
   const savePath = document.getElementById("globalVideoSavePath") ? document.getElementById("globalVideoSavePath").value.trim() : "";
   formData.append("save_path", savePath);
@@ -2698,8 +2726,10 @@ function saveUIState() {
     const taskId = fIdToTaskId[fId] || "";
     const isDone = document.getElementById(`vtask_empty_${fId}`)?.style.display === "none";
     const enableExt = document.getElementById(`enableExt_${fId}`) ? document.getElementById(`enableExt_${fId}`).checked : false;
+    const higgsModel = document.getElementById(`videoHiggsModel_${fId}`)?.value || "vip";
+    const genMode = document.getElementById(`videoGenMode_${fId}`)?.value || "motion_transfer";
     
-    state.cards.push({ fId, prompt, profileId, taskId, img1Src: img1Src.startsWith("data:") ? img1Src : "", img2Src: img2Src.startsWith("data:") ? img2Src : "", isDone, enableExt });
+    state.cards.push({ fId, prompt, profileId, taskId, img1Src: img1Src.startsWith("data:") ? img1Src : "", img2Src: img2Src.startsWith("data:") ? img2Src : "", isDone, enableExt, higgsModel, genMode });
   });
   
   const stateStr = JSON.stringify(state);
@@ -2789,6 +2819,14 @@ function restoreStateStr(saved) {
                   if (c.hasOwnProperty('enableExt')) {
                     const extEl = document.getElementById(`enableExt_${c.fId}`);
                     if(extEl) extEl.checked = c.enableExt;
+                  }
+                  if (c.higgsModel) {
+                    const hmEl = document.getElementById(`videoHiggsModel_${c.fId}`);
+                    if (hmEl) hmEl.value = c.higgsModel;
+                  }
+                  if (c.genMode) {
+                    const gmEl = document.getElementById(`videoGenMode_${c.fId}`);
+                    if (gmEl) gmEl.value = c.genMode;
                   }
                   if (c.taskId) {
                       fIdToTaskId[c.fId] = c.taskId;
@@ -3389,7 +3427,8 @@ async function submitCheckVideoForFid(fId) {
       body: JSON.stringify({
         profile_id: pId,
         is_headless: globalHeadless,
-        engine: document.getElementById("globalBrowserEngine")?.value || "chrome"
+        engine: document.getElementById("globalBrowserEngine")?.value || "chrome",
+        higgs_model: document.getElementById(`videoHiggsModel_${fId}`)?.value || "vip"
       })
     });
     const data = await res.json();
@@ -3562,7 +3601,8 @@ async function submitCheckVideo() {
           body: JSON.stringify({
             profile_id: pId,
             is_headless: isHeadless,
-            engine: document.getElementById("globalBrowserEngine")?.value || "chrome"
+            engine: document.getElementById("globalBrowserEngine")?.value || "chrome",
+            higgs_model: document.getElementById(`videoHiggsModel_${currentFid}`)?.value || "vip"
           })
       })
       .then(res => res.json())

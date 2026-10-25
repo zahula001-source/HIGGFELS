@@ -58,6 +58,7 @@ class CheckVideoReq(BaseModel):
     engine: str = "chrome"
     generate_ip: bool = False
     generate_hma: bool = False
+    higgs_model: str = "vip"
 
 class CancelGenReq(BaseModel):
     profile_id: str

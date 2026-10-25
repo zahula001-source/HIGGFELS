@@ -59,6 +59,7 @@ async def create_video(request: Request):
     generate_ip = str(form.get("generate_ip", "true")).strip().lower() == "true"
     generate_hma = str(form.get("generate_hma", "false")).strip().lower() == "true"
     processing_timeout = int(form.get("processing_timeout", 120))
+    higgs_model = str(form.get("higgs_model", "vip")).strip().lower()
 
     # Lấy danh sách các profile đang bận
     used_profiles = set()
@@ -68,16 +69,16 @@ async def create_video(request: Request):
     used_profiles.update(list_running())
 
     if not profile_id:
-        # Tß╗▒ ─æß╗Öng g├ín profile rß║únh
+        # Tự động gán profile rảnh
         all_profiles = manager.list_profiles()
         free_profiles = [p for p in all_profiles if p.id not in used_profiles]
         if not free_profiles:
-            return JSONResponse(status_code=400, content={"message": "Kh├┤ng c├▓n Profile n├áo trß╗æng. Vui l├▓ng tß║ío th├¬m Profile hoß║╖c chß╗¥!"})
+            return JSONResponse(status_code=400, content={"message": "Không còn Profile nào trống. Vui lòng tạo thêm Profile hoặc chờ!"})
         profile_id = free_profiles[0].id
     else:
-        # Kiß╗âm tra xem profile ─æ╞░ß╗úc chß╗ìn c├│ ─æang bß║¡n kh├┤ng
+        # Kiểm tra xem profile được chọn có đang bận không
         if profile_id in used_profiles:
-            return JSONResponse(status_code=400, content={"message": "Profile n├áy ─æang bß║¡n (─æang mß╗ƒ hoß║╖c ─æang tß║ío video kh├íc). Vui l├▓ng chß╗ìn profile kh├íc!"})
+            return JSONResponse(status_code=400, content={"message": "Profile này đang bận (đang mở hoặc đang tạo video khác). Vui lòng chọn profile khác!"})
 
     headless_bool = (is_headless.lower() == "true")
     task_id = uuid.uuid4().hex[:10]
@@ -113,7 +114,7 @@ async def create_video(request: Request):
 
     video_tasks[task_id] = {
         "status": "pending", 
-        "message": "─Éang chuß║⌐n bß╗ï...",
+        "message": "Đang chuẩn bị...",
         "params": {
             "prompt": prompt,
             "img1_path": img1_path,
@@ -132,13 +133,14 @@ async def create_video(request: Request):
             "generate_hma": generate_hma,
             "media_paths": saved_paths,
             "processing_timeout": processing_timeout,
+            "higgs_model": higgs_model,
         }
     }
     
     t = threading.Thread(
         target=run_video_automation,
         args=(task_id, prompt, saved_paths, profile_id, save_path, headless_bool, (enable_ext.lower() == "true"), (enable_ext_btn2.lower() == "true"), (telegram_enabled.lower() == "true"), telegram_token, telegram_chat_id, gen_mode, browser_engine, generate_ip),
-        kwargs={"generate_hma": generate_hma},
+        kwargs={"generate_hma": generate_hma, "higgs_model": higgs_model},
         daemon=True,
     )
     t.start()
@@ -154,7 +156,7 @@ def api_check_video(req: CheckVideoReq):
     video_tasks[task_id] = {
         "status": "pending",
         "message": "Chuẩn bị kiểm tra video...",
-        "params": {"profile_id": req.profile_id, "check_task": True},
+        "params": {"profile_id": req.profile_id, "check_task": True, "higgs_model": getattr(req, "higgs_model", "vip")},
     }
     check_video_task_ids.add(task_id)
     def _run_and_cleanup(*args):
@@ -164,6 +166,7 @@ def api_check_video(req: CheckVideoReq):
                 cancel_first=req.cancel_first,
                 engine=req.engine,
                 generate_ip=req.generate_ip,
+                higgs_model=getattr(req, "higgs_model", "vip"),
             )
         finally:
             check_video_task_ids.discard(task_id)
@@ -241,7 +244,12 @@ def retry_video(task_id: str):
         if p.get("img1_path"): media_paths.append(p["img1_path"])
         if p.get("img2_path"): media_paths.append(p["img2_path"])
 
-    t = threading.Thread(target=run_video_automation, args=(task_id, p["prompt"], media_paths, p.get("profile_id"), p.get("save_path"), p.get("is_headless", False), p.get("enable_ext", False), p.get("enable_ext_btn2", False), p.get("tg_enabled", False), p.get("tg_token", ""), p.get("tg_chat_id", ""), p.get("gen_mode", "motion_transfer"), p.get("browser_engine", "chrome"), p.get("generate_ip", False)), daemon=True)
+    t = threading.Thread(
+        target=run_video_automation,
+        args=(task_id, p["prompt"], media_paths, p.get("profile_id"), p.get("save_path"), p.get("is_headless", False), p.get("enable_ext", False), p.get("enable_ext_btn2", False), p.get("tg_enabled", False), p.get("tg_token", ""), p.get("tg_chat_id", ""), p.get("gen_mode", "motion_transfer"), p.get("browser_engine", "chrome"), p.get("generate_ip", False)),
+        kwargs={"generate_hma": p.get("generate_hma", False), "higgs_model": p.get("higgs_model", "vip")},
+        daemon=True
+    )
     t.start()
     return {"ok": True}
 
