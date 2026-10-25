@@ -118,5 +118,49 @@ class FreeGenTagPersistenceTests(unittest.TestCase):
                     p = pm.get_profile("test-p1")
                     self.assertEqual(p.notes, "free gen 1 720p")
 
+    def test_check_free_gen_full_flow_fast_first_step_timeouts(self):
+        import app.api.profiles as profiles_api
+        
+        with patch("app.manager.PROFILES_FILE", self.profiles_file), \
+             patch("app.manager.DATA_DIR", self.data_dir), \
+             patch("app.manager.BROWSERS_DIR", self.data_dir / "browsers"):
+            pm = ProfileManager()
+            
+            with patch.object(profiles_api, "manager", pm):
+                mock_page = Mock()
+                mock_page.url = "https://higgsfield.ai/ai/video?model=genjutsu"
+                
+                # Giả lập:
+                # 1. genjutsu Lần 1: None
+                # 2. genjutsu Lần 2: None
+                # 3. genjutsu-lite Lần 1: None
+                # 4. genjutsu-lite Lần 2: {"count": 2, "disabled": False}
+                with patch.object(profiles_api, "read_free_gens", side_effect=[
+                    None, None, None, {"count": 2, "disabled": False}
+                ]) as mock_read, \
+                     patch.object(profiles_api, "read_quality", return_value="720p"), \
+                     patch.object(profiles_api, "navigate_higgsfield"):
+                    
+                    res = profiles_api.check_free_gen_full_flow(
+                        mock_page, "test-p1", timeout_ms=15000, fast_first_step_ms=4000
+                    )
+                    self.assertTrue(res)
+                    
+                    # Kiểm tra các lần gọi read_free_gens:
+                    # Lần 1 genjutsu: 4000ms
+                    # Lần 2 genjutsu: 15000ms
+                    # Lần 1 genjutsu-lite: 4000ms
+                    # Lần 2 genjutsu-lite: 15000ms
+                    calls = mock_read.call_args_list
+                    self.assertEqual(len(calls), 4)
+                    self.assertEqual(calls[0].kwargs["timeout_ms"], 4000)
+                    self.assertEqual(calls[1].kwargs["timeout_ms"], 15000)
+                    self.assertEqual(calls[2].kwargs["timeout_ms"], 4000)
+                    self.assertEqual(calls[3].kwargs["timeout_ms"], 15000)
+                    
+                    p = pm.get_profile("test-p1")
+                    self.assertEqual(p.notes, "free gen 2 720p lite")
+
 if __name__ == "__main__":
     unittest.main()
+

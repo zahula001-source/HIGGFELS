@@ -961,7 +961,6 @@ async function launchProfile(id, manualOpen = true){
   setTimeout(loadProfiles, 1000);
 }
 async function checkFreeGenProfile(id, button) {
-  if (!await backendConfigSave) return;
   if (button && button.dataset.checking === "true") return;
   const originalText = button ? button.textContent : "🔍 Check Free Gen";
   if (button) {
@@ -1374,7 +1373,6 @@ function clearExtensions() {
 }
 
 async function autoSignup(id) {
-    if (!await backendConfigSave) return;
     const profile = allProfiles.find(p => p.id === id);
     if (profile && !profile.running) {
         const autoFp = document.getElementById("globalAutoFp") ? document.getElementById("globalAutoFp").checked : false;
@@ -1460,7 +1458,6 @@ async function autoSignup(id) {
 }
 
 async function callAutoSignupApi(id, keepOpen = false) {
-    if (!await backendConfigSave) return;
     try {
         const engine = document.getElementById("globalBrowserEngine") ? document.getElementById("globalBrowserEngine").value : "chrome";
         const generateIp = document.getElementById("globalGenerateIp") ? document.getElementById("globalGenerateIp").checked : false;
@@ -1575,7 +1572,6 @@ function handleBatchCheckClick(e, checkbox) {
 }
 
 async function startBatchCheckFreeGen() {
-    if (!await backendConfigSave) return;
     const checkboxes = document.querySelectorAll('.batch-chk:checked');
     if (checkboxes.length === 0) { alert('Vui lòng chọn ít nhất 1 profile!'); return; }
     
@@ -1589,13 +1585,18 @@ async function startBatchCheckFreeGen() {
     const isHeadless = document.getElementById("batchCheckHeadless")?.checked || document.getElementById("globalHeadless")?.checked || false;
     const keepChrome = document.getElementById("globalKeepChrome")?.checked || false;
     
-    showToast(`⏳ Bắt đầu Check Free Gen lần lượt cho ${checkboxes.length} tài khoản...`);
+    const count = checkboxes.length;
     closeBatchCheckModal();
+    showToast(`🚀 Bắt đầu Check Free Gen đồng loạt cho ${count} tài khoản!`);
+    loadProfiles();
 
-    // Chạy lần lượt các tab, cách nhau 3 giây để máy tính không bị quá tải
+    // Chạy lần lượt các tab, cách nhau 1.5 giây
     Array.from(checkboxes).forEach((chk, index) => {
+        const id = chk.value;
+        const profile = (allProfiles || []).find(p => p.id === id);
+        const name = profile ? profile.name : id;
         setTimeout(async () => {
-            const id = chk.value;
+            showToast(`🔍 [${name}] Đang mở để kiểm tra Free Gen...`);
             try {
                 const res = await fetch(`/api/profiles/${id}/launch`, {
                     method: "POST", 
@@ -1617,16 +1618,17 @@ async function startBatchCheckFreeGen() {
                 const data = await res.json();
                 if (!res.ok) {
                     console.warn(`Lỗi check free gen profile ${id}:`, data);
+                    showToast(`❌ [${name}] Lỗi: ${data.detail || JSON.stringify(data)}`);
                 } else {
-                    setTimeout(loadProfiles, 1500);
+                    setTimeout(loadProfiles, 1000);
                 }
             } catch(e) {
                 console.warn(`Lỗi check free gen profile ${id}:`, e);
+                showToast(`❌ [${name}] Lỗi: ${e.message}`);
             }
-        }, index * 3000);
+        }, index * 1500);
     });
     
-    alert("✅ Đã gửi lệnh Check Free Gen đồng loạt cho " + checkboxes.length + " thẻ!\nTrình duyệt sẽ lần lượt mở lên để kiểm tra và tự động cập nhật tag.");
     btn.disabled = false;
     btn.textContent = "▶️ Bắt đầu kiểm tra";
 }

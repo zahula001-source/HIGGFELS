@@ -704,12 +704,12 @@ _manual_open_sessions = {}
 _signup_lock = threading.Lock()
 
 
-def check_free_gen_full_flow(page, profile_id: str, timeout_ms: int = 15000) -> bool:
+def check_free_gen_full_flow(page, profile_id: str, timeout_ms: int = 15000, fast_first_step_ms: int = 4000) -> bool:
     """Quy trình kiểm tra Free Gen chuẩn theo yêu cầu:
-    1. Check ở https://higgsfield.ai/ai/video?model=genjutsu
-       - Không thấy thì load lại trang phát nữa (reload) và check lại
-    2. Không được thì check ở https://higgsfield.ai/ai/video?model=genjutsu-lite
-       - Không thấy thì load lại trang phát nữa (reload) và check lại
+    1. Check ở https://higgsfield.ai/ai/video?model=genjutsu (Lần 1 nhanh 4s)
+       - Không thấy thì load lại trang phát nữa (reload) và check lại (Lần 2 thời gian đầy đủ)
+    2. Không được thì check ở https://higgsfield.ai/ai/video?model=genjutsu-lite (Lần 1 nhanh 4s)
+       - Không thấy thì load lại trang phát nữa (reload) và check lại (Lần 2 thời gian đầy đủ)
     3. Không thấy thì gắn tag là: không free
     """
     HIGGSFIELD_VIP_URL = "https://higgsfield.ai/ai/video?model=genjutsu"
@@ -750,16 +750,16 @@ def check_free_gen_full_flow(page, profile_id: str, timeout_ms: int = 15000) -> 
             tag = f"free gen{suffix}"
         return tag.strip()
 
-    # ──── BƯỚC 1: Check ở genjutsu (Lần 1) ────
+    # ──── BƯỚC 1: Check ở genjutsu (Lần 1 - Chờ nhanh 4s) ────
     print(f"[{profile_id}] Kiểm tra Free Gens trên genjutsu (Lần 1)...")
     if "model=genjutsu" not in page.url or "model=genjutsu-lite" in page.url:
         try:
             navigate_higgsfield(page, HIGGSFIELD_VIP_URL)
-            page.wait_for_timeout(2000)
+            page.wait_for_timeout(1000)
         except Exception as e:
             print(f"Lỗi điều hướng genjutsu: {e}")
 
-    free_info = read_free_gens(page, timeout_ms=timeout_ms)
+    free_info = read_free_gens(page, timeout_ms=fast_first_step_ms)
     tag = _eval_free_info(free_info, is_lite=False)
     if tag:
         _save_tag(tag)
@@ -770,7 +770,7 @@ def check_free_gen_full_flow(page, profile_id: str, timeout_ms: int = 15000) -> 
     print(f"[{profile_id}] Chưa thấy Use free gens trên genjutsu -> Reload lại trang để kiểm tra lần 2...")
     try:
         page.reload(wait_until="domcontentloaded", timeout=30000)
-        page.wait_for_timeout(2000)
+        page.wait_for_timeout(1500)
     except Exception as e:
         print(f"Lỗi reload genjutsu: {e}")
 
@@ -781,15 +781,15 @@ def check_free_gen_full_flow(page, profile_id: str, timeout_ms: int = 15000) -> 
         print(f"Kiểm tra Free Gens thành công sau khi reload (genjutsu): {tag}")
         return True
 
-    # ──── BƯỚC 2: Check ở genjutsu-lite (Lần 1) ────
+    # ──── BƯỚC 2: Check ở genjutsu-lite (Lần 1 - Chờ nhanh 4s) ────
     print(f"[{profile_id}] Genjutsu không thấy Use free gens; chuyển sang kiểm tra genjutsu-lite (Lần 1)...")
     try:
         navigate_higgsfield(page, HIGGSFIELD_LITE_URL)
-        page.wait_for_timeout(2000)
+        page.wait_for_timeout(1000)
     except Exception as e:
         print(f"Lỗi điều hướng genjutsu-lite: {e}")
 
-    free_info_lite = read_free_gens(page, timeout_ms=timeout_ms)
+    free_info_lite = read_free_gens(page, timeout_ms=fast_first_step_ms)
     tag_lite = _eval_free_info(free_info_lite, is_lite=True)
     if tag_lite:
         _save_tag(tag_lite)
@@ -800,7 +800,7 @@ def check_free_gen_full_flow(page, profile_id: str, timeout_ms: int = 15000) -> 
     print(f"[{profile_id}] Chưa thấy Use free gens trên genjutsu-lite -> Reload lại trang để kiểm tra lần 2...")
     try:
         page.reload(wait_until="domcontentloaded", timeout=30000)
-        page.wait_for_timeout(2000)
+        page.wait_for_timeout(1500)
     except Exception as e:
         print(f"Lỗi reload genjutsu-lite: {e}")
 
@@ -2611,7 +2611,7 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
 
                 # Kiểm tra Free Gen theo quy trình chuẩn 4 bước (genjutsu -> reload -> genjutsu-lite -> reload -> không free)
                 if signup_options["manual_open"]:
-                    check_completed = check_free_gen_full_flow(page, profile_id, timeout_ms=10000)
+                    check_completed = check_free_gen_full_flow(page, profile_id, timeout_ms=10000, fast_first_step_ms=10000)
                     return
 
                 # Login status comes only from the rendered video navigation.
@@ -2624,7 +2624,7 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                         login_state = wait_video_login_state(page)
                     if login_state is True:
                         print("Đã đăng nhập: trang video không còn nút Login/Sign up.")
-                        check_completed = check_free_gen_full_flow(page, profile_id, timeout_ms=30000)
+                        check_completed = check_free_gen_full_flow(page, profile_id, timeout_ms=15000, fast_first_step_ms=4000)
                         live_profile = manager.get_profile(profile_id)
                         if live_profile and live_profile.notes == "không free":
                             keep_open = False
