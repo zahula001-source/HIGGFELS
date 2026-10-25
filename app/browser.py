@@ -123,9 +123,38 @@ def get_chromium_runner_simple(profile_id, profile_name, user_data_dir, proxy_di
     lines.append("runner_lock = None")
     lines.append("try:")
     lines.append("    import msvcrt")
-    lines.append("    runner_lock = open(Path(user_data_dir) / 'runner.lock', 'a+b')")
-    lines.append("    runner_lock.seek(0)")
-    lines.append("    msvcrt.locking(runner_lock.fileno(), msvcrt.LK_NBLCK, 1)")
+    lines.append("    lock_file = Path(user_data_dir) / 'runner.lock'")
+    lines.append("    pid_file = Path(user_data_dir) / 'runner.pid'")
+    lines.append("    for _lock_attempt in range(5):")
+    lines.append("        try:")
+    lines.append("            runner_lock = open(lock_file, 'a+b')")
+    lines.append("            runner_lock.seek(0)")
+    lines.append("            msvcrt.locking(runner_lock.fileno(), msvcrt.LK_NBLCK, 1)")
+    lines.append("            break")
+    lines.append("        except (PermissionError, OSError):")
+    lines.append("            if runner_lock is not None:")
+    lines.append("                try: runner_lock.close()")
+    lines.append("                except Exception: pass")
+    lines.append("                runner_lock = None")
+    lines.append("            time.sleep(0.5)")
+    lines.append("    else:")
+    lines.append("        if pid_file.exists():")
+    lines.append("            try:")
+    lines.append("                _old_pid = int(pid_file.read_text(encoding='utf-8').strip())")
+    lines.append("                if _old_pid != os.getpid():")
+    lines.append("                    import subprocess")
+    lines.append("                    subprocess.run(['taskkill', '/PID', str(_old_pid), '/T', '/F'], capture_output=True, creationflags=0x08000000)")
+    lines.append("                    time.sleep(0.5)")
+    lines.append("            except Exception: pass")
+    lines.append("        try:")
+    lines.append("            runner_lock = open(lock_file, 'a+b')")
+    lines.append("            runner_lock.seek(0)")
+    lines.append("            msvcrt.locking(runner_lock.fileno(), msvcrt.LK_NBLCK, 1)")
+    lines.append("        except (PermissionError, OSError):")
+    lines.append("            log('WARNING: runner.lock is busy; continuing launch')")
+    lines.append("    try:")
+    lines.append("        pid_file.write_text(str(os.getpid()), encoding='utf-8')")
+    lines.append("    except Exception: pass")
     lines.append("    stop_file = Path(user_data_dir) / 'runner.stop'")
     lines.append("    stop_file.unlink(missing_ok=True)")
     lines.append("    sys.path.insert(0, project_root)")
@@ -499,7 +528,16 @@ finally:
         try: playwright.stop()
         except Exception: pass
     if runner_lock is not None:
-        runner_lock.close()
+        try:
+            runner_lock.seek(0)
+            msvcrt.locking(runner_lock.fileno(), msvcrt.LK_UNLCK, 1)
+        except Exception: pass
+        try: runner_lock.close()
+        except Exception: pass
+    try:
+        pid_file = Path(user_data_dir) / 'runner.pid'
+        pid_file.unlink(missing_ok=True)
+    except Exception: pass
 """
     # The runner is saved as UTF-8 and executed as a standalone script. Dedent
     # this embedded block before joining it to the generated top-level lines;
@@ -597,9 +635,31 @@ def _launch_profile(profile, req=None):
         user_data_dir = prepare_chrome_136_profile(user_data_dir)
     os.makedirs(user_data_dir, exist_ok=True)
     os.makedirs(LOGS_DIR, exist_ok=True)
-    
-    # Dọn dẹp profile trước khi mở để tránh lỗi tự đóng hoặc kẹt
-    # Chrome owns its profile locks. Do not kill browsers or delete their locks.
+
+    # Kiểm tra xem runner.lock có đang bị chiếm giữ bởi tiến trình mồ côi không
+    lock_file = Path(user_data_dir) / "runner.lock"
+    if lock_file.exists():
+        import msvcrt
+        is_locked = False
+        try:
+            f = open(lock_file, "a+b")
+            try:
+                f.seek(0)
+                msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+                msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+            except (PermissionError, OSError):
+                is_locked = True
+            finally:
+                f.close()
+        except Exception:
+            is_locked = True
+        
+        if is_locked:
+            print(f"[{profile.id}] runner.lock đang bị giữ bởi tiến trình cũ; tự động dọn dẹp trước khi mở...", flush=True)
+            kill_profile_processes(profile.id)
+            time.sleep(0.5)
+
+    # Dọn dẹp log trước khi mở
     log_file = LOGS_DIR / f"launch_{profile.id}.log"
     if log_file.exists():
         try:
@@ -721,6 +781,38 @@ def ensure_profile_network_mode(profile, generate_ip=False, engine="chrome"):
         if result["status"] not in ("launched", "already_running"):
             raise RuntimeError(result.get("message", "Không mở lại được Chrome để áp dụng cài đặt proxy"))
 
+def kill_profile_processes(profile_id: str):
+    """Buộc dừng triệt để các tiến trình Chrome hoặc Python runner mồ côi của profile_id."""
+    data_dir = BASE_DIR / "data" / "browsers"
+    possible_dirs = [
+        data_dir / f"profile_{profile_id}",
+        data_dir / f"chrome136_{profile_id}"
+    ]
+    for pdir in possible_dirs:
+        pid_file = pdir / "runner.pid"
+        if pid_file.exists():
+            try:
+                raw_pid = int(pid_file.read_text(encoding="utf-8").strip())
+                if raw_pid != os.getpid():
+                    subprocess.run(["taskkill", "/PID", str(raw_pid), "/T", "/F"],
+                                   capture_output=True, creationflags=0x08000000)
+                pid_file.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+    try:
+        import psutil
+        for proc in psutil.process_iter(['pid', 'name']):
+            try:
+                cmd = ' '.join(proc.cmdline())
+                if profile_id in cmd and proc.pid != os.getpid():
+                    proc.kill()
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
 def close_profile(profile_id: str):
     with profile_lock(profile_id):
         with running_lock:
@@ -733,6 +825,7 @@ def close_profile(profile_id: str):
                 release_vpn_ip(profile_id)
             except Exception:
                 pass
+            kill_profile_processes(profile_id)
             return {"status": "not_running"}
         try:
             Path(proc.profile_dir, "runner.stop").touch()
@@ -746,6 +839,7 @@ def close_profile(profile_id: str):
                 proc.wait(timeout=5)
             with running_lock:
                 running_browsers.pop(profile_id, None)
+            kill_profile_processes(profile_id)
             try:
                 from app.services.vpn_ip import release_vpn_ip
                 release_vpn_ip(profile_id)
@@ -753,15 +847,29 @@ def close_profile(profile_id: str):
                 pass
             return {"status": "closed"}
         except Exception as e:
+            kill_profile_processes(profile_id)
             return {"status": "error", "message": str(e)}
 
 
 def is_running(profile_id: str) -> bool:
     with running_lock:
         proc = running_browsers.get(profile_id)
-        if not proc:
-            return False
-        return proc.poll() is None
+        if proc and proc.poll() is None:
+            return True
+    data_dir = BASE_DIR / "data" / "browsers"
+    for pdir in (data_dir / f"profile_{profile_id}", data_dir / f"chrome136_{profile_id}"):
+        pid_file = pdir / "runner.pid"
+        if pid_file.exists():
+            try:
+                import psutil
+                pid = int(pid_file.read_text(encoding="utf-8").strip())
+                if psutil.pid_exists(pid):
+                    p = psutil.Process(pid)
+                    if p.is_running() and profile_id in ' '.join(p.cmdline()):
+                        return True
+            except Exception:
+                pass
+    return False
 
 def list_running():
     with running_lock:
