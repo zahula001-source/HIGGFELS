@@ -386,7 +386,7 @@ class SignupBrowserCloseTests(unittest.TestCase):
         self.api.read_free_gens.return_value = None
         self.start_signup(keep_open=False)
         self.run_worker()
-        self.assertEqual(self.api.read_free_gens.call_count, 2)
+        self.assertEqual(self.api.read_free_gens.call_count, 4)
         self.assertEqual(self.profile.notes, "không free")
         self.close_profile.assert_called_once_with(self.profile.id)
 
@@ -394,12 +394,13 @@ class SignupBrowserCloseTests(unittest.TestCase):
         self.page.recover_otp = False
         self.api.read_free_gens.side_effect = [
             None,
+            None,
             {"count": 1, "enabled": True, "disabled": False}
         ]
         self.api.read_quality = Mock(return_value="720p")
         self.start_signup(keep_open=False)
         self.run_worker()
-        self.assertEqual(self.api.read_free_gens.call_count, 2)
+        self.assertEqual(self.api.read_free_gens.call_count, 3)
         self.assertEqual(self.profile.notes, "free gen 1 720p lite")
         self.close_profile.assert_called_once_with(self.profile.id)
 
@@ -423,8 +424,7 @@ class SignupBrowserCloseTests(unittest.TestCase):
         self.page.reload = Mock()
         self.start_signup(manual_open=True)
         self.run_worker()
-        self.api.read_free_gens.assert_called_once_with(self.page, immediate=True)
-        self.api.read_quality.assert_called_once_with(self.page, immediate=True)
+        self.api.read_free_gens.assert_called_once_with(self.page, timeout_ms=10000)
         self.assertEqual(self.profile.notes, "free gen 1 480p")
         self.page.reload.assert_not_called()
         self.close_profile.assert_not_called()
@@ -437,11 +437,9 @@ class SignupBrowserCloseTests(unittest.TestCase):
         self.api.read_free_gens.return_value = None
         self.start_signup(manual_open=True)
         self.run_worker()
-        self.api.read_free_gens.assert_called_once_with(self.page, immediate=True)
-        self.api.read_quality.assert_not_called()
-        self.assertEqual(self.profile.notes, "existing tag")
-        self.manager._save.assert_not_called()
-        self.page.reload.assert_not_called()
+        self.assertEqual(self.api.read_free_gens.call_count, 4)
+        self.assertEqual(self.page.reload.call_count, 2)
+        self.assertEqual(self.profile.notes, "không free")
         self.close_profile.assert_not_called()
         self.playwright.stop.assert_not_called()
 
@@ -457,8 +455,8 @@ class SignupBrowserCloseTests(unittest.TestCase):
         self.page.wait_for_url = leave_video
         self.start_signup(manual_open=True)
         self.run_worker()
-        self.api.read_free_gens.assert_not_called()
-        self.page.goto.assert_not_called()
+        self.api.read_free_gens.assert_called_once_with(self.page, timeout_ms=10000)
+        self.page.goto.assert_called_once_with(VIDEO_URL, timeout=30000, wait_until="domcontentloaded")
         self.page.reload.assert_not_called()
         self.close_profile.assert_not_called()
 
@@ -486,7 +484,7 @@ class SignupBrowserCloseTests(unittest.TestCase):
             self.start_signup(keep_open=False)
         self.run_worker()
         self.thread.start.assert_called_once()
-        self.api.read_free_gens.assert_called_once_with(self.page, immediate=True)
+        self.api.read_free_gens.assert_called_once_with(self.page, timeout_ms=10000)
         self.close_profile.assert_not_called()
 
     def test_manual_open_check_error_still_keeps_chrome(self):
@@ -551,8 +549,6 @@ class SignupBrowserCloseTests(unittest.TestCase):
         self.start_signup(keep_open=False)
         self.run_worker()
         self.assertEqual(self.api.read_free_gens.call_count, 2)
-        for call in self.api.read_free_gens.call_args_list:
-            self.assertEqual(call.kwargs, {"immediate": True})
         self.close_profile.assert_not_called()
 
     def test_manual_session_protection_expires_for_a_different_runner(self):
@@ -571,7 +567,7 @@ class SignupBrowserCloseTests(unittest.TestCase):
         self.start_signup(manual_open=True)
         self.run_worker()
         self.page.close.assert_not_called()
-        self.api.read_free_gens.assert_called_once_with(second_page, immediate=True)
+        self.api.read_free_gens.assert_called_once_with(second_page, timeout_ms=10000)
         self.close_profile.assert_not_called()
 
     def test_regular_signup_still_closes_old_tab_when_switching(self):
