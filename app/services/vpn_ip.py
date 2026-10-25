@@ -187,31 +187,133 @@ def _wait_for_popup_ready(page) -> None:
     raise RuntimeError("1ClickVPN khoi tao qua lau")
 
 
+ONECLICK_PREFERRED_COUNTRIES = [
+    "United States",
+    "United Kingdom",
+    "Germany",
+    "France",
+    "Canada",
+    "Netherlands",
+    "Japan",
+    "Singapore",
+    "Australia",
+    "Brazil",
+    "Italy",
+    "Spain",
+    "Sweden",
+    "Switzerland",
+    "Austria",
+    "Belgium",
+    "Norway",
+    "Denmark",
+    "Finland",
+    "Ireland",
+    "New Zealand",
+]
+
+
 def _choose_random_country(page, excluded: set[str]) -> str:
+    # 1. Bấm vào box Location ở trang chủ nếu đang ở trang chủ để mở danh sách
     location = page.locator(".home-page__box--type-location")
-    location.wait_for(state="visible", timeout=10000)
-    location.click()
+    if location.count() and location.first.is_visible():
+        try:
+            location.first.click(timeout=3000)
+        except Exception:
+            page.evaluate("() => { const el = document.querySelector('.home-page__box--type-location'); if (el) el.click(); }")
+        page.wait_for_timeout(800)
 
-    countries = page.locator("li.country-list__item")
-    countries.first.wait_for(state="visible", timeout=10000)
-    names = [name.strip() for name in countries.all_inner_texts() if name.strip()]
-    candidates = [name for name in names if name not in excluded] or names
+    # 2. Đợi danh sách quốc gia xuất hiện
+    page.wait_for_selector("li.country-list__item", state="visible", timeout=10000)
+
+    # 3. Lọc TUYỆT ĐỐI chỉ lấy các quốc gia khả dụng (loại trừ --disabled và --active)
+    available_names = page.evaluate("""() => {
+        const items = document.querySelectorAll('li.country-list__item:not(.country-list__item--disabled):not(.country-list__item--active)');
+        const names = [];
+        for (const item of items) {
+            const nameEl = item.querySelector('.country-list__name');
+            const txt = (nameEl ? nameEl.innerText : item.innerText || '').trim();
+            if (txt && !names.includes(txt)) {
+                names.push(txt);
+            }
+        }
+        return names;
+    }""")
+
+    if not available_names:
+        available_names = page.evaluate("""() => {
+            const items = document.querySelectorAll('li.country-list__item:not(.country-list__item--disabled)');
+            return Array.from(items).map(item => {
+                const nameEl = item.querySelector('.country-list__name');
+                return (nameEl ? nameEl.innerText : item.innerText || '').trim();
+            }).filter(Boolean);
+        }""")
+
+    candidates = [name for name in available_names if name not in excluded]
     if not candidates:
-        raise RuntimeError("1ClickVPN khong co danh sach quoc gia")
+        candidates = available_names
+    if not candidates:
+        raise RuntimeError("1ClickVPN khong co quoc gia kha dung nao")
 
-    country = random.choice(candidates)
-    countries.filter(has_text=country).first.click()
-    return country
+    # Ưu tiên các quốc gia server lớn, ổn định cao
+    preferred = [c for c in ONECLICK_PREFERRED_COUNTRIES if c in candidates]
+    chosen = random.choice(preferred) if preferred else random.choice(candidates)
+    print(f"  [VPN] 1ClickVPN: Chon quoc gia '{chosen}' (trong {len(candidates)} quoc gia kha dung)...", flush=True)
+
+    # 4. Dùng ô Search để lọc ngay quốc gia đó lên đầu danh sách (tránh vuốt cuộn bị ul chặn pointer events)
+    search_input = page.locator(".base-search__input, input[placeholder*='Search'], input[type='text']").first
+    if search_input.count() and search_input.is_visible():
+        try:
+            search_input.fill("")
+            search_input.fill(chosen)
+            page.wait_for_timeout(500)
+        except Exception:
+            pass
+
+    # 5. Click dứt khoát vào item đã chọn
+    clicked = False
+    target = page.locator("li.country-list__item:not(.country-list__item--disabled)").filter(has_text=chosen).first
+    if not target.count() or not target.is_visible():
+        target = page.locator("li.country-list__item:not(.country-list__item--disabled)").first
+
+    if target.count() and target.is_visible():
+        try:
+            target.scroll_into_view_if_needed(timeout=1000)
+            target.click(force=True, timeout=2000)
+            clicked = True
+        except Exception:
+            pass
+
+    if not clicked:
+        # Fallback bằng evaluate dispatch click trực tiếp
+        page.evaluate("""(countryName) => {
+            const items = Array.from(document.querySelectorAll('li.country-list__item:not(.country-list__item--disabled)'));
+            const target = items.find(el => (el.innerText || '').toLowerCase().includes(countryName.toLowerCase())) || items[0];
+            if (target) {
+                target.scrollIntoView({ block: 'center' });
+                target.click();
+                target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+            }
+        }""", chosen)
+
+    page.wait_for_timeout(1500)
+    return chosen
 
 
 def _wait_connected(page) -> None:
-    # Selecting a country normally starts connecting. Click power once only if needed.
+    # 1ClickVPN tự động chuyển về trang chủ và kết nối sau khi chọn quốc gia.
+    page.wait_for_timeout(2500)
     deadline = time.time() + 35
     clicked_power = False
+    start_time = time.time()
     while time.time() < deadline:
-        body = page.locator("body").inner_text(timeout=3000)
+        try:
+            body = page.locator("body").inner_text(timeout=2000)
+        except Exception:
+            page.wait_for_timeout(500)
+            continue
+
         body_lower = body.casefold()
-        if "Connected" in body and "Surfing from:" in body:
+        if "connected" in body_lower and ("surfing from" in body_lower or "disconnect" in body_lower):
             return
         if (
             "connection is unstable" in body_lower
@@ -220,10 +322,13 @@ def _wait_connected(page) -> None:
             raise RuntimeError("1ClickVPN bao Connection is unstable")
         if "connection was dropped" in body_lower or "could not connect" in body_lower:
             raise RuntimeError("May chu VPN vua chon khong ket noi duoc")
-        if not clicked_power and "Disconnected" in body:
+
+        # Chỉ bấm toggle nếu đã qua ít nhất 8s mà vẫn Disconnected hoàn toàn
+        if not clicked_power and "disconnected" in body_lower and (time.time() - start_time) >= 8:
             button = page.locator(".toggle-button__wrapper")
             if button.count() and button.first.is_visible():
-                button.first.click()
+                print("  [VPN] 1ClickVPN chua ket noi, bam nut Power...", flush=True)
+                button.first.click(force=True)
                 clicked_power = True
         page.wait_for_timeout(900)
     raise RuntimeError("1ClickVPN ket noi qua lau")
@@ -267,12 +372,18 @@ def _get_hola_extension_id(context) -> str:
 
 
 def _wait_for_hola_ready(popup, hola_id: str) -> None:
+    if popup.is_closed():
+        raise RuntimeError("Hola popup bi dong")
     popup_url = f"chrome-extension://{hola_id}/js/popup.html"
     for attempt in range(5):
+        if popup.is_closed():
+            raise RuntimeError("Hola popup bi dong")
         try:
             popup.goto(popup_url, wait_until="domcontentloaded", timeout=10000)
             break
         except Exception:
+            if popup.is_closed():
+                raise RuntimeError("Hola popup bi dong")
             if attempt == 4:
                 # If Web Store ID failed, try finding another ID from context service workers
                 ctx = popup.context
@@ -286,11 +397,16 @@ def _wait_for_hola_ready(popup, hola_id: str) -> None:
                                 break
                             except Exception:
                                 pass
-            popup.wait_for_timeout(1000)
+            if not popup.is_closed():
+                popup.wait_for_timeout(1000)
 
+    if popup.is_closed():
+        raise RuntimeError("Hola popup bi dong")
     popup.bring_to_front()
     deadline = time.time() + 25
     while time.time() < deadline:
+        if popup.is_closed():
+            raise RuntimeError("Hola popup bi dong")
         try:
             has_ui = popup.evaluate("""() => {
                 const closeBtn = document.querySelector('.close_btn___bottom_sheet-module, [class*="close_btn"]');
@@ -304,7 +420,10 @@ def _wait_for_hola_ready(popup, hola_id: str) -> None:
                 return
         except Exception:
             pass
-        popup.wait_for_timeout(600)
+        if not popup.is_closed():
+            popup.wait_for_timeout(600)
+        else:
+            raise RuntimeError("Hola popup bi dong")
 
 
 def _choose_hola_country(popup, excluded: set[str]) -> str:
@@ -568,20 +687,32 @@ def _connect_1clickvpn(context, profile_id: str, max_attempts: int = 8) -> dict[
             previous = _public_ip(context)
         except Exception:
             previous = ""
-        print(f"  [VPN] 1ClickVPN: IP gốc = {previous or '(không đọc được)'}", flush=True)
+        print(f"  [VPN] 1ClickVPN: IP goc = {previous or '(khong doc duoc)'}", flush=True)
 
         for attempt in range(max_attempts):
-            country = _choose_random_country(popup, attempted)
-            attempted.add(country)
-            _wait_connected(popup)
-            popup.wait_for_timeout(3000)
+            country = ""
+            try:
+                country = _choose_random_country(popup, attempted)
+                attempted.add(country)
+                _wait_connected(popup)
+                popup.wait_for_timeout(3000)
+            except Exception as e:
+                err_msg = str(e)
+                print(f"  [VPN] 1ClickVPN: Quoc gia '{country or 'da chon'}' loi ({err_msg}), tu dong doi sang quoc gia khac ({attempt+1}/{max_attempts})...", flush=True)
+                try:
+                    popup.reload(wait_until="domcontentloaded", timeout=15000)
+                    _wait_for_popup_ready(popup)
+                except Exception:
+                    pass
+                continue
+
             try:
                 ip = _public_ip(context)
             except Exception:
                 ip = ""
 
             if not ip:
-                print(f"  [VPN] 1ClickVPN: chưa đọc được IP ({attempt+1}/{max_attempts}), thử lại...", flush=True)
+                print(f"  [VPN] 1ClickVPN: chua doc duoc IP ({attempt+1}/{max_attempts}), thu lai...", flush=True)
                 popup.reload(wait_until="domcontentloaded", timeout=15000)
                 _wait_for_popup_ready(popup)
                 continue
@@ -606,16 +737,16 @@ def _connect_1clickvpn(context, profile_id: str, max_attempts: int = 8) -> dict[
                         _live_vpn_profiles.add(str(profile_id))
                         _save_reservations()
                         context.once("close", lambda *_: release_vpn_ip(profile_id))
-                        print(f"  [VPN] 1ClickVPN đã kết nối thành công: IP {ip} ({country})", flush=True)
+                        print(f"  [VPN] 1ClickVPN da ket noi thanh cong: IP {ip} ({country})", flush=True)
                         return {"ip": ip, "country": country}
-                    print(f"  [VPN] 1ClickVPN: IP {ip} ({country}) bị profile khác dùng, thử quốc gia khác ({attempt+1}/{max_attempts})...", flush=True)
+                    print(f"  [VPN] 1ClickVPN: IP {ip} ({country}) bi profile khac dung, thu quoc gia khac ({attempt+1}/{max_attempts})...", flush=True)
             else:
-                print(f"  [VPN] 1ClickVPN: IP chưa đổi ({attempt+1}/{max_attempts}), thử quốc gia khác...", flush=True)
+                print(f"  [VPN] 1ClickVPN: IP chua doi ({attempt+1}/{max_attempts}), thu quoc gia khac...", flush=True)
 
             popup.reload(wait_until="domcontentloaded", timeout=15000)
             _wait_for_popup_ready(popup)
 
-        raise RuntimeError(f"1ClickVPN không sinh được IP mới sau {max_attempts} lần thử")
+        raise RuntimeError(f"1ClickVPN khong sinh duoc IP moi sau {max_attempts} lan thu")
     finally:
         try:
             popup.close()
@@ -667,6 +798,10 @@ def connect_unique_vpn_ip(context, profile_id: str, max_attempts: int = 8) -> di
     for oc_try in range(1, oneclick_attempts + 1):
         try:
             result = _connect_1clickvpn(context, profile_id, max_attempts=max_attempts)
+            try:
+                set_active_vpn("1clickvpn")
+            except Exception:
+                pass
             return result
         except Exception as e2:
             oneclick_last_error = e2
