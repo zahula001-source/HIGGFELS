@@ -850,9 +850,23 @@ if __name__ == "__main__":
         if len(sys.argv) < 3:
             print('Dung: python hma_app_switcher.py country "USA"  (hoac "random")')
         else:
-            switch_country(sys.argv[2])
+            res = switch_country(sys.argv[2])
+            if not res:
+                print("\n>>> Lan 1 doi IP khong thanh cong, dang thu lai phat nua (Lan 2)...", flush=True)
+                time.sleep(2)
+                switch_country(sys.argv[2])
     elif cmd == "randomcountry":
-        switch_country("random")
+        res = switch_country("random")
+        if not res:
+            print("\n>>> Lan 1 doi IP khong thanh cong, dang thu lai phat nua (Lan 2)...", flush=True)
+            time.sleep(2)
+            switch_country("random")
+    elif cmd == "switch":
+        res = switch_ip()
+        if not res:
+            print("\n>>> Lan 1 doi IP khong thanh cong, dang thu lai phat nua (Lan 2)...", flush=True)
+            time.sleep(2)
+            switch_ip()
     elif cmd == "countries":
         print(f"{len(COUNTRIES)} quoc gia ho tro random:")
         for c in COUNTRIES:
