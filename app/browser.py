@@ -190,7 +190,13 @@ def get_chromium_runner_simple(profile_id, profile_name, user_data_dir, proxy_di
         proxy = None
         log("Proxy xoay OFF; " + ("chỉ cho phép 1ClickVPN cho Sinh IP" if generate_ip else "kết nối trực tiếp, không proxy"))
     launch_args["args"].extend(get_global_args(proxy, engine=engine, generate_ip=generate_ip))
-    # Bỏ tiện ích Profile Name Tab theo yêu cầu
+    try:
+        from app.extensions import ensure_account_badge_extension
+        badge_ext = ensure_account_badge_extension(user_data_dir, profile_name)
+        if badge_ext and badge_ext not in launch_args.get("extension_paths", []):
+            launch_args.setdefault("extension_paths", []).append(badge_ext)
+    except Exception as e:
+        log(f"Err creating account badge ext: {e}")
 
     # Tải extensions cá nhân của profile
     if enable_ext and profile_extensions:
@@ -310,6 +316,11 @@ def get_chromium_runner_simple(profile_id, profile_name, user_data_dir, proxy_di
     install_vpn_welcome_guard(context, log)
     from app.services.higgsfield_popups import install_upgrade_plan_guard
     install_upgrade_plan_guard(context)
+    try:
+        from app.extensions import install_account_badge
+        install_account_badge(context, profile_name)
+    except Exception as e:
+        log(f"Err installing account badge: {e}")
 
     try:
         import time

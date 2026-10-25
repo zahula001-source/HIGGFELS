@@ -59,28 +59,14 @@ def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False
     ignore_args = ["--disable-extensions"]
     extension_dirs = []
     
-    # Tao extension doi ten tab
+    # Tao extension badge ten tai khoan (ACC) o goc tren ben trai
     try:
-        import json
-        name_ext_dir = Path(runtime_dir) / "automation_extensions" / "name_tab"
-        name_ext_dir.mkdir(parents=True, exist_ok=True)
-        (name_ext_dir / "manifest.json").write_text(json.dumps({
-            "manifest_version": 3,
-            "name": "Profile Name Tab",
-            "version": "1.0",
-            "content_scripts": [{
-                "matches": ["<all_urls>"],
-                "js": ["content.js"],
-                "run_at": "document_idle"
-            }]
-        }), encoding="utf-8")
-        
-        js_code = "setInterval(() => { if (!document.title.startsWith('[' + " + repr(profile.name) + " + ']')) { document.title = '[' + " + repr(profile.name) + " + '] ' + document.title.replace(/^\\\\[.*?\\\\]\\\\s*/, ''); } }, 1000);"
-        (name_ext_dir / "content.js").write_text(js_code, encoding="utf-8")
-        
-        extension_dirs.append(str(name_ext_dir))
+        from app.extensions import ensure_account_badge_extension
+        badge_dir = ensure_account_badge_extension(runtime_dir, profile.name)
+        if badge_dir and badge_dir not in extension_dirs:
+            extension_dirs.append(badge_dir)
     except Exception as e:
-        print(f"Err creating name tab ext: {e}")
+        print(f"Err creating account badge ext: {e}")
 
     try:
         from app.extensions import resolve_extension_paths
@@ -205,6 +191,11 @@ def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False
 
     install_vpn_welcome_guard(context)
     install_upgrade_plan_guard(context)
+    try:
+        from app.extensions import install_account_badge
+        install_account_badge(context, profile.name)
+    except Exception as e:
+        print(f"Err installing account badge: {e}")
 
     # Chrome tự xử lý download 100% native - Không chặn, không xử lý bằng Playwright để tránh crash/lỗi .crdownload
 

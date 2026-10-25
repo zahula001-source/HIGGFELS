@@ -84,6 +84,11 @@ def run_cancel_gen_automation(profile_id: str, is_headless: bool, task_id: str):
                     args=args,
                     **b_opts
                 )
+                try:
+                    from app.extensions import install_account_badge
+                    install_account_badge(context, profile.name)
+                except Exception:
+                    pass
                 _do_cancel(context, task_id)
                 
     except Exception as e:

@@ -211,3 +211,160 @@ def resolve_extension_paths(raw: str, profile_dir: Path, install: bool = True) -
         except Exception:
             pass
     return out
+
+
+def ensure_account_badge_extension(user_data_dir: str | Path, profile_name: str) -> str:
+    """Tao extension hien thi badge ten tai khoan (ACC) o goc tren ben trai va doi tieu de tab."""
+    clean_name = (profile_name or "Profile").strip()
+    safe_name_json = json.dumps(clean_name, ensure_ascii=False)
+
+    ext_dir = Path(user_data_dir) / "automation_extensions" / "name_tab"
+    ext_dir.mkdir(parents=True, exist_ok=True)
+
+    manifest_file = ext_dir / "manifest.json"
+    manifest_data = {
+        "manifest_version": 3,
+        "name": f"Account Badge - {clean_name}",
+        "version": "1.0",
+        "content_scripts": [{
+            "matches": ["<all_urls>"],
+            "js": ["content.js"],
+            "run_at": "document_start"
+        }]
+    }
+    manifest_file.write_text(json.dumps(manifest_data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    content_js = f"""// Extension hien thi badge ten tai khoan o goc tren ben trai
+(function() {{
+  const profileName = {safe_name_json};
+  if (!profileName) return;
+
+  function injectBadge() {{
+    if (document.getElementById('hf-account-badge-topleft')) return;
+    const root = document.documentElement || document.body;
+    if (!root) return;
+
+    const badge = document.createElement('div');
+    badge.id = 'hf-account-badge-topleft';
+    badge.innerHTML = '<span style="font-size:13px;line-height:1;margin-right:2px;">👤</span> <span style="color:#fbbf24;font-weight:bold;margin-right:2px;">ACC:</span> <span style="color:#38bdf8;font-weight:700;">' + profileName + '</span>';
+    badge.style.cssText = [
+      'position: fixed !important',
+      'top: 10px !important',
+      'left: 12px !important',
+      'z-index: 2147483647 !important',
+      'background: rgba(15, 23, 42, 0.94) !important',
+      'backdrop-filter: blur(8px) !important',
+      '-webkit-backdrop-filter: blur(8px) !important',
+      'color: #38bdf8 !important',
+      'border: 1.5px solid #0284c7 !important',
+      'border-radius: 20px !important',
+      'padding: 5px 14px !important',
+      'font-size: 12px !important',
+      'font-weight: 700 !important',
+      'font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important',
+      'box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6), 0 0 10px rgba(14, 165, 233, 0.3) !important',
+      'pointer-events: none !important',
+      'user-select: none !important',
+      'white-space: nowrap !important',
+      'display: flex !important',
+      'align-items: center !important',
+      'gap: 6px !important',
+      'line-height: 1.4 !important'
+    ].join(';');
+    root.appendChild(badge);
+  }}
+
+  if (document.readyState === 'loading') {{
+    document.addEventListener('DOMContentLoaded', injectBadge);
+  }} else {{
+    injectBadge();
+  }}
+  setInterval(injectBadge, 1000);
+
+  // Cap nhat tab title
+  setInterval(function() {{
+    if (document.title && !document.title.startsWith('[' + profileName + ']')) {{
+      document.title = '[' + profileName + '] ' + document.title.replace(/^\\[.*?\\]\\s*/, '');
+    }}
+  }}, 1000);
+}})();
+"""
+    (ext_dir / "content.js").write_text(content_js, encoding="utf-8")
+    return str(ext_dir.resolve())
+
+
+def install_account_badge(context, profile_name: str) -> None:
+    """Inject badge truc tiep vao BrowserContext (Playwright persistent context)."""
+    if not context or not profile_name:
+        return
+    clean_name = profile_name.strip()
+    safe_name_json = json.dumps(clean_name, ensure_ascii=False)
+    init_script = f"""(function() {{
+  const profileName = {safe_name_json};
+  if (!profileName) return;
+
+  function injectBadge() {{
+    if (document.getElementById('hf-account-badge-topleft')) return;
+    const root = document.documentElement || document.body;
+    if (!root) return;
+
+    const badge = document.createElement('div');
+    badge.id = 'hf-account-badge-topleft';
+    badge.innerHTML = '<span style="font-size:13px;line-height:1;margin-right:2px;">👤</span> <span style="color:#fbbf24;font-weight:bold;margin-right:2px;">ACC:</span> <span style="color:#38bdf8;font-weight:700;">' + profileName + '</span>';
+    badge.style.cssText = [
+      'position: fixed !important',
+      'top: 10px !important',
+      'left: 12px !important',
+      'z-index: 2147483647 !important',
+      'background: rgba(15, 23, 42, 0.94) !important',
+      'backdrop-filter: blur(8px) !important',
+      '-webkit-backdrop-filter: blur(8px) !important',
+      'color: #38bdf8 !important',
+      'border: 1.5px solid #0284c7 !important',
+      'border-radius: 20px !important',
+      'padding: 5px 14px !important',
+      'font-size: 12px !important',
+      'font-weight: 700 !important',
+      'font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important',
+      'box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6), 0 0 10px rgba(14, 165, 233, 0.3) !important',
+      'pointer-events: none !important',
+      'user-select: none !important',
+      'white-space: nowrap !important',
+      'display: flex !important',
+      'align-items: center !important',
+      'gap: 6px !important',
+      'line-height: 1.4 !important'
+    ].join(';');
+    root.appendChild(badge);
+  }}
+
+  if (document.readyState === 'loading') {{
+    document.addEventListener('DOMContentLoaded', injectBadge);
+  }} else {{
+    injectBadge();
+  }}
+  setInterval(injectBadge, 1000);
+
+  setInterval(function() {{
+    if (document.title && !document.title.startsWith('[' + profileName + ']')) {{
+      document.title = '[' + profileName + '] ' + document.title.replace(/^\\[.*?\\]\\s*/, '');
+    }}
+  }}, 1000);
+}})();
+"""
+    try:
+        context.add_init_script(init_script)
+    except Exception:
+        pass
+    try:
+        pages = getattr(context, "pages", None)
+        if callable(pages):
+            pages = pages()
+        if isinstance(pages, (list, tuple)):
+            for page in pages:
+                try:
+                    page.evaluate(init_script)
+                except Exception:
+                    pass
+    except Exception:
+        pass
