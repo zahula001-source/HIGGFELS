@@ -1201,15 +1201,28 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                     try:
                         # 1. Click vào khu vực Add media (Ảnh hoặc Video)
                         try:
-                            keyword = "extract motion" if "video" in btn_aria_label.lower() or "edit" in btn_aria_label.lower() else "Add your characters"
-                            
-                            # Xây dựng các locator riêng lẻ để ghép lại bằng .or_()
-                            loc1 = pg.locator(f'[aria-label*="{keyword}" i]')
-                            loc2 = pg.locator(f'[aria-label="{btn_aria_label}" i]')
-                            loc3 = pg.locator(f'text="{keyword}"')
-                            loc4 = pg.locator(f'text="{btn_aria_label}"')
-                            
-                            btn = loc1.or_(loc2).or_(loc3).or_(loc4)
+                            is_video = "video" in btn_aria_label.lower() or "edit" in btn_aria_label.lower() or "motion" in btn_aria_label.lower()
+                            if is_video:
+                                # Hỗ trợ mọi biến thể nút Video ở cả VIP lẫn LITE
+                                loc1 = pg.locator('button[aria-label="Add a reference video to edit"]')
+                                loc2 = pg.locator('button[aria-label="Add a reference video to extract motion"]')
+                                loc3 = pg.locator('button[aria-label*="reference video" i]')
+                                loc4 = pg.locator('[aria-label*="reference video" i]')
+                                loc5 = pg.locator('[aria-label*="video to edit" i]')
+                                loc6 = pg.locator('[aria-label*="extract motion" i]')
+                                loc7 = pg.locator('div:has-text("Add a reference video") button')
+                                loc8 = pg.locator('div:has-text("Video duration:") button')
+                                loc9 = pg.locator(f'[aria-label="{btn_aria_label}" i]')
+                                btn = loc1.or_(loc2).or_(loc3).or_(loc4).or_(loc5).or_(loc6).or_(loc7).or_(loc8).or_(loc9)
+                            else:
+                                loc1 = pg.locator('[aria-label*="Add your characters" i]')
+                                loc2 = pg.locator('[aria-label*="Add reference images" i]')
+                                loc3 = pg.locator('[aria-label*="character" i]')
+                                loc4 = pg.locator('[aria-label*="image" i]')
+                                loc5 = pg.locator('div:has-text("Add your characters") button')
+                                loc6 = pg.locator('div:has-text("Add reference images") button')
+                                loc7 = pg.locator(f'[aria-label="{btn_aria_label}" i]')
+                                btn = loc1.or_(loc2).or_(loc3).or_(loc4).or_(loc5).or_(loc6).or_(loc7)
                             try:
                                 btn.first.wait_for(state="visible", timeout=15000)
                             except:
@@ -1234,7 +1247,7 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                         
                         # Thử click với expect_file_chooser xem nó có mở trực tiếp không (giao diện mới)
                         try:
-                            with pg.expect_file_chooser(timeout=5000) as fc_info:
+                            with pg.expect_file_chooser(timeout=3000) as fc_info:
                                 btn_to_click.click(timeout=5000, force=True)
                             fc_info.value.set_files(file_paths)
                             pg.wait_for_timeout(1000)
@@ -1242,11 +1255,33 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                             print("  -> Tải file thành công trực tiếp từ nút ban đầu!")
                         except:
                             # Nếu timeout, tức là nó chỉ mở Modal (giao diện cũ) hoặc modal agreement
-                            print("  -> Nút ban đầu không mở trực tiếp chọn file. Có thể đã mở Modal, tìm nút 'Upload media' bên trong...")
+                            print("  -> Nút ban đầu không mở trực tiếp chọn file. Đang đợi hoặc click mở Modal 'Upload media'...")
                             handle_media_upload_modal(pg)
                             pg.wait_for_timeout(1000)
                             
                             upload_btn = pg.locator('button[aria-label="Upload media"], button:has-text("Upload media")').last
+                            try:
+                                if not upload_btn.is_visible():
+                                    print("  -> Thử click lại nút bằng JavaScript để mở Modal Upload media...")
+                                    pg.evaluate("""(targetLabel) => {
+                                        let b = document.querySelector(`button[aria-label="${targetLabel}"]`) ||
+                                                document.querySelector('button[aria-label="Add a reference video to edit"]') ||
+                                                document.querySelector('button[aria-label="Add a reference video to extract motion"]') ||
+                                                document.querySelector('button[aria-label*="reference video"]') ||
+                                                document.querySelector('button[aria-label*="Add your characters"]') ||
+                                                document.querySelector('button[aria-label*="Add reference images"]');
+                                        if (!b) {
+                                            const divs = Array.from(document.querySelectorAll('div'));
+                                            const c = divs.find(d => d.innerText && (d.innerText.includes('Add a reference video') || d.innerText.includes('Add your characters')));
+                                            if (c) b = c.querySelector('button') || c;
+                                        }
+                                        if (b) {
+                                            b.scrollIntoView({behavior: 'instant', block: 'center'});
+                                            b.click();
+                                        }
+                                    }""", btn_aria_label)
+                                    pg.wait_for_timeout(1500)
+                            except: pass
                             try:
                                 upload_btn.wait_for(state="visible", timeout=10000)
                             except:
@@ -1447,12 +1482,11 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                         return False
 
                     try:
-                        add_label = (
-                            "Add a reference video to edit"
-                            if gen_mode == "objects_swap"
-                            else "Add a reference video to extract motion"
-                        )
-                        add_btn = pg.locator(f'button[aria-label="{add_label}"]:visible').last
+                        add_btn = pg.locator(
+                            'button[aria-label="Add a reference video to edit"]:visible, '
+                            'button[aria-label="Add a reference video to extract motion"]:visible, '
+                            'button[aria-label*="reference video" i]:visible'
+                        ).last
                         add_btn.wait_for(state="visible", timeout=10000)
                         add_btn.click(timeout=3000, force=True)
                         pg.wait_for_timeout(1500)
@@ -1484,17 +1518,17 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                         print(f"  -> Không chọn lại được video từ thư viện: {e}")
                         return False
 
-                # 1. Chuyển sang Tab đúng dựa trên gen_mode
+                # 1. Chuyển sang Tab đúng dựa trên gen_mode (chỉ chạy khi không phải trang Lite)
                 try:
-                    if gen_mode == "objects_swap":
-                        tab = page.locator('button[role="tab"]:has-text("Objects swap")').first
-                    else:
-                        tab = page.locator('button[role="tab"]:has-text("Motion transfer")').first
-                        
-                    tab.wait_for(state="visible", timeout=15000)
-                    if tab.is_visible(timeout=1000):
-                        tab.click(timeout=3000)
-                        page.wait_for_timeout(1000)
+                    if not is_lite:
+                        if gen_mode == "objects_swap":
+                            tab = page.locator('button[role="tab"]:has-text("Objects swap")').first
+                        else:
+                            tab = page.locator('button[role="tab"]:has-text("Motion transfer")').first
+                            
+                        if tab.is_visible(timeout=3000):
+                            tab.click(timeout=3000)
+                            page.wait_for_timeout(1000)
                 except: pass
                 
                 # 2. Upload Ảnh (Có cơ chế Retry riêng)
@@ -1525,7 +1559,7 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                 if videos_to_upload and not videos_uploaded:
                     for attempt in range(3):
                         try:
-                            if gen_mode == "objects_swap":
+                            if is_lite or gen_mode == "objects_swap":
                                 video_btn_label = "Add a reference video to edit"
                             else:
                                 video_btn_label = "Add a reference video to extract motion"
