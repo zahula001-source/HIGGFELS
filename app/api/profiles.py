@@ -2480,9 +2480,10 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                 if signup_options["manual_open"]:
                     from urllib.parse import urlsplit, parse_qs
                     url = urlsplit(page.url)
+                    query_model = parse_qs(url.query).get("model", [""])[0]
                     if (
                         url.hostname == "higgsfield.ai" and url.path == "/ai/video"
-                        and parse_qs(url.query).get("model") == ["genjutsu"]
+                        and query_model in ("genjutsu", "genjutsu-lite")
                     ):
                         free_info = read_free_gens(page, immediate=True)
                         live_profile = manager.get_profile(profile_id)
@@ -2490,11 +2491,12 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                             free_count = free_info.get("count")
                             has_free = not free_info.get("disabled") and (free_count is None or free_count > 0)
                             quality = read_quality(page, immediate=True) if has_free else ""
+                            suffix = " lite" if query_model == "genjutsu-lite" else ""
                             live_profile.notes = (
-                                f"free gen {free_count} {quality}" if has_free and free_count is not None and quality
-                                else f"free gen {free_count}" if has_free and free_count is not None
-                                else f"free gen {quality}" if has_free and quality
-                                else "free gen" if has_free else "không free"
+                                f"free gen {free_count} {quality}{suffix}".strip() if has_free and free_count is not None and quality
+                                else f"free gen {free_count}{suffix}".strip() if has_free and free_count is not None
+                                else f"free gen {quality}{suffix}".strip() if has_free and quality
+                                else f"free gen{suffix}".strip() if has_free else "không free"
                             )
                             manager._save()
                             check_completed = True
@@ -2502,12 +2504,13 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                         else:
                             print("Mở Chrome: chưa thấy Use free gens, bỏ qua kiểm tra và giữ nguyên tag.")
                     else:
-                        print("Mở Chrome: không ở trang Genjutsu, bỏ qua kiểm tra Free Gens.")
+                        print("Mở Chrome: không ở trang Genjutsu/Genjutsu-lite, bỏ qua kiểm tra Free Gens.")
                     return
 
                 # Login status comes only from the rendered video navigation.
                 try:
-                    if page.url != HIGGSFIELD_URL:
+                    HIGGSFIELD_LITE_URL = "https://higgsfield.ai/ai/video?model=genjutsu-lite"
+                    if page.url != HIGGSFIELD_URL and "genjutsu" not in page.url:
                         navigate_higgsfield(page, HIGGSFIELD_URL)
                     login_state = wait_video_login_state(page)
                     if login_state is not True:
@@ -2515,51 +2518,62 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                         login_state = wait_video_login_state(page)
                     if login_state is True:
                         print("Đã đăng nhập: trang video không còn nút Login/Sign up.")
-                        # Higgsfield renders this switch asynchronously after
-                        # login. Wait longer and refresh once before deciding
-                        # that the account has no Free Gen control.
+                        # Higgsfield renders this switch asynchronously after login.
                         free_info = read_free_gens(page, timeout_ms=30000)
-                        if free_info is None:
-                            print("Chưa thấy switch Use free gens; tải lại trang để chờ UI ổn định...")
-                            try:
-                                page.reload(wait_until="domcontentloaded", timeout=30000)
-                                page.wait_for_timeout(5000)
-                            except Exception as reload_error:
-                                print(f"Lỗi tải lại trang để đọc Free Gen: {reload_error}")
-                            free_info = read_free_gens(page, timeout_ms=30000)
                         live_profile = manager.get_profile(profile_id)
-                        if free_info and live_profile:
-                            free_count = free_info.get("count")
-                            has_free = (
-                                not free_info.get("disabled")
-                                and free_info.get("enabled")
-                                and (free_count is None or free_count > 0)
+                        free_count = free_info.get("count") if free_info else None
+                        has_free = (
+                            free_info is not None
+                            and not free_info.get("disabled")
+                            and free_info.get("enabled")
+                            and (free_count is None or free_count > 0)
+                        )
+                        if has_free and live_profile:
+                            quality = read_quality(page)
+                            live_profile.notes = (
+                                f"free gen {free_count} {quality}" if free_count is not None and quality
+                                else f"free gen {free_count}" if free_count is not None
+                                else f"free gen {quality}" if quality
+                                else "free gen"
                             )
-                            quality = read_quality(page) if has_free else ""
-                            if has_free:
+                            manager._save()
+                            check_completed = True
+                            print(f"Kiểm tra Free Gens/Quality (genjutsu): {live_profile.notes}")
+                        else:
+                            # Không thấy Free Gen ở model genjutsu -> Chuyển sang load tiếp model genjutsu-lite
+                            print("Không thấy Use free gens ở genjutsu; chuyển sang kiểm tra trang genjutsu-lite...")
+                            try:
+                                navigate_higgsfield(page, HIGGSFIELD_LITE_URL)
+                                page.wait_for_timeout(3000)
+                            except Exception as nav_lite_err:
+                                print(f"Lỗi điều hướng trang genjutsu-lite: {nav_lite_err}")
+                            free_info_lite = read_free_gens(page, timeout_ms=30000)
+                            free_count_lite = free_info_lite.get("count") if free_info_lite else None
+                            has_free_lite = (
+                                free_info_lite is not None
+                                and not free_info_lite.get("disabled")
+                                and free_info_lite.get("enabled")
+                                and (free_count_lite is None or free_count_lite > 0)
+                            )
+                            if has_free_lite and live_profile:
+                                quality_lite = read_quality(page)
                                 live_profile.notes = (
-                                    f"free gen {free_count} {quality}" if free_count is not None and quality
-                                    else f"free gen {free_count}" if free_count is not None
-                                    else f"free gen {quality}" if quality
-                                    else "free gen"
+                                    f"free gen {free_count_lite} {quality_lite} lite" if free_count_lite is not None and quality_lite
+                                    else f"free gen {free_count_lite} lite" if free_count_lite is not None
+                                    else f"free gen {quality_lite} lite" if quality_lite
+                                    else "free gen lite"
                                 )
-                            else:
+                                manager._save()
+                                check_completed = True
+                                print(f"Kiểm tra Free Gens/Quality (genjutsu-lite): {live_profile.notes}")
+                            elif live_profile:
                                 live_profile.notes = "không free"
-                            manager._save()
-                            check_completed = True
-                            print(f"Kiểm tra Free Gens/Quality: {live_profile.notes}")
-                        elif live_profile:
-                            # Đã thử đọc UI một lần và đã reload lại trang nhưng
-                            # vẫn không thấy switch Use free gens. Xem đây là
-                            # tài khoản không free, lưu nhãn và để finally đóng
-                            # Chrome theo luồng kiểm tra thông thường.
-                            live_profile.notes = "không free"
-                            manager._save()
-                            check_completed = True
-                            keep_open = False
-                            with _signup_lock:
-                                signup_options["keep_open"] = False
-                            print("Vẫn không thấy switch Use free gens sau khi reload; đã gắn nhãn không free")
+                                manager._save()
+                                check_completed = True
+                                keep_open = False
+                                with _signup_lock:
+                                    signup_options["keep_open"] = False
+                                print("Cả 2 trang genjutsu và genjutsu-lite đều không thấy Use free gens; đã gắn nhãn không free")
                     else:
                         set_watchdog_note("lỗi login" if login_state is False else "chưa xác định đăng nhập")
                         print("Chưa xác nhận đăng nhập sau các lần tự thử lại; đã đưa về trang video.")

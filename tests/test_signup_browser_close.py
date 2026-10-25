@@ -390,6 +390,19 @@ class SignupBrowserCloseTests(unittest.TestCase):
         self.assertEqual(self.profile.notes, "không free")
         self.close_profile.assert_called_once_with(self.profile.id)
 
+    def test_check_free_gen_falls_back_to_genjutsu_lite(self):
+        self.page.recover_otp = False
+        self.api.read_free_gens.side_effect = [
+            None,
+            {"count": 1, "enabled": True, "disabled": False}
+        ]
+        self.api.read_quality = Mock(return_value="720p")
+        self.start_signup(keep_open=False)
+        self.run_worker()
+        self.assertEqual(self.api.read_free_gens.call_count, 2)
+        self.assertEqual(self.profile.notes, "free gen 1 720p lite")
+        self.close_profile.assert_called_once_with(self.profile.id)
+
     def test_homepage_login_stall_is_reported_and_browser_is_kept_open(self):
         self.page.recover_otp = False
         self.page.evaluate = Mock(return_value="Login")

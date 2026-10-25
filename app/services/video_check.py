@@ -253,8 +253,9 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                 }, 1000);
             """)
             
-            video_tasks[task_id]["message"] = "Đang vào trang Genjutsu..."
-            page.goto("https://higgsfield.ai/ai/video?model=genjutsu", timeout=60000)
+            check_model_url = "https://higgsfield.ai/ai/video?model=genjutsu-lite" if (p_obj and getattr(p_obj, "notes", None) and "lite" in p_obj.notes.lower()) else "https://higgsfield.ai/ai/video?model=genjutsu"
+            video_tasks[task_id]["message"] = f"Đang vào trang {'Genjutsu-lite' if 'lite' in check_model_url else 'Genjutsu'}..."
+            page.goto(check_model_url, timeout=60000)
             
             # Wait a bit
             page.wait_for_timeout(5000)
@@ -423,7 +424,8 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                             from app.services.vpn_ip import connect_unique_vpn_ip
                             vpn_info = connect_unique_vpn_ip(context, profile_id)
                             print(f"Cancel + Gen (Check) đổi IP thành công: {vpn_info['ip']} ({vpn_info['country']})")
-                            page.goto(resume_url or "https://higgsfield.ai/ai/video?model=genjutsu", timeout=30000)
+                            fallback_chk_url = "https://higgsfield.ai/ai/video?model=genjutsu-lite" if (p_obj and getattr(p_obj, "notes", None) and "lite" in p_obj.notes.lower()) else "https://higgsfield.ai/ai/video?model=genjutsu"
+                            page.goto(resume_url or fallback_chk_url, timeout=30000)
                             page.wait_for_load_state("domcontentloaded")
                             page.wait_for_timeout(5000)
 
