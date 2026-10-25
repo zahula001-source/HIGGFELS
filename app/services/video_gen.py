@@ -1199,114 +1199,172 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                     print(f"--- B?t d?u upload cho {btn_aria_label}, s? lu?ng file: {len(file_paths)}")
                     if not file_paths: return
                     try:
-                        # 1. Click vào khu vực Add media (Ảnh hoặc Video)
+                        # 1. Click vào thẻ mở bảng Upload media (Ảnh hoặc Video)
+                        is_video = "video" in btn_aria_label.lower() or "edit" in btn_aria_label.lower() or "motion" in btn_aria_label.lower()
+
+                        # Danh sách selector chuẩn xác 100% dựa trên cấu trúc DOM của cả Modal LITE và VIP
+                        if is_video:
+                            btn_selectors = [
+                                'button[aria-label="Add a reference video to edit"]',
+                                'button[aria-label="Add a reference video to extract motion"]',
+                                'button[aria-label*="reference video" i]',
+                            ]
+                            text_keywords = ["Add a reference video"]
+                        else:
+                            btn_selectors = [
+                                'button[aria-label="Add reference images"]',
+                                'button[aria-label*="reference images" i]',
+                            ]
+                            text_keywords = ["Add your characters", "Add reference images"]
+
+                        combined_selector = ", ".join(btn_selectors)
+                        print(f"  -> Đang tìm nút mở bảng upload ({'Video' if is_video else 'Ảnh'})...")
+
+                        # BƯỚC 1: Chờ nút xuất hiện trên trang
+                        btn_found = False
+                        for round_idx in range(4):
+                            try:
+                                loc = pg.locator(combined_selector).first
+                                if loc.count() > 0:
+                                    btn_found = True
+                                    break
+                            except Exception: pass
+
+                            # Kiểm tra nếu đang ở nhầm trang (ví dụ pricing)
+                            if "pricing" in pg.url or "genjutsu" not in pg.url:
+                                print(f"  -> Đang ở nhầm trang ({pg.url}), quay lại trang tạo video...")
+                                pg.goto(video_model_url, timeout=30000)
+                                pg.wait_for_load_state("domcontentloaded")
+                            pg.wait_for_timeout(1500)
+
+                        if not btn_found:
+                            print(f"  -> Chưa thấy nút '{btn_aria_label}', tải lại trang...")
+                            pg.reload(timeout=30000)
+                            pg.wait_for_load_state("domcontentloaded")
+                            pg.wait_for_timeout(3000)
+
+                        # BƯỚC 2: Click nút mở bảng upload (dùng cả JS evaluate lẫn Playwright click)
+                        card_clicked = False
                         try:
-                            is_video = "video" in btn_aria_label.lower() or "edit" in btn_aria_label.lower() or "motion" in btn_aria_label.lower()
-                            if is_video:
-                                # Hỗ trợ mọi biến thể nút Video ở cả VIP lẫn LITE
-                                loc1 = pg.locator('button[aria-label="Add a reference video to edit"]')
-                                loc2 = pg.locator('button[aria-label="Add a reference video to extract motion"]')
-                                loc3 = pg.locator('button[aria-label*="reference video" i]')
-                                loc4 = pg.locator('[aria-label*="reference video" i]')
-                                loc5 = pg.locator('[aria-label*="video to edit" i]')
-                                loc6 = pg.locator('[aria-label*="extract motion" i]')
-                                loc7 = pg.locator('div:has-text("Add a reference video") button')
-                                loc8 = pg.locator('div:has-text("Video duration:") button')
-                                loc9 = pg.locator(f'[aria-label="{btn_aria_label}" i]')
-                                btn = loc1.or_(loc2).or_(loc3).or_(loc4).or_(loc5).or_(loc6).or_(loc7).or_(loc8).or_(loc9)
-                            else:
-                                loc1 = pg.locator('[aria-label*="Add your characters" i]')
-                                loc2 = pg.locator('[aria-label*="Add reference images" i]')
-                                loc3 = pg.locator('[aria-label*="character" i]')
-                                loc4 = pg.locator('[aria-label*="image" i]')
-                                loc5 = pg.locator('div:has-text("Add your characters") button')
-                                loc6 = pg.locator('div:has-text("Add reference images") button')
-                                loc7 = pg.locator(f'[aria-label="{btn_aria_label}" i]')
-                                btn = loc1.or_(loc2).or_(loc3).or_(loc4).or_(loc5).or_(loc6).or_(loc7)
-                            try:
-                                btn.first.wait_for(state="visible", timeout=15000)
-                            except:
-                                print(f"  -> Chưa tìm thấy nút '{btn_aria_label}', đang đợi giao diện render...")
-                                pg.wait_for_timeout(5000)
-                                try:
-                                    btn.first.wait_for(state="visible", timeout=10000)
-                                except:
-                                    if "pricing" in pg.url or "genjutsu" not in pg.url:
-                                        print(f"  -> Đang ở nhầm trang ({pg.url}), quay lại trang tạo video...")
-                                        pg.goto(video_model_url, timeout=30000)
-                                    else:
-                                        print("  -> Vẫn không thấy, tiến hành F5 tải lại trang...")
-                                        pg.reload(timeout=30000)
-                                    pg.wait_for_load_state("domcontentloaded")
-                                    pg.wait_for_timeout(5000)
-                                    btn.first.wait_for(state="visible", timeout=15000)
-                            btn_to_click = btn.first
-                        except Exception as e:
-                            print(f"  -> Lỗi khi tìm nút upload (đã thử F5): {e}")
-                            return
-                        
-                        # Thử click với expect_file_chooser xem nó có mở trực tiếp không (giao diện mới)
+                            card_clicked = pg.evaluate("""(isVideo) => {
+                                let b = null;
+                                if (isVideo) {
+                                    b = document.querySelector('button[aria-label="Add a reference video to edit"]') ||
+                                        document.querySelector('button[aria-label="Add a reference video to extract motion"]') ||
+                                        document.querySelector('button[aria-label*="reference video"]');
+                                } else {
+                                    b = document.querySelector('button[aria-label="Add reference images"]') ||
+                                        document.querySelector('button[aria-label*="reference image"]');
+                                }
+                                if (!b) {
+                                    const all = Array.from(document.querySelectorAll('div, span'));
+                                    const targetText = isVideo ? 'Add a reference video' : 'Add your characters';
+                                    const el = all.find(d => d.innerText && d.innerText.includes(targetText));
+                                    if (el) {
+                                        const container = el.closest('div.relative') || el.closest('fieldset') || el.parentElement;
+                                        if (container) {
+                                            b = container.querySelector('button[aria-label]') || container.querySelector('button') || el;
+                                        }
+                                    }
+                                }
+                                if (b) {
+                                    b.scrollIntoView({behavior: 'instant', block: 'center'});
+                                    b.click();
+                                    return true;
+                                }
+                                return false;
+                            }""", is_video)
+                            if card_clicked:
+                                print(f"  -> Đã click nút mở bảng upload ({'Video' if is_video else 'Ảnh'}) qua JS")
+                        except Exception as js_e:
+                            print(f"  -> JS click mở bảng upload: {js_e}")
+
                         try:
-                            with pg.expect_file_chooser(timeout=3000) as fc_info:
-                                btn_to_click.click(timeout=5000, force=True)
-                            fc_info.value.set_files(file_paths)
-                            pg.wait_for_timeout(1000)
-                            handle_media_upload_modal(pg)
-                            print("  -> Tải file thành công trực tiếp từ nút ban đầu!")
-                        except:
-                            # Nếu timeout, tức là nó chỉ mở Modal (giao diện cũ) hoặc modal agreement
-                            print("  -> Nút ban đầu không mở trực tiếp chọn file. Đang đợi hoặc click mở Modal 'Upload media'...")
-                            handle_media_upload_modal(pg)
-                            pg.wait_for_timeout(1000)
-                            
-                            upload_btn = pg.locator('button[aria-label="Upload media"], button:has-text("Upload media")').last
-                            try:
-                                if not upload_btn.is_visible():
-                                    print("  -> Thử click lại nút bằng JavaScript để mở Modal Upload media...")
-                                    pg.evaluate("""(targetLabel) => {
-                                        let b = document.querySelector(`button[aria-label="${targetLabel}"]`) ||
-                                                document.querySelector('button[aria-label="Add a reference video to edit"]') ||
-                                                document.querySelector('button[aria-label="Add a reference video to extract motion"]') ||
-                                                document.querySelector('button[aria-label*="reference video"]') ||
-                                                document.querySelector('button[aria-label*="Add your characters"]') ||
-                                                document.querySelector('button[aria-label*="Add reference images"]');
-                                        if (!b) {
-                                            const divs = Array.from(document.querySelectorAll('div'));
-                                            const c = divs.find(d => d.innerText && (d.innerText.includes('Add a reference video') || d.innerText.includes('Add your characters')));
-                                            if (c) b = c.querySelector('button') || c;
-                                        }
-                                        if (b) {
-                                            b.scrollIntoView({behavior: 'instant', block: 'center'});
-                                            b.click();
-                                        }
-                                    }""", btn_aria_label)
-                                    pg.wait_for_timeout(1500)
-                            except: pass
-                            try:
-                                upload_btn.wait_for(state="visible", timeout=10000)
-                            except:
-                                # Fallback UI mới: nút '+' trong grid (không có text)
-                                grid_add_btn = pg.locator('div[style*="grid-template-columns"] button').first
+                            loc = pg.locator(combined_selector).first
+                            if loc.count() > 0:
+                                loc.scroll_into_view_if_needed(timeout=2000)
+                                loc.click(timeout=3000, force=True)
+                                print(f"  -> Đã click nút mở bảng upload ({'Video' if is_video else 'Ảnh'}) qua Locator")
+                                card_clicked = True
+                        except Exception: pass
+
+                        if not card_clicked:
+                            # Fallback click qua text keyword
+                            for kw in text_keywords:
                                 try:
-                                    grid_add_btn.wait_for(state="visible", timeout=10000)
-                                    print("  -> Thấy nút '+' trong grid, dùng nút này để upload...")
-                                    upload_btn = grid_add_btn
-                                except: pass
-                            
+                                    t_loc = pg.locator(f'text="{kw}"').first
+                                    if t_loc.count() > 0:
+                                        t_loc.click(timeout=3000, force=True)
+                                        print(f"  -> Đã click qua text '{kw}'")
+                                        card_clicked = True
+                                        break
+                                except Exception: pass
+
+                        # Đợi bảng chọn Media bung ra
+                        pg.wait_for_timeout(1500)
+                        handle_media_upload_modal(pg)
+
+                        # BƯỚC 3: Tìm nút "Upload media" trong bảng chọn vừa mở
+                        upload_btn = pg.locator('button[aria-label="Upload media"], button:has-text("Upload media")').last
+                        try:
+                            if not upload_btn.is_visible():
+                                print("  -> Chưa thấy nút 'Upload media', thử click lại nút mở bảng...")
+                                pg.evaluate("""(isVideo) => {
+                                    let b = isVideo ? 
+                                        (document.querySelector('button[aria-label="Add a reference video to edit"]') || document.querySelector('button[aria-label="Add a reference video to extract motion"]')) :
+                                        document.querySelector('button[aria-label="Add reference images"]');
+                                    if (b) {
+                                        b.scrollIntoView({behavior: 'instant', block: 'center'});
+                                        b.click();
+                                    }
+                                }""", is_video)
+                                pg.wait_for_timeout(1500)
+                                handle_media_upload_modal(pg)
+                        except Exception: pass
+
+                        try:
+                            upload_btn.wait_for(state="visible", timeout=10000)
+                        except Exception:
+                            # Fallback UI mới: nút '+' trong grid (không có text)
+                            grid_add_btn = pg.locator('div[style*="grid-template-columns"] button').first
                             try:
-                                with pg.expect_file_chooser(timeout=3000) as fc_info:
+                                grid_add_btn.wait_for(state="visible", timeout=5000)
+                                print("  -> Thấy nút '+' trong grid, dùng nút này để upload...")
+                                upload_btn = grid_add_btn
+                            except Exception: pass
+
+                        # BƯỚC 4: Tải file lên thông qua File Chooser
+                        file_sent = False
+                        for fc_attempt in range(2):
+                            try:
+                                with pg.expect_file_chooser(timeout=6000) as fc_info:
                                     upload_btn.click(timeout=5000, force=True)
                                 fc_info.value.set_files(file_paths)
                                 pg.wait_for_timeout(1000)
                                 handle_media_upload_modal(pg)
-                            except:
-                                print("  -> Intercept file chooser failed (lần 2). Handling modal...")
+                                file_sent = True
+                                print(f"  -> Tải file lên thành công qua file chooser (Lần {fc_attempt+1})!")
+                                break
+                            except Exception as fc_err:
+                                print(f"  -> expect_file_chooser lần {fc_attempt+1}: {fc_err}")
                                 handle_media_upload_modal(pg)
-                                with pg.expect_file_chooser(timeout=8000) as fc_info:
-                                    upload_btn.click(timeout=5000, force=True)
-                                fc_info.value.set_files(file_paths)
                                 pg.wait_for_timeout(1000)
-                                handle_media_upload_modal(pg)
+
+                        if not file_sent:
+                            # Fallback set_input_files trực tiếp qua input[type=file]
+                            try:
+                                f_inputs = pg.locator('input[type="file"]')
+                                if f_inputs.count() > 0:
+                                    f_inputs.last.set_input_files(file_paths)
+                                    pg.wait_for_timeout(1000)
+                                    handle_media_upload_modal(pg)
+                                    file_sent = True
+                                    print("  -> Đã set_input_files trực tiếp qua input[type=file]!")
+                            except Exception as inp_err:
+                                print(f"  -> Set input[type=file] fallback lỗi: {inp_err}")
+
+                        if not file_sent:
+                            raise Exception(f"Không thể mở file chooser để tải {btn_aria_label} lên!")
                     
                         # CỰC KỲ QUAN TRỌNG: Với Video, popup "Edit reference" hiện ra ngay lúc tải lên để bắt Confirm trước!
                         if "video" in btn_aria_label.lower():
@@ -1541,10 +1599,12 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                             # -> Đảo ngược list trước khi upload để kết quả cuối đúng thứ tự gốc (1,2,3)
                             upload_and_select(page, "Add reference images", list(reversed(images_to_upload)))
                     
-                            # Bấm ra ngoài (để đóng popup nếu có, giúp hiện nút tải video)
+                            # Đóng popup Media picker (bằng Escape hoặc bấm ra ngoài) để giao diện hiển thị rõ nút tải video
                             try:
+                                page.keyboard.press("Escape")
+                                page.wait_for_timeout(500)
                                 page.mouse.click(10, 10)
-                                page.wait_for_timeout(1000)
+                                page.wait_for_timeout(500)
                             except: pass
                             images_uploaded = True
                             break # Thành công thì thoát loop ảnh
