@@ -569,7 +569,7 @@ def _launch_profile(profile, req=None):
                 del running_browsers[profile.id]
 
     if restart_for_network:
-        print(f"Cấu hình mạng đã đổi; mở lại Chrome của profile {profile.id} để áp dụng.")
+        print(f"Cau hinh mang da doi; mo lai Chrome cua profile {profile.id} de ap dung.", flush=True)
         result = close_profile(profile.id)
         if result["status"] not in ("closed", "not_running"):
             return result

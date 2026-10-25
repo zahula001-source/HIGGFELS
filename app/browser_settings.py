@@ -61,15 +61,19 @@ def network_mode(generate_ip=False):
 
 
 def filter_proxy_extensions(paths, generate_ip=False):
-    """Giữ các extension VPN cần thiết: Khi sinh IP (generate_ip), nạp cả Hola VPN và 1ClickVPN để có thể tự động fallback."""
+    """Giữ các extension VPN cần thiết: Khi sinh IP (generate_ip), nạp cả 1ClickVPN và UrbanVPN để có thể tự động fallback."""
     proxy_off = algodata_disabled()
 
     oneclick_manifest = CONFIG_PATH.parent / "extensions" / "1clickvpn" / "manifest.json"
-    hola_manifest = CONFIG_PATH.parent / "extensions" / "hola-vpn" / "manifest.json"
+    urban_manifest = CONFIG_PATH.parent / "extensions" / "urbanvpn" / "manifest.json"
     try:
         oneclick_key = json.loads(oneclick_manifest.read_text(encoding="utf-8-sig")).get("key")
     except (OSError, ValueError):
         oneclick_key = None
+    try:
+        urban_key = json.loads(urban_manifest.read_text(encoding="utf-8-sig")).get("key")
+    except (OSError, ValueError):
+        urban_key = None
 
     allowed = []
     seen = set()
@@ -87,15 +91,16 @@ def filter_proxy_extensions(paths, generate_ip=False):
             or "1clickvpn" in resolved.name.casefold()
             or "1clickvpn" in str(manifest.get("name", "")).casefold()
         )
-        is_hola = (
-            resolved == hola_manifest.parent.resolve()
-            or "hola-vpn" in resolved.name.casefold()
-            or "hola vpn" in str(manifest.get("short_name", "")).casefold()
-            or "hola vpn" in str(manifest.get("homepage_url", "")).casefold()
+        is_urban = (
+            resolved == urban_manifest.parent.resolve()
+            or bool(urban_key and m_key == urban_key)
+            or "urbanvpn" in resolved.name.casefold()
+            or "urban vpn" in str(manifest.get("name", "")).casefold()
+            or "urban-vpn" in str(manifest.get("homepage_url", "")).casefold()
         )
 
-        if is_oneclick or is_hola:
-            vpn_name = "1clickvpn" if is_oneclick else "hola-vpn"
+        if is_oneclick or is_urban:
+            vpn_name = "1clickvpn" if is_oneclick else "urbanvpn"
             if vpn_name in seen:
                 continue
             seen.add(vpn_name)
@@ -103,14 +108,14 @@ def filter_proxy_extensions(paths, generate_ip=False):
             continue
         allowed.append(str(resolved))
 
-    # Đảm bảo khi generate_ip thì cả 2 extension Hola và 1ClickVPN đều có mặt để fallback
+    # Đảm bảo khi generate_ip thì cả 2 extension 1ClickVPN và UrbanVPN đều có mặt để fallback
     if generate_ip:
         if "1clickvpn" not in seen and oneclick_manifest.parent.is_dir():
             allowed.append(str(oneclick_manifest.parent.resolve()))
             seen.add("1clickvpn")
-        if "hola-vpn" not in seen and hola_manifest.parent.is_dir():
-            allowed.append(str(hola_manifest.parent.resolve()))
-            seen.add("hola-vpn")
+        if "urbanvpn" not in seen and urban_manifest.parent.is_dir():
+            allowed.append(str(urban_manifest.parent.resolve()))
+            seen.add("urbanvpn")
 
     return allowed
 

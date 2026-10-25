@@ -1,4 +1,4 @@
-﻿"""AlgoData OFF must leave 1ClickVPN available."""
+"""AlgoData OFF must leave 1ClickVPN available."""
 import asyncio
 import json
 from pathlib import Path
@@ -65,8 +65,8 @@ class AlgoDataOffTests(unittest.TestCase):
             self.assertNotIn('direct_connection', ' '.join(options['args']))
             loaded = next(arg for arg in options['args'] if arg.startswith('--load-extension='))
             self.assertIn(str((self.root / 'extensions' / '1clickvpn').resolve()), loaded)
-            for name in ('hola-vpn','urbanvpn'):
-                self.assertNotIn(str((self.root / 'extensions' / name).resolve()), loaded)
+            self.assertIn(str((self.root / 'extensions' / 'urbanvpn').resolve()), loaded)
+            self.assertNotIn(str((self.root / 'extensions' / 'hola-vpn').resolve()), loaded)
 
     def test_launcher_without_sinh_ip_blocks_other_proxy_extensions(self):
         folder = self.root / 'extensions' / 'old-proxy'

@@ -16,9 +16,9 @@ from app.core.config import DATA_DIR
 ONECLICK_EXTENSION_ID = "pphgdbgldlmicfdkhondlafkiomnelnk"
 ONECLICK_POPUP_URL = f"chrome-extension://{ONECLICK_EXTENSION_ID}/popup/index.html"
 
-# Hola is loaded unpacked, so Chrome assigns its runtime extension ID. The
-# popup URL is discovered from the active profile rather than hard-coded.
-HOLA_EXTENSION_NAME = "hola-vpn"
+URBAN_EXTENSION_ID = "eppiocemhmnlbhjplcgkofciiegomcon"
+URBAN_POPUP_URL = f"chrome-extension://{URBAN_EXTENSION_ID}/popup/index.html"
+URBAN_EXTENSION_NAME = "urbanvpn"
 
 # Backward compatibility
 EXTENSION_ID = ONECLICK_EXTENSION_ID
@@ -33,21 +33,21 @@ _live_vpn_profiles: set[str] = set()
 
 
 def get_active_vpn() -> str:
-    """Return the selected VPN provider: Hola VPN or 1ClickVPN."""
+    """Return the selected VPN provider: 1clickvpn or urbanvpn."""
     try:
         if ACTIVE_VPN_FILE.exists():
             val = ACTIVE_VPN_FILE.read_text(encoding="utf-8").strip().lower()
-            if val in ("hola-vpn", "1clickvpn"):
+            if val in ("1clickvpn", "urbanvpn"):
                 return val
     except Exception:
         pass
-    return "hola-vpn"
+    return "1clickvpn"
 
 
 def set_active_vpn(name: str) -> None:
     """Persist the selected VPN provider."""
     value = name.strip().lower()
-    if value not in ("hola-vpn", "1clickvpn"):
+    if value not in ("1clickvpn", "urbanvpn"):
         raise ValueError(f"Unsupported VPN provider: {name}")
     ACTIVE_VPN_FILE.parent.mkdir(parents=True, exist_ok=True)
     ACTIVE_VPN_FILE.write_text(value, encoding="utf-8")
@@ -334,7 +334,7 @@ def _wait_connected(page) -> None:
     raise RuntimeError("1ClickVPN ket noi qua lau")
 
 
-HOLA_CANDIDATE_COUNTRIES = [
+URBAN_CANDIDATE_COUNTRIES = [
     "United States",
     "United Kingdom",
     "Germany",
@@ -342,243 +342,216 @@ HOLA_CANDIDATE_COUNTRIES = [
     "Canada",
     "Netherlands",
     "Japan",
-    "Italy",
-    "Brazil",
-    "Argentina",
     "Singapore",
     "Australia",
+    "Austria",
+    "Belgium",
+    "Denmark",
+    "Spain",
+    "Sweden",
+    "Switzerland",
+    "Italy",
+    "Norway",
+    "Poland",
+    "Portugal",
+    "New Zealand",
+    "Ireland",
+    "Czechia",
+    "Finland",
+    "Romania",
 ]
 
 
-def _get_hola_extension_id(context) -> str:
-    """Detect dynamic or store extension ID for Hola VPN."""
-    sw_list = getattr(context, "service_workers", None)
-    if isinstance(sw_list, (list, tuple)):
-        for sw in sw_list:
-            url = getattr(sw, "url", "")
-            if isinstance(url, str) and ("bg.bg.bundle.js" in url or "hola" in url.lower()):
-                parts = url.split("/")
-                if len(parts) >= 3 and parts[2]:
-                    return parts[2]
-    pages_list = getattr(context, "pages", None)
-    if isinstance(pages_list, (list, tuple)):
-        for pg in pages_list:
-            url = getattr(pg, "url", "")
-            if isinstance(url, str) and "chrome-extension://" in url and ("/js/popup.html" in url or "hola" in url.lower()):
-                parts = url.split("/")
-                if len(parts) >= 3 and parts[2]:
-                    return parts[2]
-    return "eppiocemhmnlbhjplcgkofciiegomcon"
-
-
-def _wait_for_hola_ready(popup, hola_id: str) -> None:
-    if popup.is_closed():
-        raise RuntimeError("Hola popup bi dong")
-    popup_url = f"chrome-extension://{hola_id}/js/popup.html"
-    for attempt in range(5):
-        if popup.is_closed():
-            raise RuntimeError("Hola popup bi dong")
+def _wait_for_urban_ready(page) -> None:
+    for attempt in range(15):
         try:
-            popup.goto(popup_url, wait_until="domcontentloaded", timeout=10000)
+            page.goto(URBAN_POPUP_URL, wait_until="domcontentloaded", timeout=10000)
             break
         except Exception:
-            if popup.is_closed():
-                raise RuntimeError("Hola popup bi dong")
-            if attempt == 4:
-                # If Web Store ID failed, try finding another ID from context service workers
-                ctx = popup.context
-                for sw in getattr(ctx, "service_workers", []):
-                    if "bg.bg.bundle.js" in getattr(sw, "url", ""):
-                        alt_id = sw.url.split("/")[2]
-                        if alt_id != hola_id:
-                            popup_url = f"chrome-extension://{alt_id}/js/popup.html"
-                            try:
-                                popup.goto(popup_url, wait_until="domcontentloaded", timeout=10000)
-                                break
-                            except Exception:
-                                pass
-            if not popup.is_closed():
-                popup.wait_for_timeout(1000)
-
-    if popup.is_closed():
-        raise RuntimeError("Hola popup bi dong")
-    popup.bring_to_front()
-    deadline = time.time() + 25
-    while time.time() < deadline:
-        if popup.is_closed():
-            raise RuntimeError("Hola popup bi dong")
-        try:
-            has_ui = popup.evaluate("""() => {
-                const closeBtn = document.querySelector('.close_btn___bottom_sheet-module, [class*="close_btn"]');
-                if (closeBtn) closeBtn.click();
-                document.querySelectorAll('[class*="dialog___dialog"], [class*="fade___bottom_sheet"]').forEach(el => el.remove());
-                const btn = document.querySelector('div[class*="connect_button___"]');
-                const countryBtn = document.querySelector('div[class*="country_button___"], [class*="country_btn"]');
-                return !!(btn || countryBtn);
-            }""")
-            if has_ui:
-                return
-        except Exception:
-            pass
-        if not popup.is_closed():
-            popup.wait_for_timeout(600)
-        else:
-            raise RuntimeError("Hola popup bi dong")
-
-
-def _choose_hola_country(popup, excluded: set[str]) -> str:
-    try:
-        popup.evaluate("""() => {
-            const closeBtn = document.querySelector('.close_btn___bottom_sheet-module, [class*="close_btn"]');
-            if (closeBtn) closeBtn.click();
-            document.querySelectorAll('[class*="dialog___dialog"], [class*="fade___bottom_sheet"]').forEach(el => el.remove());
-        }""")
-    except Exception:
-        pass
-
-    dropdown = popup.locator("div[class*='country_button___'], div[class*='country_btn___']").first
-    if not dropdown.count():
-        dropdown = popup.get_by_text("United States", exact=False).first
-    try:
-        dropdown.click(force=True, timeout=5000)
-    except Exception:
-        popup.evaluate("""() => {
-            const el = document.querySelector("div[class*='country_button___'], div[class*='country_btn___']");
-            if (el) el.click();
-        }""")
-    popup.wait_for_timeout(1200)
-
-    candidates = [c for c in HOLA_CANDIDATE_COUNTRIES if c not in excluded] or HOLA_CANDIDATE_COUNTRIES
-    chosen = random.choice(candidates)
-
-    target_item = popup.locator("li[class*='country_item___']").filter(has_text=chosen).first
-    if target_item.count():
-        try:
-            target_item.click(force=True, timeout=3000)
-        except Exception:
-            popup.evaluate("""(country) => {
-                const lis = Array.from(document.querySelectorAll("li"));
-                const target = lis.find(li => li.innerText && li.innerText.includes(country));
-                if (target) target.click();
-            }""", chosen)
-    else:
-        search_input = popup.locator("input[placeholder*='Search']").first
-        if search_input.count() and search_input.is_visible():
-            search_input.fill(chosen)
-            popup.wait_for_timeout(800)
-            first_item = popup.locator("li[class*='country_item___']").first
-            if first_item.count():
-                first_item.click(force=True)
-            else:
-                popup.keyboard.press("Escape")
-
-    popup.wait_for_timeout(1500)
-    try:
-        popup.evaluate("""() => {
-            document.querySelectorAll('[class*="bottom_sheet"], [class*="fade"]').forEach(el => el.remove());
-        }""")
-    except Exception:
-        pass
-    return chosen
-
-
-def _hola_is_connected(popup) -> bool:
-    """Return True if Hola popup currently shows an active connection."""
-    try:
-        text = popup.locator("body").inner_text(timeout=3000)
-        return "Disconnect" in text or "You are browsing through" in text
-    except Exception:
-        return False
-
-
-def _hola_disconnect(popup) -> None:
-    """Click Disconnect on Hola popup if currently connected."""
-    try:
-        btn = popup.locator("div[class*='connect_button___']").first
-        if btn.count():
-            btn_text = btn.inner_text(timeout=2000).strip()
-            if "Disconnect" in btn_text:
-                print("  [VPN] Hola đang kết nối — ngắt VPN cũ trước...", flush=True)
-                popup.evaluate("""() => {
-                    document.querySelectorAll('[class*="dialog"], [class*="fade"]').forEach(el => el.remove());
-                }""")
-                btn.click(force=True, timeout=3000)
-                # Chờ VPN thực sự ngắt
-                deadline2 = time.time() + 15
-                while time.time() < deadline2:
-                    try:
-                        t = popup.locator("body").inner_text(timeout=2000)
-                        if "Connect" in t and "Disconnect" not in t:
-                            break
-                    except Exception:
-                        pass
-                    popup.wait_for_timeout(700)
-    except Exception:
-        pass
-
-
-def _wait_hola_connected(popup) -> None:
-    btn = popup.locator("div[class*='connect_button___']").first
-    if btn.count():
-        try:
-            btn_text = btn.inner_text().strip()
-            if "Connect" in btn_text:
-                print("  [VPN] Bấm nút Connect trên Hola VPN...", flush=True)
-                popup.evaluate("""() => {
-                    document.querySelectorAll('[class*="dialog"], [class*="fade"]').forEach(el => el.remove());
-                }""")
-                btn.click(force=True, timeout=3000)
-        except Exception:
-            pass
+            if attempt == 14:
+                raise
+            page.wait_for_timeout(1000)
+    page.bring_to_front()
 
     deadline = time.time() + 30
     while time.time() < deadline:
+        if page.is_closed():
+            raise RuntimeError("Trang Urban VPN bi dong")
+
+        # 1. Kiểm tra màn hình 'Service interruption' (xung đột proxy extension khác)
         try:
-            text = popup.locator("body").inner_text()
-            if "Disconnect" in text or "You are browsing through" in text:
+            interruption_btn = page.locator(".interruption-page__action, button:has-text('Disable other extension')")
+            if interruption_btn.count() and interruption_btn.first.is_visible():
+                print("  [VPN] Urban VPN bao 'Service interruption', bam Disable other extension...", flush=True)
+                interruption_btn.first.click(force=True)
+                page.wait_for_timeout(2000)
+                continue
+        except Exception:
+            pass
+
+        # 2. Xử lý các popup consent / agree / accept nếu có
+        for btn_text in ["Agree", "Accept", "Continue", "Next", "Got it", "Skip", "No thanks"]:
+            try:
+                btn = page.locator(f'button:has-text("{btn_text}"), text="{btn_text}"').last
+                if btn.count() and btn.is_visible():
+                    btn.click(force=True, timeout=1000)
+                    page.wait_for_timeout(1000)
+            except Exception:
+                pass
+
+        # 3. Kiểm tra xem đã hiển thị giao diện chính (có nút play hoặc chọn location)
+        try:
+            has_main = page.evaluate("""() => {
+                const play = document.querySelector('.play-button');
+                const loc = document.querySelector('.location-view');
+                return !!(play || loc);
+            }""")
+            if has_main:
                 return
         except Exception:
             pass
-        popup.wait_for_timeout(800)
+
+        page.wait_for_timeout(700)
+
+    raise RuntimeError("Urban VPN khoi tao qua lau")
 
 
-def _connect_hola_vpn(context, profile_id: str, max_attempts: int = 8) -> dict[str, str]:
-    """Automate Hola VPN to connect to a new unique IP."""
-    hola_id = _get_hola_extension_id(context)
+def _choose_urban_country(page, excluded: set[str]) -> str:
+    # 1. Mở dropdown chọn quốc gia nếu chưa mở
+    is_open = page.locator(".location-selector, .location-selector-input__native")
+    if not (is_open.count() and is_open.first.is_visible()):
+        loc_dropdown = page.locator(".location-view__content-dropdown, .location-view__content, .location-view")
+        if loc_dropdown.count() and loc_dropdown.first.is_visible():
+            try:
+                loc_dropdown.first.click(timeout=3000)
+            except Exception:
+                page.evaluate("() => { const el = document.querySelector('.location-view__content-dropdown, .location-view'); if (el) el.click(); }")
+            page.wait_for_timeout(1000)
+
+    page.wait_for_selector(".location-selector, .location-selector-input__native, .selector-option", timeout=10000)
+
+    candidates = [c for c in URBAN_CANDIDATE_COUNTRIES if c not in excluded] or URBAN_CANDIDATE_COUNTRIES
+    chosen = random.choice(candidates)
+    print(f"  [VPN] Urban VPN: Chon quoc gia '{chosen}'...", flush=True)
+
+    # 2. Dùng ô Search để tìm chính xác quốc gia
+    search_input = page.locator(".location-selector-input__native, input[placeholder*='Search']").first
+    if search_input.count() and search_input.is_visible():
+        try:
+            search_input.fill("")
+            search_input.fill(chosen)
+            page.wait_for_timeout(600)
+        except Exception:
+            pass
+
+    # 3. Click vào quốc gia không bị disabled
+    # Loại trừ .selector-option__non-accessible-location và .selector-option--not-available
+    clicked = False
+    valid_option_sel = ".selector-option:not(.selector-option__non-accessible-location):not(.selector-option--not-available)"
+    target = page.locator(valid_option_sel).filter(has_text=chosen).first
+    if not target.count() or not target.is_visible():
+        target = page.locator(valid_option_sel).first
+
+    if target.count() and target.is_visible():
+        try:
+            target.scroll_into_view_if_needed(timeout=1000)
+            target.click(force=True, timeout=2000)
+            clicked = True
+        except Exception:
+            pass
+
+    if not clicked:
+        clicked = page.evaluate("""(name) => {
+            const items = Array.from(document.querySelectorAll('.selector-option:not(.selector-option__non-accessible-location):not(.selector-option--not-available)'));
+            const found = items.find(el => (el.innerText || '').toLowerCase().includes(name.toLowerCase())) || items[0];
+            if (found) {
+                found.scrollIntoView({ block: 'center' });
+                found.click();
+                found.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+                return true;
+            }
+            return false;
+        }""", chosen)
+
+    page.wait_for_timeout(1500)
+    return chosen
+
+
+def _wait_urban_connected(page) -> None:
+    # 1. Sau khi chọn quốc gia, kiểm tra xem đã kết nối chưa. Nếu Not connected thì bấm nút play
+    page.wait_for_timeout(1200)
+    try:
+        body = page.locator("body").inner_text(timeout=2000)
+    except Exception:
+        body = ""
+
+    body_lower = body.casefold()
+    if "not connected" in body_lower or "play" in body_lower:
+        play_btn = page.locator(".play-button").first
+        if play_btn.count() and play_btn.is_visible():
+            print("  [VPN] Urban VPN: Bam nut Play de ket noi...", flush=True)
+            play_btn.click(force=True)
+
+    deadline = time.time() + 35
+    while time.time() < deadline:
+        if page.is_closed():
+            raise RuntimeError("Trang Urban VPN bi dong")
+
+        try:
+            body = page.locator("body").inner_text(timeout=2000)
+        except Exception:
+            page.wait_for_timeout(500)
+            continue
+
+        body_lower = body.casefold()
+        if "connected" in body_lower and "not connected" not in body_lower and "connecting" not in body_lower:
+            return
+        if "could not connect" in body_lower or "no connection" in body_lower or "connection failed" in body_lower:
+            raise RuntimeError("Urban VPN bao khong ket noi duoc")
+
+        page.wait_for_timeout(900)
+
+    raise RuntimeError("Urban VPN ket noi qua lau")
+
+
+def _connect_urban_vpn(context, profile_id: str, max_attempts: int = 4) -> dict[str, str]:
+    """Kết nối Urban VPN và trả về IP mới độc nhất."""
     popup = context.new_page()
-    popup.add_init_script("window.close = function() {};")
     attempted: set[str] = set()
     try:
-        _wait_for_hola_ready(popup, hola_id)
-
-        # Nếu Hola đang kết nối sẵn → đọc IP thật trước khi ngắt
-        # (IP thật máy khi không VPN làm baseline để phát hiện IP đổi)
-        if _hola_is_connected(popup):
-            _hola_disconnect(popup)
-            popup.wait_for_timeout(2000)
-
-        # Đọc IP gốc KHÔNG qua VPN làm baseline so sánh
+        _wait_for_urban_ready(popup)
         try:
             previous = _public_ip(context)
         except Exception:
             previous = ""
-        print(f"  [VPN] Hola: IP gốc = {previous or '(không đọc được)'}", flush=True)
+        print(f"  [VPN] Urban VPN: IP goc = {previous or '(khong doc duoc)'}", flush=True)
 
         for attempt in range(max_attempts):
-            country = _choose_hola_country(popup, attempted)
-            attempted.add(country)
-            _wait_hola_connected(popup)
-            # Chờ VPN ổn định trước khi kiểm tra IP
-            popup.wait_for_timeout(4000)
+            country = ""
+            try:
+                country = _choose_urban_country(popup, attempted)
+                attempted.add(country)
+                _wait_urban_connected(popup)
+                popup.wait_for_timeout(3000)
+            except Exception as e:
+                err_msg = str(e)
+                print(f"  [VPN] Urban VPN: Quoc gia '{country or 'da chon'}' loi ({err_msg}), thu quoc gia khac ({attempt+1}/{max_attempts})...", flush=True)
+                try:
+                    popup.reload(wait_until="domcontentloaded", timeout=15000)
+                    _wait_for_urban_ready(popup)
+                except Exception:
+                    pass
+                continue
+
             try:
                 ip = _public_ip(context)
             except Exception:
                 ip = ""
 
             if not ip:
-                print(f"  [VPN] Hola VPN: chưa đọc được IP sau khi connect ({attempt+1}/{max_attempts}), thử lại...", flush=True)
+                print(f"  [VPN] Urban VPN: chua doc duoc IP ({attempt+1}/{max_attempts}), thu lai...", flush=True)
                 popup.reload(wait_until="domcontentloaded", timeout=15000)
-                _wait_for_hola_ready(popup, hola_id)
+                _wait_for_urban_ready(popup)
                 continue
 
             if ip != previous:
@@ -601,17 +574,16 @@ def _connect_hola_vpn(context, profile_id: str, max_attempts: int = 8) -> dict[s
                         _live_vpn_profiles.add(str(profile_id))
                         _save_reservations()
                         context.once("close", lambda *_: release_vpn_ip(profile_id))
-                        print(f"  [VPN] Hola VPN đã kết nối thành công: IP {ip} ({country})", flush=True)
+                        print(f"  [VPN] Urban VPN da ket noi thanh cong: IP {ip} ({country})", flush=True)
                         return {"ip": ip, "country": country}
-                    print(f"  [VPN] Hola VPN: IP {ip} ({country}) đã bị profile khác dùng, thử quốc gia khác ({attempt+1}/{max_attempts})...", flush=True)
+                    print(f"  [VPN] Urban VPN: IP {ip} ({country}) bi profile khac dung, thu quoc gia khac ({attempt+1}/{max_attempts})...", flush=True)
             else:
-                print(f"  [VPN] Hola VPN: IP {ip} chưa thay đổi so với gốc, thử quốc gia khác ({attempt+1}/{max_attempts})...", flush=True)
+                print(f"  [VPN] Urban VPN: IP chua doi ({attempt+1}/{max_attempts}), thu quoc gia khac...", flush=True)
 
-            attempted.add(country)
             popup.reload(wait_until="domcontentloaded", timeout=15000)
-            _wait_for_hola_ready(popup, hola_id)
+            _wait_for_urban_ready(popup)
 
-        raise RuntimeError(f"Hola VPN không sinh được IP mới sau {max_attempts} lần thử")
+        raise RuntimeError(f"Urban VPN khong sinh duoc IP moi sau {max_attempts} lan thu")
     finally:
         try:
             popup.close()
@@ -619,15 +591,13 @@ def _connect_hola_vpn(context, profile_id: str, max_attempts: int = 8) -> dict[s
             pass
 
 
-
-def _disable_hola_extension(context, hola_id: str) -> None:
-    """Tắt Hola VPN extension qua chrome://extensions để tránh xung đột với 1ClickVPN."""
+def _disable_extension(context, ext_id: str) -> None:
+    """Tắt extension qua chrome://extensions để nhường quyền proxy."""
     page = context.new_page()
     try:
         page.goto("chrome://extensions/", wait_until="domcontentloaded", timeout=10000)
         page.wait_for_timeout(1500)
-        # chrome://extensions dùng shadow DOM đa tầng — tìm và toggle qua JS
-        disabled = page.evaluate("""(holaId) => {
+        disabled = page.evaluate("""(extId) => {
             function shadowQuery(root, selector) {
                 const el = root.querySelector(selector);
                 if (el) return el;
@@ -652,7 +622,7 @@ def _disable_hola_extension(context, hola_id: str) -> None:
             const items = shadowQueryAll(document, 'extensions-item');
             for (const item of items) {
                 const itemId = item.getAttribute('id') || item.id || '';
-                if (itemId.toLowerCase() === (holaId || '').toLowerCase()) {
+                if (itemId.toLowerCase() === (extId || '').toLowerCase()) {
                     const toggle = shadowQuery(item.shadowRoot || item, 'cr-toggle');
                     if (toggle && toggle.checked) {
                         toggle.click();
@@ -662,14 +632,14 @@ def _disable_hola_extension(context, hola_id: str) -> None:
                 }
             }
             return false;
-        }""", hola_id)
+        }""", ext_id)
         if disabled:
-            print(f"  [VPN] Đã tắt Hola VPN extension ({hola_id})", flush=True)
+            print(f"  [VPN] Da tat extension ({ext_id})", flush=True)
         else:
-            print(f"  [VPN] Hola extension không tắt được qua shadow DOM (id={hola_id}), tiếp tục dùng 1ClickVPN", flush=True)
+            print(f"  [VPN] Extension ({ext_id}) da tat hoac khong the toggle", flush=True)
         page.wait_for_timeout(1000)
     except Exception as e:
-        print(f"  [VPN] Không tắt được Hola extension: {e}", flush=True)
+        print(f"  [VPN] Khong tat duoc extension: {e}", flush=True)
     finally:
         try:
             page.close()
@@ -754,64 +724,54 @@ def _connect_1clickvpn(context, profile_id: str, max_attempts: int = 8) -> dict[
             pass
 
 
-def connect_unique_vpn_ip(context, profile_id: str, max_attempts: int = 8) -> dict[str, str]:
+def connect_unique_vpn_ip(context, profile_id: str, max_attempts: int = 4) -> dict[str, str]:
     """Kết nối VPN với IP độc nhất.
 
-    Logic ưu tiên:
-    1. Thử Hola VPN trước (tối đa 2 lần).
-    2. Nếu Hola thất bại → tự động tắt Hola extension và chuyển sang 1ClickVPN.
-    3. Nếu setting chọn sẵn 1ClickVPN → dùng 1ClickVPN luôn.
+    Logic mới:
+    1. Thử 1ClickVPN trước 4 lần.
+    2. Nếu 1ClickVPN không được sau 4 lần:
+       -> Tắt 1ClickVPN đi.
+       -> Mở Urban VPN lên thử 4 lần.
+    3. Hoàn toàn loại bỏ Hola VPN.
     """
-    active = get_active_vpn()
-
-    if active == "1clickvpn":
-        # Người dùng đã chọn 1ClickVPN thủ công
-        return _connect_1clickvpn(context, profile_id, max_attempts=max_attempts)
-
-    # --- Thử Hola VPN trước (2 lần) ---
-    hola_attempts = 2
-    print(f"  [VPN] Thử Hola VPN trước ({hola_attempts} lần)...", flush=True)
-    hola_error: Exception | None = None
+    print("  [VPN] Bat dau thu 1ClickVPN truoc (toi da 4 lan)...", flush=True)
+    oneclick_error: Exception | None = None
     try:
-        result = _connect_hola_vpn(context, profile_id, max_attempts=hola_attempts)
+        result = _connect_1clickvpn(context, profile_id, max_attempts=4)
+        try:
+            set_active_vpn("1clickvpn")
+        except Exception:
+            pass
         return result
     except Exception as e:
-        hola_error = e
-        print(f"  [VPN] Hola VPN thất bại sau {hola_attempts} lần: {e}", flush=True)
+        oneclick_error = e
+        print(f"  [VPN] 1ClickVPN that bai sau 4 lan: {e}", flush=True)
 
-    # --- Fallback sang 1ClickVPN (thử tối đa 4 lần) ---
-    print("  [VPN] Chuyển sang 1ClickVPN (thử tối đa 4 lần)...", flush=True)
-
-    # Tắt Hola extension để tránh xung đột
+    # 1ClickVPN không được -> Tắt 1ClickVPN và chuyển sang Urban VPN
+    print("  [VPN] 1ClickVPN khong ket noi duoc -> Tat 1ClickVPN va chuyen sang Urban VPN (thu 4 lan)...", flush=True)
     try:
-        hola_id = _get_hola_extension_id(context)
-        _disable_hola_extension(context, hola_id)
+        _disable_extension(context, ONECLICK_EXTENSION_ID)
     except Exception as e:
-        print(f"  [VPN] Bỏ qua bước tắt Hola: {e}", flush=True)
+        print(f"  [VPN] Bo qua buoc tat 1ClickVPN: {e}", flush=True)
 
-    # Chờ extension bị tắt ổn định
     import time as _time
     _time.sleep(2)
 
-    oneclick_attempts = 4
-    oneclick_last_error = None
-    for oc_try in range(1, oneclick_attempts + 1):
+    urban_error: Exception | None = None
+    try:
+        result = _connect_urban_vpn(context, profile_id, max_attempts=4)
         try:
-            result = _connect_1clickvpn(context, profile_id, max_attempts=max_attempts)
-            try:
-                set_active_vpn("1clickvpn")
-            except Exception:
-                pass
-            return result
-        except Exception as e2:
-            oneclick_last_error = e2
-            print(f"  [VPN] 1ClickVPN thất bại lần {oc_try}/{oneclick_attempts}: {e2}", flush=True)
-            if oc_try < oneclick_attempts:
-                _time.sleep(3)
+            set_active_vpn("urbanvpn")
+        except Exception:
+            pass
+        return result
+    except Exception as e:
+        urban_error = e
+        print(f"  [VPN] Urban VPN that bai sau 4 lan: {e}", flush=True)
 
     raise RuntimeError(
-        f"Cả Hola VPN ({hola_error}) lẫn 1ClickVPN (sau {oneclick_attempts} lần: {oneclick_last_error}) đều thất bại"
-    ) from oneclick_last_error
+        f"Ca 1ClickVPN (sau 4 lan: {oneclick_error}) lan Urban VPN (sau 4 lan: {urban_error}) deu that bai"
+    ) from urban_error
 
 
 _load_reservations()

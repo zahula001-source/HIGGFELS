@@ -15,7 +15,8 @@ from pathlib import Path
 
 ONECLICK_EXTENSION_ID = "pphgdbgldlmicfdkhondlafkiomnelnk"
 ONECLICK_PUBLIC_KEY = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqoJDyiKQ+SGDdD/sVqXBprZzGRPorww6T07qUwv0wbpH47Xiqz6pyD78qzPE2wkkYPH16fVLhSz5QK4MwoKVaF1k0r7omxlYXbkPDBu1cuRkQzKzfcmSjkl7RpZseRuX8pTyJIFaaYLVBlyzloLVpUhF1ShCntOd5p0/A+4gWwn3lVN5x8Ew/i/BW6WdTpvz/Y7jYuWUnCic3Zwxr71Yvf/N9HaXXalfLY4PN+POB7DFkfNVZsj3+oNAJpsPw8z8+r3hlaLkyXiKkJNI/dsgjAg7WvR43wo+J+qVe6o/xmdJyejlXfubEbaoKneVLkjZ0OnDo+9uHk480A1FFff+WwIDAQAB"
-HOLA_EXTENSION_NAME = "hola-vpn"
+URBAN_EXTENSION_ID = "eppiocemhmnlbhjplcgkofciiegomcon"
+URBAN_EXTENSION_NAME = "urbanvpn"
 
 
 def pin_oneclick_extension(user_data_dir: str | Path) -> None:
@@ -30,9 +31,20 @@ def pin_oneclick_extension(user_data_dir: str | Path) -> None:
     preference.write_text(json.dumps(prefs, ensure_ascii=False), encoding="utf-8")
 
 
+def pin_urban_extension(user_data_dir: str | Path) -> None:
+    preference = Path(user_data_dir) / "Default" / "Preferences"
+    prefs = json.loads(preference.read_text(encoding="utf-8")) if preference.is_file() else {}
+    pinned = prefs.setdefault("extensions", {}).setdefault("pinned_extensions", [])
+    if URBAN_EXTENSION_ID not in pinned:
+        pinned.append(URBAN_EXTENSION_ID)
+    preference.parent.mkdir(parents=True, exist_ok=True)
+    preference.write_text(json.dumps(prefs, ensure_ascii=False), encoding="utf-8")
+
+
 def pin_active_vpn_extension(user_data_dir: str | Path) -> None:
-    """Pin the stable 1ClickVPN action; Hola is loaded unpacked separately."""
+    """Pin cả 1ClickVPN và Urban VPN lên toolbar Chrome."""
     pin_oneclick_extension(user_data_dir)
+    pin_urban_extension(user_data_dir)
 
 
 def direct_connection_extension(user_data_dir: str | Path) -> str:
