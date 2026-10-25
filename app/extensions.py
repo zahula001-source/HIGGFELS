@@ -41,8 +41,34 @@ def pin_urban_extension(user_data_dir: str | Path) -> None:
     preference.write_text(json.dumps(prefs, ensure_ascii=False), encoding="utf-8")
 
 
+def ensure_vpn_extensions_enabled(user_data_dir: str | Path) -> None:
+    """Đảm bảo 1ClickVPN và Urban VPN không bị Chrome vô hiệu hóa trong Preferences."""
+    canonical_dir = Path(__file__).parent.parent / "data" / "extensions"
+    for pref_name in ("Preferences", "Secure Preferences"):
+        pref_file = Path(user_data_dir) / "Default" / pref_name
+        if not pref_file.is_file():
+            continue
+        try:
+            data = json.loads(pref_file.read_text(encoding="utf-8", errors="ignore"))
+            settings = data.get("extensions", {}).get("settings", {})
+            modified = False
+            for ext_id in (ONECLICK_EXTENSION_ID, URBAN_EXTENSION_ID):
+                if ext_id in settings:
+                    entry = settings[ext_id]
+                    # Xoa entry neu tro vao thu muc profile hoac bi disable_reasons
+                    ext_path = str(entry.get("path", "")).replace("\\", "/")
+                    if "data/browsers" in ext_path or entry.get("disable_reasons") or entry.get("state") == 0:
+                        del settings[ext_id]
+                        modified = True
+            if modified:
+                pref_file.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        except Exception:
+            pass
+
+
 def pin_active_vpn_extension(user_data_dir: str | Path) -> None:
-    """Pin cả 1ClickVPN và Urban VPN lên toolbar Chrome."""
+    """Pin cả 1ClickVPN và Urban VPN lên toolbar Chrome và đảm bảo chúng luôn được bật."""
+    ensure_vpn_extensions_enabled(user_data_dir)
     pin_oneclick_extension(user_data_dir)
     pin_urban_extension(user_data_dir)
 
@@ -121,6 +147,13 @@ def resolve_extension_paths(raw: str, profile_dir: Path, install: bool = True) -
                 ext_id = m.group(1)
         elif len(item) == 32 and item.isalnum():
             ext_id = item
+
+        if ext_id in (ONECLICK_EXTENSION_ID, URBAN_EXTENSION_ID) or "1clickvpn" in low or "urbanvpn" in low:
+            global_dir = Path(__file__).parent.parent / "data" / "extensions"
+            canonical_path = global_dir / ("1clickvpn" if (ext_id == ONECLICK_EXTENSION_ID or "1clickvpn" in low) else "urbanvpn")
+            if canonical_path.is_dir():
+                out.append(str(canonical_path.resolve()))
+                continue
 
         if ext_id and ("http" in low or "chromewebstore" in low or len(item) == 32):
             if install:

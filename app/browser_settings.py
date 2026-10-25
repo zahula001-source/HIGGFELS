@@ -104,6 +104,9 @@ def filter_proxy_extensions(paths, generate_ip=False):
             if vpn_name in seen:
                 continue
             seen.add(vpn_name)
+            canonical = str(oneclick_manifest.parent.resolve()) if is_oneclick else str(urban_manifest.parent.resolve())
+            allowed.append(canonical)
+            continue
         elif proxy_off and "proxy" in permissions:
             continue
         allowed.append(str(resolved))

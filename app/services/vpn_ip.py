@@ -126,6 +126,9 @@ def _wait_for_popup_ready(page) -> None:
         body = page.locator("body").inner_text(timeout=3000)
         body_lower = body.casefold()
 
+        if "err_blocked_by_client" in body_lower or "bị chặn" in body_lower:
+            raise RuntimeError("1ClickVPN bị Chrome chặn (ERR_BLOCKED_BY_CLIENT)")
+
         # This is an extension-reported initialization failure, not a normal
         # loading state. Surface it immediately instead of waiting for timeout.
         if "initialization takes longer than expected" in body_lower:
@@ -647,6 +650,24 @@ def _disable_extension(context, ext_id: str) -> None:
             pass
 
 
+def _disconnect_1clickvpn(context) -> None:
+    """Tắt kết nối 1ClickVPN nếu đang kết nối."""
+    popup = context.new_page()
+    try:
+        popup.goto(ONECLICK_POPUP_URL, wait_until="domcontentloaded", timeout=4000)
+        power_btn = popup.locator(".home-page__button-control, .home-page__icon--power, button:has-text('Disconnect')").first
+        if power_btn.count() and power_btn.is_visible(timeout=1500):
+            power_btn.click(timeout=1000)
+            popup.wait_for_timeout(500)
+    except Exception:
+        pass
+    finally:
+        try:
+            popup.close()
+        except Exception:
+            pass
+
+
 def _connect_1clickvpn(context, profile_id: str, max_attempts: int = 8) -> dict[str, str]:
     """Kết nối 1ClickVPN và trả về IP mới độc nhất."""
     popup = context.new_page()
@@ -749,6 +770,10 @@ def connect_unique_vpn_ip(context, profile_id: str, max_attempts: int = 4) -> di
 
     # 1ClickVPN không được -> Tắt 1ClickVPN và chuyển sang Urban VPN
     print("  [VPN] 1ClickVPN khong ket noi duoc -> Tat 1ClickVPN va chuyen sang Urban VPN (thu 4 lan)...", flush=True)
+    try:
+        _disconnect_1clickvpn(context)
+    except Exception:
+        pass
     try:
         _disable_extension(context, ONECLICK_EXTENSION_ID)
     except Exception as e:

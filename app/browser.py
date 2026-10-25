@@ -227,8 +227,8 @@ def get_chromium_runner_simple(profile_id, profile_name, user_data_dir, proxy_di
         log(f"Global extension load err: {e}")
 
     launch_args["extension_paths"] = filter_proxy_extensions(launch_args.get("extension_paths", []), generate_ip=generate_ip)
-    from app.extensions import pin_oneclick_extension
-    pin_oneclick_extension(user_data_dir)
+    from app.extensions import pin_active_vpn_extension
+    pin_active_vpn_extension(user_data_dir)
 
     if proxy:
         # Chrome 138+ khong con chay extension MV2 -> dung proxy trung gian 127.0.0.1

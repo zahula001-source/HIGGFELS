@@ -428,21 +428,17 @@ def launch_profile_endpoint(profile_id: str, req: LaunchRequest = None):
     if do_random:
         profile = manager.randomize_fingerprint(profile_id)
 
-    # Urban VPN dang tra 429 o API dang ky, lam popup bao "Registration error".
-    # Dung 1ClickVPN (API dang ky hoat dong) lam VPN mac dinh cho CloakBrowser.
-    old_ext_paths = (
-        "D:/CODE/higgsfield-VIDEOAI/data/extensions/urbanvpn",
-        "D:/CODE/higgsfield-VIDEOAI/data/extensions/1clickvpn",
-    )
-    ext_path = "https://chromewebstore.google.com/detail/1clickvpn-proxy-for-chrom/pphgdbgldlmicfdkhondlafkiomnelnk"
-
+    # Dam bao khong bi chen duong dan WebStore lam loi extension ID
     if profile.extensions:
-        for old_ext_path in old_ext_paths:
-            profile.extensions = profile.extensions.replace(old_ext_path, "")
-
-    if not profile.extensions or ext_path not in profile.extensions:
-        profile.extensions = (profile.extensions + ";" + ext_path).strip(";")
-        profile.extensions = profile.extensions.replace(";;", ";")
+        for bad_p in (
+            "D:/CODE/higgsfield-VIDEOAI/data/extensions/urbanvpn",
+            "D:/CODE/higgsfield-VIDEOAI/data/extensions/1clickvpn",
+            "https://chromewebstore.google.com/detail/1clickvpn-proxy-for-chrom/pphgdbgldlmicfdkhondlafkiomnelnk",
+            "pphgdbgldlmicfdkhondlafkiomnelnk",
+            "eppiocemhmnlbhjplcgkofciiegomcon",
+        ):
+            profile.extensions = profile.extensions.replace(bad_p, "")
+        profile.extensions = profile.extensions.strip(";").replace(";;", ";")
 
     manual_open = _is_manual_launch(req)
     if manual_open:
