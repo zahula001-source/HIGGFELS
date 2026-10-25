@@ -750,66 +750,85 @@ def check_free_gen_full_flow(page, profile_id: str, timeout_ms: int = 15000, fas
             tag = f"free gen{suffix}"
         return tag.strip()
 
-    # ──── BƯỚC 1: Check ở genjutsu (Lần 1 - Chờ nhanh 4s) ────
-    print(f"[{profile_id}] Kiểm tra Free Gens trên genjutsu (Lần 1)...")
-    if "model=genjutsu" not in page.url or "model=genjutsu-lite" in page.url:
-        try:
-            navigate_higgsfield(page, HIGGSFIELD_VIP_URL)
-            page.wait_for_timeout(1000)
-        except Exception as e:
-            print(f"Lỗi điều hướng genjutsu: {e}")
+    # Chờ trang ổn định trước khi kiểm tra Free Gen
+    try:
+        page.wait_for_load_state("domcontentloaded", timeout=4000)
+        page.wait_for_timeout(1000)
+    except Exception:
+        pass
 
-    free_info = read_free_gens(page, timeout_ms=fast_first_step_ms)
-    tag = _eval_free_info(free_info, is_lite=False)
-    if tag:
-        _save_tag(tag)
-        print(f"Kiểm tra Free Gens thành công (genjutsu): {tag}")
-        return True
+    # ──── BƯỚC 1: Check ở genjutsu (Lần 1 - Chờ nhanh 4s) ────
+    try:
+        print(f"[{profile_id}] Kiểm tra Free Gens trên genjutsu (Lần 1)...")
+        if "model=genjutsu" not in page.url or "model=genjutsu-lite" in page.url:
+            try:
+                navigate_higgsfield(page, HIGGSFIELD_VIP_URL)
+                page.wait_for_timeout(1000)
+            except Exception as e:
+                print(f"Lỗi điều hướng genjutsu: {e}")
+
+        free_info = read_free_gens(page, timeout_ms=fast_first_step_ms)
+        tag = _eval_free_info(free_info, is_lite=False)
+        if tag:
+            _save_tag(tag)
+            print(f"Kiểm tra Free Gens thành công (genjutsu): {tag}")
+            return True
+    except Exception as e:
+        print(f"[{profile_id}] Lỗi tạm thời kiểm tra genjutsu (Lần 1): {e}")
 
     # Không thấy -> Reload lại trang phát nữa! (Lần 2)
-    print(f"[{profile_id}] Chưa thấy Use free gens trên genjutsu -> Reload lại trang để kiểm tra lần 2...")
     try:
-        page.reload(wait_until="domcontentloaded", timeout=30000)
-        page.wait_for_timeout(1500)
-    except Exception as e:
-        print(f"Lỗi reload genjutsu: {e}")
+        print(f"[{profile_id}] Chưa thấy Use free gens trên genjutsu -> Reload lại trang để kiểm tra lần 2...")
+        try:
+            page.reload(wait_until="domcontentloaded", timeout=30000)
+            page.wait_for_timeout(1500)
+        except Exception as e:
+            print(f"Lỗi reload genjutsu: {e}")
 
-    free_info = read_free_gens(page, timeout_ms=timeout_ms)
-    tag = _eval_free_info(free_info, is_lite=False)
-    if tag:
-        _save_tag(tag)
-        print(f"Kiểm tra Free Gens thành công sau khi reload (genjutsu): {tag}")
-        return True
+        free_info = read_free_gens(page, timeout_ms=timeout_ms)
+        tag = _eval_free_info(free_info, is_lite=False)
+        if tag:
+            _save_tag(tag)
+            print(f"Kiểm tra Free Gens thành công sau khi reload (genjutsu): {tag}")
+            return True
+    except Exception as e:
+        print(f"[{profile_id}] Lỗi tạm thời kiểm tra genjutsu (Lần 2): {e}")
 
     # ──── BƯỚC 2: Check ở genjutsu-lite (Lần 1 - Chờ nhanh 4s) ────
-    print(f"[{profile_id}] Genjutsu không thấy Use free gens; chuyển sang kiểm tra genjutsu-lite (Lần 1)...")
     try:
-        navigate_higgsfield(page, HIGGSFIELD_LITE_URL)
-        page.wait_for_timeout(1000)
-    except Exception as e:
-        print(f"Lỗi điều hướng genjutsu-lite: {e}")
+        print(f"[{profile_id}] Genjutsu không thấy Use free gens; chuyển sang kiểm tra genjutsu-lite (Lần 1)...")
+        try:
+            navigate_higgsfield(page, HIGGSFIELD_LITE_URL)
+            page.wait_for_timeout(1000)
+        except Exception as e:
+            print(f"Lỗi điều hướng genjutsu-lite: {e}")
 
-    free_info_lite = read_free_gens(page, timeout_ms=fast_first_step_ms)
-    tag_lite = _eval_free_info(free_info_lite, is_lite=True)
-    if tag_lite:
-        _save_tag(tag_lite)
-        print(f"Kiểm tra Free Gens thành công (genjutsu-lite): {tag_lite}")
-        return True
+        free_info_lite = read_free_gens(page, timeout_ms=fast_first_step_ms)
+        tag_lite = _eval_free_info(free_info_lite, is_lite=True)
+        if tag_lite:
+            _save_tag(tag_lite)
+            print(f"Kiểm tra Free Gens thành công (genjutsu-lite): {tag_lite}")
+            return True
+    except Exception as e:
+        print(f"[{profile_id}] Lỗi tạm thời kiểm tra genjutsu-lite (Lần 1): {e}")
 
     # Không thấy -> Reload lại trang phát nữa! (Lần 2)
-    print(f"[{profile_id}] Chưa thấy Use free gens trên genjutsu-lite -> Reload lại trang để kiểm tra lần 2...")
     try:
-        page.reload(wait_until="domcontentloaded", timeout=30000)
-        page.wait_for_timeout(1500)
-    except Exception as e:
-        print(f"Lỗi reload genjutsu-lite: {e}")
+        print(f"[{profile_id}] Chưa thấy Use free gens trên genjutsu-lite -> Reload lại trang để kiểm tra lần 2...")
+        try:
+            page.reload(wait_until="domcontentloaded", timeout=30000)
+            page.wait_for_timeout(1500)
+        except Exception as e:
+            print(f"Lỗi reload genjutsu-lite: {e}")
 
-    free_info_lite = read_free_gens(page, timeout_ms=timeout_ms)
-    tag_lite = _eval_free_info(free_info_lite, is_lite=True)
-    if tag_lite:
-        _save_tag(tag_lite)
-        print(f"Kiểm tra Free Gens thành công sau khi reload (genjutsu-lite): {tag_lite}")
-        return True
+        free_info_lite = read_free_gens(page, timeout_ms=timeout_ms)
+        tag_lite = _eval_free_info(free_info_lite, is_lite=True)
+        if tag_lite:
+            _save_tag(tag_lite)
+            print(f"Kiểm tra Free Gens thành công sau khi reload (genjutsu-lite): {tag_lite}")
+            return True
+    except Exception as e:
+        print(f"[{profile_id}] Lỗi tạm thời kiểm tra genjutsu-lite (Lần 2): {e}")
 
     # ──── BƯỚC 3: Cả 2 trang đều không thấy -> Gắn tag là 'không free' ────
     print(f"[{profile_id}] Cả 2 trang genjutsu và genjutsu-lite đều không thấy Use free gens; đã gắn nhãn không free")
@@ -874,6 +893,7 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
     def run_auto_signup():
         nonlocal keep_open
         check_completed = False
+        login_state = None
         import random, time
         # --- Tối ưu: Stagger startup (giãn cách thời gian mở) để các luồng không tranh chấp tài nguyên và không spam API cùng 1 miligiây ---
         time.sleep(random.uniform(0.5, 3.5))
@@ -2638,15 +2658,17 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
         except Exception as e:
             print(f"Auto signup FATAL err: {e}")
         finally:
-            if signup_options["manual_open"] or not check_completed:
+            if signup_options.get("manual_open"):
                 keep_open = True
-            elif check_completed:
-                # OTP/Captcha may temporarily set keep_open=True. Once login
-                # and the Free Gen check succeed, honor the request again.
+            elif check_completed or login_state is True:
+                # Đã đăng nhập vào trang video rồi thì đóng Chrome theo keep_open, không giữ mở khi có lỗi check
                 with _signup_lock:
-                    keep_open = signup_options["keep_open"]
+                    keep_open = signup_options.get("keep_open", False)
+            else:
+                keep_open = True
+
             try:
-                if not keep_open or (not check_completed and not signup_options["manual_open"]):
+                if not keep_open or (not check_completed and not signup_options.get("manual_open")):
                     p.stop()
             except: pass
             try:
@@ -2658,10 +2680,8 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                         print(f"Chrome cho profile {profile.name} đã đóng trước đó.")
                     else:
                         print(f"Không đóng được Chrome cho profile {profile.name}: {close_result.get('message', close_result)}")
-                elif check_completed:
-                    print(f"Giữ Chrome mở cho profile {profile.name} theo yêu cầu.")
                 else:
-                    print(f"Giữ Chrome mở cho profile {profile.name} vì chưa hoàn tất kiểm tra hoặc cần xác minh.")
+                    print(f"Giữ Chrome mở cho profile {profile.name} theo yêu cầu.")
             except Exception as close_error:
                 print(f"Lỗi đóng Chrome cho profile {profile.name}: {close_error}")
             finally:

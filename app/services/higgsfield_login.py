@@ -52,29 +52,36 @@ def read_free_gens(page, timeout_ms=30000, immediate=False):
     import re
     deadline = time.monotonic() + timeout_ms / 1000
     while immediate or time.monotonic() < deadline:
-        result = page.evaluate(r"""() => {
-            const visible = el => !!el && !!el.getClientRects().length &&
-                getComputedStyle(el).visibility !== 'hidden';
-            const control = document.querySelector('[data-generation-free-gens="true"]');
-            const switches = [...document.querySelectorAll('[role="switch"]')].filter(visible);
-            const sw = control?.querySelector('[role="switch"]') || switches.find(el => {
-                const label = el.getAttribute('aria-label') || '';
-                const text = el.innerText || el.textContent || '';
-                return /use\s+free\s+generations|use\s+free\s+gens/i.test(`${label} ${text}`);
-            });
-            if (!sw || !visible(sw)) return null;
-            const checkbox = control?.querySelector('input[type="checkbox"]');
-            const countText = control?.querySelector('[aria-live]')?.textContent?.trim() ||
-                (control?.innerText || control?.textContent || '').replace(/\s+/g, ' ');
-            return {
-                enabled: sw.getAttribute('aria-checked') === 'true' ||
-                    sw.hasAttribute('data-checked') || sw.getAttribute('data-state') === 'checked' ||
-                    !!checkbox?.checked,
-                disabled: !!sw.disabled || sw.getAttribute('aria-disabled') === 'true' ||
-                    !!checkbox?.disabled,
-                countText
-            };
-        }""")
+        try:
+            result = page.evaluate(r"""() => {
+                const visible = el => !!el && !!el.getClientRects().length &&
+                    getComputedStyle(el).visibility !== 'hidden';
+                const control = document.querySelector('[data-generation-free-gens="true"]');
+                const switches = [...document.querySelectorAll('[role="switch"]')].filter(visible);
+                const sw = control?.querySelector('[role="switch"]') || switches.find(el => {
+                    const label = el.getAttribute('aria-label') || '';
+                    const text = el.innerText || el.textContent || '';
+                    return /use\s+free\s+generations|use\s+free\s+gens/i.test(`${label} ${text}`);
+                });
+                if (!sw || !visible(sw)) return null;
+                const checkbox = control?.querySelector('input[type="checkbox"]');
+                const countText = control?.querySelector('[aria-live]')?.textContent?.trim() ||
+                    (control?.innerText || control?.textContent || '').replace(/\s+/g, ' ');
+                return {
+                    enabled: sw.getAttribute('aria-checked') === 'true' ||
+                        sw.hasAttribute('data-checked') || sw.getAttribute('data-state') === 'checked' ||
+                        !!checkbox?.checked,
+                    disabled: !!sw.disabled || sw.getAttribute('aria-disabled') === 'true' ||
+                        !!checkbox?.disabled,
+                    countText
+                };
+            }""")
+        except Exception:
+            if immediate:
+                return None
+            page.wait_for_timeout(250)
+            continue
+
         if result is not None and result.get('count') is None:
             count_text = result.get('countText') or ''
             match = re.search(r'(\d+)\s+left\b', count_text, re.IGNORECASE)
@@ -106,18 +113,24 @@ def read_quality(page, timeout_ms=6000, immediate=False):
     import time
     deadline = time.monotonic() + timeout_ms / 1000
     while immediate or time.monotonic() < deadline:
-        value = page.evaluate(r"""() => {
-            const nodes = [...document.querySelectorAll(
-                'button[aria-label="Quality"], [role="button"], button, div.rounded-xl'
-            )].filter(el => !!el.getClientRects().length);
-            for (const el of nodes) {
-                const text = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
-                if (!/^Quality\b/i.test(text) && el.getAttribute('aria-label') !== 'Quality') continue;
-                if (/720\s*p?/i.test(text)) return '720p';
-                if (/480\s*p?/i.test(text)) return '480p';
-            }
-            return '';
-        }""")
+        try:
+            value = page.evaluate(r"""() => {
+                const nodes = [...document.querySelectorAll(
+                    'button[aria-label="Quality"], [role="button"], button, div.rounded-xl'
+                )].filter(el => !!el.getClientRects().length);
+                for (const el of nodes) {
+                    const text = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+                    if (!/^Quality\b/i.test(text) && el.getAttribute('aria-label') !== 'Quality') continue;
+                    if (/720\s*p?/i.test(text)) return '720p';
+                    if (/480\s*p?/i.test(text)) return '480p';
+                }
+                return '';
+            }""")
+        except Exception:
+            if immediate:
+                return ""
+            page.wait_for_timeout(250)
+            continue
         if value or immediate:
             return value
         page.wait_for_timeout(250)
