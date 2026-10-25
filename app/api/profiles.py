@@ -450,7 +450,7 @@ def launch_profile_endpoint(profile_id: str, req: LaunchRequest = None):
         if manual_open:
             with _signup_lock:
                 _manual_open_sessions[profile_id] = result["pid"]
-            print(f"Mở Chrome thủ công [{profile_id}]: chỉ check nhanh, giữ mở đến khi bạn tự đóng.")
+            print(f"Mo Chrome thu cong [{profile_id}]: chi check nhanh, giu mo den khi ban tu dong.")
         try:
             # Auto login immediately when opening chrome
             # UI quyết định giữ hay đóng Chrome qua keep_open_after_check.
@@ -458,6 +458,7 @@ def launch_profile_endpoint(profile_id: str, req: LaunchRequest = None):
             auto_signup_endpoint(
                 profile_id, keep_open=keep_open_after,
                 generate_ip=req.generate_ip if req else False,
+                generate_hma=getattr(req, "generate_hma", False) if req else False,
                 engine=req.engine if req else "chrome",
                 manual_open=manual_open,
             )
@@ -696,7 +697,7 @@ _manual_open_sessions = {}
 _signup_lock = threading.Lock()
 
 @router.post("/api/profiles/{profile_id}/auto-signup")
-def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: bool = False, engine: str = "chrome", manual_open: bool = False):
+def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: bool = False, generate_hma: bool = False, engine: str = "chrome", manual_open: bool = False):
     import threading
     from pathlib import Path
 
@@ -785,7 +786,19 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
 
                 install_upgrade_plan_guard(context)
 
-                if generate_ip:
+                if generate_hma:
+                    try:
+                        from app.services.hma_vpn import rotate_hma_random_country
+                        hma_info = rotate_hma_random_country()
+                        print(f"Sinh IP HMA thanh cong: {hma_info.get('ip')} ({hma_info.get('country')})")
+                    except Exception as hma_error:
+                        print(f"Sinh IP HMA that bai: {hma_error}")
+                        p_obj = manager.get_profile(profile_id)
+                        if p_obj:
+                            p_obj.notes = "Lỗi HMA VPN"
+                            manager._save()
+                        return
+                elif generate_ip:
                     try:
                         from app.services.vpn_ip import connect_unique_vpn_ip
                         vpn_info = connect_unique_vpn_ip(context, profile_id)

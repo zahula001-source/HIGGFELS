@@ -56,9 +56,8 @@ async def create_video(request: Request):
     telegram_chat_id = form.get("telegram_chat_id", "")
     gen_mode = form.get("gen_mode", "motion_transfer")
     browser_engine = form.get("browser_engine", "chrome")
-    # Older open UI tabs omit this field. Match the default checked Sinh IP
-    # setting instead of silently bypassing VPN for those requests.
     generate_ip = str(form.get("generate_ip", "true")).strip().lower() == "true"
+    generate_hma = str(form.get("generate_hma", "false")).strip().lower() == "true"
     processing_timeout = int(form.get("processing_timeout", 120))
 
     # Lấy danh sách các profile đang bận
@@ -130,12 +129,18 @@ async def create_video(request: Request):
             "gen_mode": gen_mode,
             "browser_engine": browser_engine,
             "generate_ip": generate_ip,
+            "generate_hma": generate_hma,
             "media_paths": saved_paths,
             "processing_timeout": processing_timeout,
         }
     }
     
-    t = threading.Thread(target=run_video_automation, args=(task_id, prompt, saved_paths, profile_id, save_path, headless_bool, (enable_ext.lower() == "true"), (enable_ext_btn2.lower() == "true"), (telegram_enabled.lower() == "true"), telegram_token, telegram_chat_id, gen_mode, browser_engine, generate_ip), daemon=True)
+    t = threading.Thread(
+        target=run_video_automation,
+        args=(task_id, prompt, saved_paths, profile_id, save_path, headless_bool, (enable_ext.lower() == "true"), (enable_ext_btn2.lower() == "true"), (telegram_enabled.lower() == "true"), telegram_token, telegram_chat_id, gen_mode, browser_engine, generate_ip),
+        kwargs={"generate_hma": generate_hma},
+        daemon=True,
+    )
     t.start()
     
     return {"ok": True, "task_id": task_id, "profile_id": profile_id}

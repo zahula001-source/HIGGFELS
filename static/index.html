@@ -157,8 +157,13 @@ body{background:#0b0e14;color:#e5e7eb;min-height:100vh;}
       </div>
       
       <div style="display:flex; align-items:center; gap:6px; border:1px solid #334155; padding: 4px 8px; border-radius: 6px; background: #1e293b;">
-         <input type="checkbox" id="globalGenerateIp" checked onchange="localStorage.setItem('globalGenerateIp', this.checked); saveUIState()" style="cursor:pointer;">
-         <label for="globalGenerateIp" style="font-size:12px; color:#38bdf8; font-weight:bold; margin:0; cursor:pointer;" title="Trước khi Tạo Video hoặc Tạo acc + login, tự chọn IP ngẫu nhiên trong 1ClickVPN và kiểm tra không trùng IP">🌐 Sinh IP</label>
+         <input type="checkbox" id="globalGenerateIp" checked onchange="onGenerateIpChange(this); saveUIState()" style="cursor:pointer;">
+         <label for="globalGenerateIp" style="font-size:12px; color:#38bdf8; font-weight:bold; margin:0; cursor:pointer;" title="Trước khi Tạo Video hoặc Tạo acc + login, tự chọn IP ngẫu nhiên trong 1ClickVPN/UrbanVPN">🌐 Sinh IP EXTVPN</label>
+      </div>
+
+      <div style="display:flex; align-items:center; gap:6px; border:1px solid #334155; padding: 4px 8px; border-radius: 6px; background: #1e293b;">
+         <input type="checkbox" id="globalGenerateHma" onchange="onGenerateHmaChange(this); saveUIState()" style="cursor:pointer;">
+         <label for="globalGenerateHma" style="font-size:12px; color:#f59e0b; font-weight:bold; margin:0; cursor:pointer;" title="Đổi sang quốc gia ngẫu nhiên bằng app HMA VPN (Logic nút 6: hma_app_switcher.py randomcountry)">🛡️ Sinh IP HMA</label>
       </div>
       
       <div style="display:flex; align-items:center; gap:6px; border:1px solid #334155; padding: 4px 8px; border-radius: 6px; background: #1e293b; margin-right: 12px; cursor:pointer;" title="Bấm để chọn thư mục lưu (Để trống = lưu vào mục Downloads của máy)" onclick="selectFolder()">
@@ -499,6 +504,61 @@ function restoreOneClickVpnToggle() {
   const generateIp = document.getElementById("globalGenerateIp");
   if (generateIp) {
     generateIp.disabled = false;
+  }
+}
+
+function onGenerateIpChange(el) {
+  localStorage.setItem('globalGenerateIp', el.checked);
+  if (el.checked) {
+    const hmaEl = document.getElementById("globalGenerateHma");
+    if (hmaEl && hmaEl.checked) {
+      hmaEl.checked = false;
+      localStorage.setItem('globalGenerateHma', 'false');
+    }
+  }
+}
+
+async function onGenerateHmaChange(el) {
+  localStorage.setItem('globalGenerateHma', el.checked);
+  if (el.checked) {
+    const extVpnEl = document.getElementById("globalGenerateIp");
+    if (extVpnEl && extVpnEl.checked) {
+      extVpnEl.checked = false;
+      localStorage.setItem('globalGenerateIp', 'false');
+    }
+    // Tích vào kích hoạt ngay logic nút 6 của HMA VPN
+    await triggerHmaRotate();
+  }
+}
+
+async function triggerHmaRotate() {
+  const toast = document.createElement("div");
+  toast.textContent = "⏳ Đang kích hoạt HMA VPN đổi quốc gia ngẫu nhiên (Logic Nút 6)...";
+  toast.style.position = "fixed";
+  toast.style.bottom = "20px";
+  toast.style.right = "20px";
+  toast.style.background = "#f59e0b";
+  toast.style.color = "white";
+  toast.style.padding = "12px 20px";
+  toast.style.borderRadius = "8px";
+  toast.style.zIndex = "99999";
+  toast.style.fontWeight = "bold";
+  toast.style.boxShadow = "0 4px 12px rgba(0,0,0,0.3)";
+  document.body.appendChild(toast);
+
+  try {
+    const res = await fetch("/api/hma/rotate", { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.detail || data.message || "Lỗi đổi IP HMA");
+    }
+    toast.style.background = "#10b981";
+    toast.textContent = `✅ HMA VPN đã đổi IP thành công! ${data.country ? 'Quốc gia: ' + data.country : ''} ${data.ip ? '— IP: ' + data.ip : ''}`;
+    setTimeout(() => toast.remove(), 4000);
+  } catch (err) {
+    toast.style.background = "#ef4444";
+    toast.textContent = `❌ ${err.message}`;
+    setTimeout(() => toast.remove(), 6000);
   }
 }
 
@@ -871,6 +931,7 @@ async function launchProfile(id, manualOpen = true){
   const startupMode = localStorage.getItem("globalStartupMode") || "once";
   const engine = document.getElementById("globalBrowserEngine") ? document.getElementById("globalBrowserEngine").value : "cloakbrowser";
   const generateIp = document.getElementById("globalGenerateIp") ? document.getElementById("globalGenerateIp").checked : false;
+  const generateHma = document.getElementById("globalGenerateHma") ? document.getElementById("globalGenerateHma").checked : false;
   
   const isHeadless = document.getElementById("globalHeadless") ? document.getElementById("globalHeadless").checked : false;
   
@@ -888,7 +949,8 @@ async function launchProfile(id, manualOpen = true){
         keep_open_after_check: manualOpen || !autoSignup,
         manual_open: manualOpen,
         engine: engine,
-        generate_ip: generateIp && autoSignup
+        generate_ip: generateIp && autoSignup,
+        generate_hma: generateHma && autoSignup
     })
   });
   const data = await res.json();
@@ -908,6 +970,7 @@ async function checkFreeGenProfile(id, button) {
   try {
     const engine = document.getElementById("globalBrowserEngine")?.value || "cloakbrowser";
     const generateIp = document.getElementById("globalGenerateIp")?.checked || false;
+    const generateHma = document.getElementById("globalGenerateHma")?.checked || false;
     const keepChrome = document.getElementById("globalKeepChrome")?.checked || false;
     const isHeadless = document.getElementById("globalHeadless")?.checked || false;
     const res = await fetch(`/api/profiles/${id}/launch`, {
@@ -922,7 +985,8 @@ async function checkFreeGenProfile(id, button) {
         keep_open_after_check: keepChrome,
         manual_open: false,
         engine,
-        generate_ip: generateIp
+        generate_ip: generateIp,
+        generate_hma: generateHma
       })
     });
     const data = await res.json();
@@ -1318,6 +1382,7 @@ async function autoSignup(id) {
         const startupMode = localStorage.getItem("globalStartupMode") || "once";
         const engine = document.getElementById("globalBrowserEngine") ? document.getElementById("globalBrowserEngine").value : "chrome";
         const generateIp = document.getElementById("globalGenerateIp") ? document.getElementById("globalGenerateIp").checked : false;
+        const generateHma = document.getElementById("globalGenerateHma") ? document.getElementById("globalGenerateHma").checked : false;
         // Tạo acc + login luôn đóng Chrome sau khi kiểm tra xong Free Gen.
         // Tùy chọn Giữ Chrome chỉ áp dụng cho nút Check Free Gen riêng.
         const keepChrome = false;
@@ -1348,7 +1413,8 @@ async function autoSignup(id) {
                     keep_open_after_check: keepChrome,
                     manual_open: false,
                     engine: engine,
-                    generate_ip: generateIp
+                    generate_ip: generateIp,
+                    generate_hma: generateHma
                 })
             });
             const data = await res.json();
@@ -1397,7 +1463,8 @@ async function callAutoSignupApi(id, keepOpen = false) {
     try {
         const engine = document.getElementById("globalBrowserEngine") ? document.getElementById("globalBrowserEngine").value : "chrome";
         const generateIp = document.getElementById("globalGenerateIp") ? document.getElementById("globalGenerateIp").checked : false;
-        const params = new URLSearchParams({keep_open: String(keepOpen), generate_ip: String(generateIp), engine});
+        const generateHma = document.getElementById("globalGenerateHma") ? document.getElementById("globalGenerateHma").checked : false;
+        const params = new URLSearchParams({keep_open: String(keepOpen), generate_ip: String(generateIp), generate_hma: String(generateHma), engine});
         const res = await fetch(`/api/profiles/${id}/auto-signup?${params}`, {method: "POST"});
         const data = await res.json();
         if(!res.ok) throw new Error(data.detail || data.message);
@@ -2311,11 +2378,13 @@ async function startVideoCreationDynamic(fId) {
   const isHeadless = document.getElementById("globalHeadless") ? document.getElementById("globalHeadless").checked : false;
   formData.append("is_headless", isHeadless);
   formData.append("browser_engine", document.getElementById("globalBrowserEngine")?.value || "chrome");
-  const generateIp = document.getElementById("globalGenerateIp")?.checked ?? true;
+  const generateIp = document.getElementById("globalGenerateIp")?.checked ?? false;
+  const generateHma = document.getElementById("globalGenerateHma")?.checked ?? false;
   formData.append("generate_ip", generateIp ? "true" : "false");
+  formData.append("generate_hma", generateHma ? "true" : "false");
   const processingTimeout = document.getElementById("globalProcessingTimeout") ? document.getElementById("globalProcessingTimeout").value : "120";
   formData.append("processing_timeout", processingTimeout);
-  btn.textContent = generateIp ? "🌐 Mở Chrome + chọn IP..." : "⏳ Mở Chrome (Sinh IP tắt)...";
+  btn.textContent = generateHma ? "🛡️ Đổi IP HMA..." : (generateIp ? "🌐 Mở Chrome + chọn IP..." : "⏳ Mở Chrome...");
 
   const enableExtBtn2 = document.getElementById("globalExtBtn2") ? document.getElementById("globalExtBtn2").checked : false;
   formData.append("enable_ext_btn2", enableExtBtn2);
@@ -2631,6 +2700,7 @@ function saveUIState() {
     globalVideoSavePath: document.getElementById("globalVideoSavePath") ? document.getElementById("globalVideoSavePath").value : "",
     globalHeadless: document.getElementById("globalHeadless") ? document.getElementById("globalHeadless").checked : false,
     globalGenerateIp: document.getElementById("globalGenerateIp") ? document.getElementById("globalGenerateIp").checked : false,
+    globalGenerateHma: document.getElementById("globalGenerateHma") ? document.getElementById("globalGenerateHma").checked : false,
     cards: []
   };
   
@@ -2705,6 +2775,10 @@ function restoreStateStr(saved) {
       if (state.hasOwnProperty("globalGenerateIp")) {
           const generateIp = document.getElementById("globalGenerateIp");
           if(generateIp) generateIp.checked = state.globalGenerateIp;
+      }
+      if (state.hasOwnProperty("globalGenerateHma")) {
+          const generateHma = document.getElementById("globalGenerateHma");
+          if(generateHma) generateHma.checked = state.globalGenerateHma;
       }
       restoreOneClickVpnToggle();
       
@@ -2986,6 +3060,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const generateIpEl = document.getElementById('globalGenerateIp');
   if (generateIpEl && savedGenerateIp !== null) {
       generateIpEl.checked = savedGenerateIp === 'true';
+  }
+  const savedGenerateHma = localStorage.getItem('globalGenerateHma');
+  const generateHmaEl = document.getElementById('globalGenerateHma');
+  if (generateHmaEl && savedGenerateHma !== null) {
+      generateHmaEl.checked = savedGenerateHma === 'true';
   }
   restoreOneClickVpnToggle();
 });

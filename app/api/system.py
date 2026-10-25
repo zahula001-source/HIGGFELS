@@ -103,3 +103,20 @@ def send_task_chat(task_id: str, payload: dict = Body(...)):
         video_tasks_chat[task_id]["queue"].append(payload.get("message", ""))
     return {"ok": True}
 
+
+@router.get("/api/hma/status")
+def get_hma_status():
+    from app.services.hma_vpn import is_hma_available
+    return {"available": is_hma_available()}
+
+
+@router.post("/api/hma/rotate")
+async def rotate_hma_endpoint():
+    from app.services.hma_vpn import rotate_hma_random_country
+    try:
+        result = await asyncio.to_thread(rotate_hma_random_country)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+

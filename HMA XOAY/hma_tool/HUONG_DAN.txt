@@ -1,0 +1,60 @@
+=============================================
+ HMA IP CHANGER — HƯỚNG DẪN NHANH
+ Đổi IP qua app HMA VPN, KHÔNG chiếm chuột,
+ KHÔNG cần username/password (chỉ cần key đã kích hoạt trong app)
+=============================================
+
+YÊU CẦU
+  1. Windows + app HMA VPN đã cài, đã kích hoạt key, đang MỞ
+     (được phép minimize, đừng bấm X tắt hẳn).
+  2. Python: tải tại https://www.python.org/downloads/
+     Khi cài nhớ TICK "Add Python to PATH".
+     (pywinauto sẽ được file .bat tự cài lần đầu chạy.)
+
+CÁCH DÙNG
+  • Double-click file  HMA_IP_Changer.bat  → hiện menu:
+       1. Xem trạng thái + IP hiện tại
+       2. Kết nối VPN
+       3. ĐỔI IP NGAY
+       4. Debug (in các nút bấm trong app)
+  • Trong lúc script đổi IP bạn vẫn dùng chuột bình thường.
+
+LẦN ĐẦU NÊN LÀM
+  Chạy mục 4 (Debug) trước. Nếu lúc chọn "3. ĐỔI IP" mà báo
+  "Khong tim thay nut" thì mở file hma_app_switcher.py bằng Notepad,
+  nhìn kết quả Debug, sửa 2 mảng này cho đúng app của bạn:
+       CONNECT_AUTO_IDS   = [...]
+       CHANGEIP_AUTO_IDS  = [...]
+  (Các mã nút như nút Connect thường là "ConnectButton",
+   nút đổi IP có thể là "Button5", "ChangeIPButton"... tùy phiên bản app.)
+
+TÍCH HỢP VÀO TOOL CỦA BẠN
+  Gọi file .bat kèm tham số (không hiện menu, chạy xong tự thoát):
+       HMA_IP_Changer.bat switch            → đổi IP (giữ nguyên quốc gia)
+       HMA_IP_Changer.bat country "USA"     → đổi sang nước chỉ định
+       HMA_IP_Changer.bat randomcountry     → đổi sang nước NGẪU NHIÊN
+       HMA_IP_Changer.bat status            → xem IP
+       HMA_IP_Changer.bat connect           → bật VPN
+       HMA_IP_Changer.bat debug             → in các nút
+       HMA_IP_Changer.bat debugloc          → in màn hình chọn quốc gia
+
+  Hỗ trợ tên tắt: us/usa/uk/gb/uae/czech/nz... (tự quy ra tên đầy đủ,
+  không bị nhầm kiểu gõ "uk" ra "Ukraine").
+  Ví dụ C#:  Process.Start("cmd.exe", "/c HMA_IP_Changer.bat switch");
+
+GHI CHÚ
+  • Mỗi lần đổi IP, VPN ngắt vài giây → nên bật Kill Switch
+    trong Settings của app HMA.
+  • Nếu app cài ở chỗ khác, sửa dòng VPN_EXE trong
+    hma_app_switcher.py. Tìm đường dẫn: chuột phải icon HMA
+    ngoài Desktop → Open file location.
+  • Chỉ cần đổi IP ĐỊNH KỲ (không cần tool ra lệnh) thì app HMA
+    có sẵn IP Shuffle trong Settings — cài chu kỳ là xong.
+  • Nếu sau này lấy được username/password tài khoản HMA
+    (chat support hỏi từ key), dùng cách OpenVPN CLI sẽ ổn định
+    hơn, không sợ app update đổi giao diện.
+
+FILE TRONG GÓI
+  HMA_IP_Changer.bat    — double-click chạy, có menu
+  hma_app_switcher.py   — phần lõi điều khiển app
+  HUONG_DAN.txt         — file này

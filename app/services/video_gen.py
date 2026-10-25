@@ -483,7 +483,23 @@ def _send_video_to_telegram(video_path, token, chat_id):
     except Exception as e:
         print(f"Lỗi gửi Telegram: {e}")
 
-def _prepare_video_network(context, task_id, profile_id, generate_ip):
+def _prepare_video_network(context, task_id, profile_id, generate_ip, generate_hma=False):
+    if generate_hma:
+        video_tasks[task_id].update(
+            status="running", vpn_enabled=True,
+            message="Đang đổi sang quốc gia ngẫu nhiên qua HMA VPN (Logic nút 6)..."
+        )
+        print(f"Task {task_id}: Sinh IP HMA ON - rotating country via HMA VPN", flush=True)
+        from app.services.hma_vpn import rotate_hma_random_country
+        hma_info = rotate_hma_random_country()
+        ip_str = hma_info.get("ip", "")
+        country_str = hma_info.get("country", "HMA")
+        video_tasks[task_id].update(
+            vpn_ip=ip_str, vpn_country=country_str,
+            message=f"Đã đổi IP HMA: {country_str} — IP {ip_str}",
+        )
+        return
+
     if not generate_ip:
         video_tasks[task_id].update(
             vpn_enabled=False,
@@ -519,7 +535,7 @@ def _existing_generation_status(context):
     return None
 
 
-def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is_headless=False, enable_ext=False, enable_ext_btn2=False, tg_enabled=False, tg_token="", tg_chat_id="", gen_mode="motion_transfer", engine="chrome", generate_ip=False):
+def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is_headless=False, enable_ext=False, enable_ext_btn2=False, tg_enabled=False, tg_token="", tg_chat_id="", gen_mode="motion_transfer", engine="chrome", generate_ip=False, generate_hma=False):
     """Background thread: mở higgsfield.ai, đăng nhập Microsoft, upload ảnh, nhập prompt và tạo video."""
     from playwright.sync_api import sync_playwright
     import urllib.parse
@@ -1592,10 +1608,9 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                 # ── BƯỚC 10: Đổi IP, Kiểm tra Prompt, bật Use free gens và nhấn Generate ──────────────
                 print("=== ĐỔI IP, BẬT FREE GENS VÀ NHẤN GENERATE ===")
                 
-                # Chuyển việc sinh IP sang bước này (sau khi đã upload xong, chuẩn bị Gen)
-                if generate_ip:
+                if generate_hma or generate_ip:
                     print("  -> Bắt đầu đổi IP trước khi Generate...")
-                    _prepare_video_network(context, task_id, profile_id, generate_ip)
+                    _prepare_video_network(context, task_id, profile_id, generate_ip, generate_hma=generate_hma)
                     print("  -> Đổi IP thành công, tải lại trang để nhận IP mới...")
                     video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "running", "message": "Đã kết nối IP mới, đang tải lại trang..."}
                     page.reload(timeout=30000)

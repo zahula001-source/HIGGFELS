@@ -48,6 +48,7 @@ class LaunchRequest(BaseModel):
     manual_open: bool = False
     engine: str = "cloakbrowser"
     generate_ip: bool = False
+    generate_hma: bool = False
 
 
 class CheckVideoReq(BaseModel):
@@ -56,6 +57,7 @@ class CheckVideoReq(BaseModel):
     cancel_first: bool = False
     engine: str = "chrome"
     generate_ip: bool = False
+    generate_hma: bool = False
 
 class CancelGenReq(BaseModel):
     profile_id: str
