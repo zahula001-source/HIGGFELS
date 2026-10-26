@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from fastapi import APIRouter, HTTPException, Body, Request, Form
 from fastapi.responses import FileResponse, JSONResponse
 
-from app.core.state import pw_lock, video_tasks, video_tasks_chat, check_video_task_ids, MAX_RETRIES
+from app.core.state import pw_lock, video_tasks, video_tasks_chat, check_video_task_ids, MAX_RETRIES, save_video_tasks_cache
 from app.core.config import BASE_DIR, STATIC_DIR, DATA_DIR, PROFILES_FILE
 from app.models import ProfileCreate, LaunchRequest
 from app.manager import manager
@@ -2260,6 +2260,8 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                     all_result_urls.extend(all_urls)
                 video_tasks[task_id]["result_urls"] = all_result_urls
                 video_tasks[task_id]["message"] = f"🎉 {len(video_urls)} Video tạo xong! Đang hiển thị lên Tool..."
+                video_tasks[task_id]["status"] = "done"
+                save_video_tasks_cache()
                 
                 # Cập nhật thẻ profile thành "đã ra video (giờ:phút ngày/tháng)"
                 try:

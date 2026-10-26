@@ -137,6 +137,7 @@ body{background:#0b0e14;color:#e5e7eb;min-height:100vh;}
       <button id="checkVideoBtn" onclick="openCheckVideoModal()" style="display:none; align-items:center; justify-content:center; background:none; border:1px solid #3b82f6; color:#3b82f6; border-radius:6px; cursor:pointer; font-size:12px; padding:0 8px; height:28px; transition:0.2s; margin-left:6px;" onmouseover="this.style.background='#3b82f6';this.style.color='#fff'" onmouseout="this.style.background='none';this.style.color='#3b82f6'" title="Kiểm tra trạng thái video của nhiều Profile">🔍 Check Video</button>
       <button id="stopCheckVideoBtn" onclick="stopAllCheckVideo()" style="display:none; align-items:center; justify-content:center; background:none; border:1px solid #ef4444; color:#ef4444; border-radius:6px; cursor:pointer; font-size:12px; padding:0 8px; height:28px; transition:0.2s; margin-left:4px;" onmouseover="this.style.background='#ef4444';this.style.color='#fff'" onmouseout="this.style.background='none';this.style.color='#ef4444'" title="Dừng tất cả tiến trình đang kiểm tra video">🛑 Dừng Check</button>
       <button id="timerAllVideoBtn" onclick="openTimerAllModal()" style="display:none; align-items:center; justify-content:center; background:#2e1065; border:1px solid #a855f7; color:#c084fc; border-radius:6px; cursor:pointer; font-size:12px; padding:0 8px; height:28px; transition:0.2s; margin-left:4px;" onmouseover="this.style.background='#3b0764'" onmouseout="this.style.background='#2e1065'" title="Hẹn giờ đóng Chrome và sau X phút tự mở lại check video cho các thẻ">⏱️ Hẹn Giờ Check</button>
+      <button id="videoHistoryBtn" onclick="openVideoHistoryModal()" style="display:none; align-items:center; justify-content:center; background:#1e1b4b; border:1px solid #7c3aed; color:#c084fc; border-radius:6px; cursor:pointer; font-size:12px; padding:0 8px; height:28px; transition:0.2s; margin-left:4px;" onmouseover="this.style.background='#2e1065'" onmouseout="this.style.background='#1e1b4b'" title="Xem danh sách acc đang tạo và đã tạo video gần đây">📜 Lịch Sử Video</button>
     </div>
     
     <div style="display:inline-flex; align-items:center; gap: 6px;">
@@ -2240,6 +2241,7 @@ function switchTab(tab) {
   document.getElementById("tab-video").classList.toggle("active", tab === "video");
   document.getElementById("tabBtnProfiles").classList.toggle("active", tab === "profiles");
   document.getElementById("tabBtnVideo").classList.toggle("active", tab === "video");
+  localStorage.setItem('antidetect_active_tab', tab);
   
   const addBtn = document.getElementById("addVideoBtn");
   if (addBtn) addBtn.style.display = (tab === "video") ? "flex" : "none";
@@ -2251,10 +2253,12 @@ function switchTab(tab) {
   if (stopCheckBtn) stopCheckBtn.style.display = (tab === "video" && activeCheckVideoCount > 0) ? "flex" : "none";
   const timerAllBtn = document.getElementById("timerAllVideoBtn");
   if (timerAllBtn) timerAllBtn.style.display = (tab === "video") ? "flex" : "none";
+  const vhBtn = document.getElementById("videoHistoryBtn");
+  if (vhBtn) vhBtn.style.display = (tab === "video") ? "flex" : "none";
   
   if (tab === "video") {
     if (document.getElementById("videoFormsContainer").children.length === 0) {
-      addVideoForm();
+      syncActiveVideoTasks();
     }
   }
 }
@@ -2369,7 +2373,7 @@ async function addVideoForm(force_fId = null, forceProfileId = null) {
           <!-- Prompt -->
           <div class="form-group" style="margin:0;">
             <label>📝 Prompt mô tả video</label>
-            <textarea id="videoPrompt_${fId}" class="textarea" rows="2" style="min-height:52px;resize:none;" placeholder="VD: video mèo cute..."></textarea>
+            <textarea id="videoPrompt_${fId}" class="textarea" rows="2" style="min-height:52px;resize:none;" placeholder="VD: video mèo cute..." oninput="saveUIState()"></textarea>
           </div>
 
           <!-- Setting: Gen Mode & Model -->
@@ -3074,6 +3078,7 @@ async function startVideoCreationDynamic(fId) {
     // Bắt đầu poll status
     if(videoTaskPolls[fId]) clearInterval(videoTaskPolls[fId]);
     videoTaskPolls[fId] = setInterval(() => pollTaskStatusDynamic(fId, taskId), 2000);
+    saveUIState();
     setTimeout(loadProfiles, 500);
     
   } catch(e) {
@@ -3484,6 +3489,160 @@ function loadUIState() {
   }
   restoreStateStr(saved);
   isStateLoaded = true;
+}
+
+async function syncActiveVideoTasks() {
+  try {
+    const res = await fetch('/api/video/active-tasks');
+    if (!res.ok) {
+      loadUIState();
+      return;
+    }
+    const tasks = await res.json();
+    if (!tasks || tasks.length === 0) {
+      loadUIState();
+      return;
+    }
+    
+    // Lọc ra các task đang chạy hoặc vừa hoàn thành
+    const activeTasks = tasks.filter(t => t.status === "running" || t.status === "pending" || t.status === "done" || t.status === "success");
+    if (activeTasks.length === 0) {
+      loadUIState();
+      return;
+    }
+
+    isRestoringHistory = true;
+    const container = document.getElementById("videoFormsContainer");
+    if (container.children.length === 0) {
+      container.innerHTML = "";
+    }
+
+    for (let i = 0; i < activeTasks.length; i++) {
+      const task = activeTasks[i];
+      const fId = i + 1;
+      formCounter = Math.max(formCounter, fId);
+      
+      let formEl = document.getElementById(`vform_${fId}`);
+      if (!formEl) {
+        await addVideoForm(fId, task.profile_id);
+      }
+      
+      setTimeout(() => {
+        const promptEl = document.getElementById(`videoPrompt_${fId}`);
+        if (promptEl && task.prompt) promptEl.value = task.prompt;
+        
+        const selEl = document.getElementById(`videoProfileId_${fId}`);
+        if (selEl && task.profile_id) {
+          selEl.value = task.profile_id;
+          updateVideoCardTitle(fId, selEl);
+        }
+
+        fIdToTaskId[fId] = task.task_id;
+        fIdToVideoTaskId[fId] = task.task_id;
+
+        const bar = document.getElementById(`vtask_status_${fId}`);
+        if (bar) {
+          bar.style.display = "flex";
+          const isDone = (task.status === "done" || task.status === "success");
+          bar.className = "status-bar " + (isDone ? "done" : "running");
+          const icon = isDone ? '<span style="flex-shrink:0;">✅</span>' : '<div class="spinner" style="flex-shrink:0;"></div>';
+          bar.innerHTML = `${icon} <div style="font-size:11px;flex:1;word-break:break-word;">${task.message || (isDone ? 'Hoàn thành' : 'Đang xử lý...')}</div>`;
+        }
+
+        const btn = document.getElementById(`createVideoBtn_${fId}`);
+        if (btn) {
+          if (task.status === "running" || task.status === "pending") {
+            btn.disabled = true;
+            btn.textContent = "⏳...";
+          } else {
+            btn.disabled = false;
+            btn.textContent = "▶️ Tạo Video";
+          }
+        }
+
+        if (task.status === "running" || task.status === "pending") {
+          if (!videoTaskPolls[fId]) {
+            videoTaskPolls[fId] = setInterval(() => pollTaskStatusDynamic(fId, task.task_id), 2000);
+          }
+        } else if (task.status === "done" || task.status === "success") {
+          pollTaskStatusDynamic(fId, task.task_id);
+        }
+      }, 150);
+    }
+    setTimeout(() => { isRestoringHistory = false; }, 300);
+  } catch(e) {
+    console.error("Lỗi syncActiveVideoTasks:", e);
+    loadUIState();
+  }
+}
+
+async function openVideoHistoryModal() {
+  let modal = document.getElementById('videoHistoryModal');
+  if (!modal) return;
+  modal.classList.add('active');
+  const content = document.getElementById('videoHistoryContent');
+  content.innerHTML = '<div style="text-align:center;padding:30px;color:#94a3b8;"><div class="spinner" style="margin:0 auto 10px;"></div>Đang tải lịch sử video...</div>';
+  
+  try {
+    const res = await fetch('/api/video/active-tasks');
+    const tasks = await res.json();
+    if (!tasks || tasks.length === 0) {
+      content.innerHTML = '<div style="text-align:center;padding:30px;color:#64748b;">Chưa có video nào được tạo gần đây.</div>';
+      return;
+    }
+    
+    tasks.reverse();
+    
+    let html = `
+      <table style="width:100%;border-collapse:collapse;font-size:12px;color:#cbd5e1;">
+        <thead>
+          <tr style="border-bottom:1px solid #334155;color:#94a3b8;text-align:left;">
+            <th style="padding:8px 6px;">Thời gian</th>
+            <th style="padding:8px 6px;">Profile Chrome</th>
+            <th style="padding:8px 6px;">Trạng thái</th>
+            <th style="padding:8px 6px;">Prompt</th>
+            <th style="padding:8px 6px;text-align:center;">Thao tác</th>
+          </tr>
+        </thead>
+        <tbody>
+    `;
+    
+    tasks.forEach(t => {
+      const isDone = (t.status === 'done' || t.status === 'success');
+      const isRunning = (t.status === 'running' || t.status === 'pending');
+      
+      const statusBadge = isDone 
+        ? '<span style="background:#065f46;color:#34d399;padding:2px 8px;border-radius:12px;font-weight:bold;">✅ Xong</span>'
+        : isRunning 
+          ? '<span style="background:#78350f;color:#fbbf24;padding:2px 8px;border-radius:12px;font-weight:bold;">⏳ Đang tạo...</span>'
+          : '<span style="background:#450a0a;color:#f87171;padding:2px 8px;border-radius:12px;font-weight:bold;">❌ Thất bại</span>';
+          
+      const urls = t.result_urls || (t.result_url ? [t.result_url] : []);
+      const actionBtn = urls.length > 0 
+        ? `<button class="btn btn-sm btn-primary" onclick="openVideoModal('${urls[0]}')" style="padding:4px 8px;font-size:11px;">▶️ Xem</button>`
+        : (isRunning ? `<button class="btn btn-sm btn-danger" onclick="cancelGenByProfile('${t.profile_id}')" style="padding:4px 8px;font-size:11px;">🛑 Hủy</button>` : '-');
+      
+      html += `
+        <tr style="border-bottom:1px solid #1e293b;">
+          <td style="padding:8px 6px;color:#94a3b8;white-space:nowrap;">${esc(t.created_at || '')}</td>
+          <td style="padding:8px 6px;font-weight:bold;color:#facc15;">${esc(t.profile_name || t.profile_id)}</td>
+          <td style="padding:8px 6px;white-space:nowrap;">${statusBadge}</td>
+          <td style="padding:8px 6px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(t.prompt || '')}">${esc(t.prompt || '-')}</td>
+          <td style="padding:8px 6px;text-align:center;">${actionBtn}</td>
+        </tr>
+      `;
+    });
+    
+    html += '</tbody></table>';
+    content.innerHTML = html;
+  } catch(e) {
+    content.innerHTML = `<div style="text-align:center;padding:20px;color:#ef4444;">Lỗi tải lịch sử: ${e.message}</div>`;
+  }
+}
+
+function closeVideoHistoryModal() {
+  const modal = document.getElementById('videoHistoryModal');
+  if (modal) modal.classList.remove('active');
 }
 
 function loadUnfinishedUIState() {
@@ -4544,9 +4703,30 @@ async function quickDeleteProfile(fId) {
   </div>
 </div>
 
+<!-- ===== MODAL LỊCH SỬ VIDEO ===== -->
+<div id="videoHistoryModal" class="modal-overlay" onclick="if(event.target==this) closeVideoHistoryModal()">
+  <div class="modal lg" style="max-width:750px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <h2 style="margin:0;font-size:16px;color:#c084fc;display:flex;align-items:center;gap:8px;">
+        <span>📜 Lịch Sử & Tiến Trình Tạo Video Gần Đây</span>
+      </h2>
+      <button class="btn btn-ghost" style="padding:4px 8px;" onclick="closeVideoHistoryModal()">✕</button>
+    </div>
+    
+    <div id="videoHistoryContent" style="max-height:420px;overflow-y:auto;">
+      <div style="text-align:center;padding:30px;color:#64748b;">Đang tải danh sách...</div>
+    </div>
+  </div>
+</div>
+
 <script>
   window.addEventListener('DOMContentLoaded', () => {
     loadBackendConfig();
+    const savedTab = localStorage.getItem('antidetect_active_tab') || 'profiles';
+    if (savedTab === 'video') {
+      switchTab('video');
+    }
+    syncActiveVideoTasks();
   });
 </script>
 </body>

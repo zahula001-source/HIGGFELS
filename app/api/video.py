@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from fastapi import APIRouter, HTTPException, Body, Request, Form
 from fastapi.responses import FileResponse, JSONResponse
 
-from app.core.state import pw_lock, video_tasks, video_tasks_chat, check_video_task_ids, MAX_RETRIES
+from app.core.state import pw_lock, video_tasks, video_tasks_chat, check_video_task_ids, MAX_RETRIES, save_video_tasks_cache
 from app.core.config import BASE_DIR, STATIC_DIR, DATA_DIR, PROFILES_FILE
 from app.models import ProfileCreate, LaunchRequest, CheckVideoReq, CancelGenReq
 from app.manager import manager
@@ -112,9 +112,12 @@ async def create_video(request: Request):
     img1_path = saved_paths[0] if len(saved_paths) > 0 else ""
     img2_path = saved_paths[1] if len(saved_paths) > 1 else ""
 
+    from datetime import datetime
+    now_task_time = datetime.now().strftime("%H:%M:%S %d/%m")
     video_tasks[task_id] = {
         "status": "pending", 
         "message": "Đang chuẩn bị...",
+        "created_at": now_task_time,
         "params": {
             "prompt": prompt,
             "img1_path": img1_path,
@@ -136,6 +139,7 @@ async def create_video(request: Request):
             "higgs_model": higgs_model,
         }
     }
+    save_video_tasks_cache()
     
     # Cập nhật trạng thái profile sang Đang tạo video kèm giờ phút
     if profile_id:
@@ -304,4 +308,30 @@ def get_debug_screenshot(task_id: str):
     if ss_file.exists():
         return FR(str(ss_file), media_type="image/png")
     raise HTTPException(404, "Screenshot chưa sẵn sàng hoặc chưa được chụp")
+
+
+@router.get("/api/video/active-tasks")
+def get_active_video_tasks():
+    """Trả về danh sách các task video đang chạy hoặc vừa hoàn thành gần đây để frontend tự khôi phục sau reload"""
+    res = []
+    for tid, t in list(video_tasks.items()):
+        params = t.get("params", {})
+        prof_id = params.get("profile_id", "")
+        prof = manager.get_profile(prof_id) if prof_id else None
+        res.append({
+            "task_id": tid,
+            "status": t.get("status", "pending"),
+            "message": t.get("message", ""),
+            "prompt": params.get("prompt", ""),
+            "profile_id": prof_id,
+            "profile_name": prof.name if prof else prof_id,
+            "higgs_model": params.get("higgs_model", "vip"),
+            "gen_mode": params.get("gen_mode", "motion_transfer"),
+            "result_urls": t.get("result_urls", []),
+            "result_url": t.get("result_url", ""),
+            "created_at": t.get("created_at", ""),
+            "force_stop": t.get("force_stop", False),
+        })
+    return res
+
 
