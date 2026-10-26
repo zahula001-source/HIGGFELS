@@ -70,6 +70,8 @@ body{background:#0b0e14;color:#e5e7eb;min-height:100vh;}
 .form-group label{display:block;font-size:11px;font-weight:600;color:#9ca3af;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em;}
 .input, .select, .textarea{width:100%;background:#0f1420;border:1px solid #242e44;border-radius:10px;padding:10px 12px;color:#fff;font-size:13px;outline:none;}
 .input:focus, .select:focus, .textarea:focus{border-color:#6d5dfc;}
+.select optgroup{background:#111827;color:#38bdf8;font-weight:700;font-size:12px;padding:6px 4px;}
+.select option{background:#0f1420;color:#f1f5f9;font-size:12px;padding:5px 8px;}
 .textarea{resize:vertical;min-height:80px;font-family:Consolas, monospace;}
 .form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
 .hint{font-size:11px;color:#64748b;margin-top:4px;}
@@ -2552,53 +2554,161 @@ async function addVideoForm(force_fId = null, forceProfileId = null) {
 }
 
 
+function categorizeProfile(p) {
+  const rawNote = (p.notes || '').trim();
+  const n = rawNote.toLowerCase().replace(/\s+/g, ' ');
+  const isFree = n.includes('free gen') && !n.includes('không free') && !n.includes('khong free');
+
+  if (isFree) {
+    const is720 = /720\s*p?/.test(n);
+    const is480 = /480\s*p?/.test(n);
+    return {
+      groupKey: 'free',
+      subOrder: is720 ? 0 : (is480 ? 1 : 2),
+      emoji: '🟢',
+      noteBadge: is720 ? 'Free 720p' : (is480 ? 'Free 480p' : 'Free Gen'),
+      style: 'color: #22c55e;'
+    };
+  }
+
+  if (n.includes('đã ra video') || n.includes('da ra video')) {
+    return {
+      groupKey: 'done',
+      subOrder: 0,
+      emoji: '🟣',
+      noteBadge: 'Đã ra video',
+      style: 'color: #c084fc;'
+    };
+  }
+
+  if (n.includes('lỗi') || n.includes('loi') || n.includes('login') || n.includes('xác minh') || n.includes('xac minh')) {
+    return {
+      groupKey: 'error',
+      subOrder: 0,
+      emoji: '🔴',
+      noteBadge: 'Lỗi / Cần login',
+      style: 'color: #ef4444;'
+    };
+  }
+
+  if (n.includes('không free') || n.includes('khong free')) {
+    return {
+      groupKey: 'notfree',
+      subOrder: 0,
+      emoji: '🟠',
+      noteBadge: 'Không free',
+      style: 'color: #f59e0b;'
+    };
+  }
+
+  let noteBadge = 'Chưa check';
+  let emoji = '⚪';
+  let style = 'color: #94a3b8;';
+  if (n.includes('otp') || n.includes('fwainboxes')) {
+    noteBadge = 'Đang lấy OTP';
+    emoji = '⏳';
+    style = 'color: #38bdf8;';
+  } else if (n.includes('đang tạo video') || n.includes('dang tao video')) {
+    noteBadge = 'Đang tạo video';
+    emoji = '⏳';
+    style = 'color: #f59e0b;';
+  } else if (n.includes('cookie')) {
+    noteBadge = 'Mới nhập cookie';
+  } else if (rawNote) {
+    noteBadge = rawNote.length > 20 ? rawNote.slice(0, 18) + '...' : rawNote;
+  }
+
+  return {
+    groupKey: 'other',
+    subOrder: 0,
+    emoji: emoji,
+    noteBadge: noteBadge,
+    style: style
+  };
+}
+
 function populateVideoProfiles() {
   const selects = document.querySelectorAll("select[id^='videoProfileId_']");
+  if (!selects.length) return;
+
+  const groupDefs = [
+    { key: 'free', label: '🟢 FREE GEN (SẴN SÀNG TẠO)' },
+    { key: 'done', label: '🟣 ĐÃ RA VIDEO' },
+    { key: 'other', label: '⚪ CHƯA CHECK / KHÁC' },
+    { key: 'notfree', label: '🟠 KHÔNG FREE' },
+    { key: 'error', label: '🔴 LỖI / CẦN ĐĂNG NHẬP' }
+  ];
+
+  const groupMap = new Map();
+  groupDefs.forEach(g => {
+    groupMap.set(g.key, { label: g.label, items: [] });
+  });
+
+  (allProfiles || []).forEach(p => {
+    const info = categorizeProfile(p);
+    let grp = groupMap.get(info.groupKey);
+    if (!grp) {
+      grp = { label: '⚪ KHÁC', items: [] };
+      groupMap.set(info.groupKey, grp);
+    }
+    grp.items.push({ profile: p, info });
+  });
+
+  // Sắp xếp các profile bên trong từng nhóm
+  groupMap.forEach(grp => {
+    grp.items.sort((a, b) => {
+      if (a.info.subOrder !== b.info.subOrder) {
+        return a.info.subOrder - b.info.subOrder;
+      }
+      return (a.profile.name || '').localeCompare(b.profile.name || '', 'vi');
+    });
+  });
+
   selects.forEach(sel => {
     const cur = sel.value;
     const usedByOtherCards = new Set(Array.from(selects)
       .filter(other => other !== sel)
       .map(other => other.value)
       .filter(Boolean));
-    sel.innerHTML = '<option value="">-- Chọn profile đã đăng nhập --</option>';
-    const sortedProfiles = [...(allProfiles || [])].sort((a, b) => {
-        const rank = p => {
-          const n = profileNote(p);
-          const free = n.includes('free gen') && !n.includes('không free') && !n.includes('khong free');
-          if (free && /720\s*p?/.test(n)) return 0;
-          if (free && /480\s*p?/.test(n)) return 1;
-          return 2;
-        };
-        return rank(a) - rank(b) || (a.name || '').localeCompare(b.name || '', 'vi');
-    });
-     let lastGroup = null;
-     sortedProfiles.forEach(p => {
-        let optStyle = '';
-        let emoji = '⚪'; // default
-         const notes = (p.notes || '').toLowerCase();
-         const isFree720 = notes.startsWith('free gen') && /720\s*p?/.test(notes);
-         const isFree480 = notes.startsWith('free gen') && /480\s*p?/.test(notes);
-         const group = isFree720 ? 'FREE GEN 720p' : isFree480 ? 'FREE GEN 480p' :
-             (notes === 'không free' || notes === 'khong free') ? 'KHÔNG FREE' : 'KHÁC / CHƯA CHECK';
-         if (group !== lastGroup) {
-             sel.innerHTML += `<optgroup label="──────── ${group} ────────" style="background:#374151;color:#f8fafc;font-weight:700;"></optgroup>`;
-             lastGroup = group;
-         }
-        
-        if (p.running) { optStyle = 'color: #10b981; font-weight: bold;'; emoji = '🟢'; }
-        else if (notes.startsWith('free gen')) { optStyle = 'color: #22c55e;'; emoji = '🟢'; }
-        else if (notes === 'không free' || notes === 'khong free') { optStyle = 'color: #eab308;'; emoji = '🟠'; }
-        else if (notes === 'đã ra video') { optStyle = 'color: #a78bfa;'; emoji = '🟣'; }
-        else if (notes.includes('lỗi') || notes.includes('loi') || notes.includes('login')) { optStyle = 'color: #ef4444;'; emoji = '🔴'; }
-        else if (p.os === 'linux') { optStyle = 'color: #60a5fa;'; emoji = '🔵'; }
-        else if (p.os === 'windows') { optStyle = 'color: #fbbf24;'; emoji = '🟡'; }
-        
-        const statusText = p.running ? ' (Đang mở)' : '';
-        const noteText = p.notes ? ` - [${p.notes}]` : '';
-        const text = `${emoji} ${p.name} (${p.os})${statusText}${noteText}`;
+
+    let optionsHtml = '<option value="">-- Chọn profile đã đăng nhập --</option>';
+
+    groupDefs.forEach(gDef => {
+      const grp = groupMap.get(gDef.key);
+      if (!grp || grp.items.length === 0) return; // Nhóm không có profile sẽ không hiện
+
+      optionsHtml += `<optgroup label="────── ${grp.label} (${grp.items.length}) ──────" style="background:#1e293b;color:#f8fafc;font-weight:700;">`;
+
+      grp.items.forEach(({ profile: p, info }) => {
+        const isSelected = (p.id === cur);
         const duplicate = usedByOtherCards.has(p.id);
-        sel.innerHTML += `<option value="${p.id}" data-name="${esc(p.name)}" style="${optStyle}" ${p.id === cur ? 'selected' : ''} ${duplicate ? 'disabled' : ''}>${duplicate ? '🔒 ' : ''}${text}</option>`;
+
+        let emoji = info.emoji;
+        let optStyle = info.style;
+
+        if (p.running) {
+          emoji = '⚡';
+          optStyle = 'color: #10b981; font-weight: bold;';
+        }
+        if (duplicate) {
+          optStyle = 'color: #64748b; font-style: italic;';
+        }
+
+        const runningText = p.running ? ' [Đang mở]' : '';
+        const osText = (p.os && p.os.toLowerCase() === 'linux') ? ' [Linux]' : '';
+        const noteText = info.noteBadge ? ` — [${info.noteBadge}]` : '';
+        const lockText = duplicate ? '🔒 [Đang chọn ở thẻ khác] ' : '';
+
+        const displayText = `${lockText}${emoji} ${p.name}${osText}${runningText}${noteText}`;
+
+        optionsHtml += `<option value="${p.id}" data-name="${esc(p.name)}" data-emoji="${emoji}" style="${optStyle}" ${isSelected ? 'selected' : ''} ${duplicate ? 'disabled' : ''}>${displayText}</option>`;
+      });
+
+      optionsHtml += `</optgroup>`;
     });
+
+    sel.innerHTML = optionsHtml;
+    sel.value = cur;
     sel.dataset.previousValue = cur;
   });
 }
@@ -2645,8 +2755,8 @@ function updateVideoCardTitle(fId, selectEl) {
     if (!titleDiv) return;
     if (selectEl.selectedIndex > 0) {
         const option = selectEl.options[selectEl.selectedIndex];
-        const name = option.getAttribute('data-name');
-        const emoji = option.text.split(' ')[0];
+        const name = option.getAttribute('data-name') || option.text.trim();
+        const emoji = option.dataset.emoji || option.text.trim().split(' ')[0] || '👤';
         titleDiv.textContent = `# Thẻ ${fId} - ${emoji} ${name}`;
     } else {
         titleDiv.textContent = `# Thẻ ${fId}`;
