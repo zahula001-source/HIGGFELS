@@ -188,10 +188,13 @@ body{background:#0b0e14;color:#e5e7eb;min-height:100vh;}
         <button class="btn btn-ghost" onclick="toggleExportDropdown()" id="exportCookieMainBtn">🍪 Xuất Cookie ▾</button>
         <div id="exportCookieDropdown" style="display:none;position:absolute;top:calc(100% + 4px);left:0;background:#1e293b;border:1px solid #334155;border-radius:8px;min-width:180px;z-index:999;box-shadow:0 8px 24px rgba(0,0,0,0.5);">
           <div onclick="exportAllCookies(document.getElementById('exportCookieMainBtn'), 'file'); toggleExportDropdown()" style="padding:10px 16px;cursor:pointer;color:#e2e8f0;font-size:13px;" onmouseover="this.style.background='#334155'" onmouseout="this.style.background=''">
-            📦 Xuất Tất Cả Profiles
+            🍪 Xuất Cookie Tất Cả
           </div>
           <div onclick="exportAllCookies(document.getElementById('exportCookieMainBtn'), 'copy'); toggleExportDropdown()" style="padding:10px 16px;cursor:pointer;color:#93c5fd;font-size:13px;" onmouseover="this.style.background='#334155'" onmouseout="this.style.background=''">
             📋 Copy JSON Tất Cả
+          </div>
+          <div onclick="exportLiteSessionAll(); toggleExportDropdown()" style="padding:10px 16px;cursor:pointer;color:#facc15;font-size:13px;border-top:1px solid #334155;" onmouseover="this.style.background='#334155'" onmouseout="this.style.background=''">
+            📦 Xuất Lite Session (ZIP ~2MB)
           </div>
           <div onclick="openExportSelectModal(); toggleExportDropdown()" style="padding:10px 16px;cursor:pointer;color:#e2e8f0;font-size:13px;border-top:1px solid #334155;" onmouseover="this.style.background='#334155'" onmouseout="this.style.background=''">
             ☑️ Chọn Từng Thẻ
@@ -199,6 +202,8 @@ body{background:#0b0e14;color:#e5e7eb;min-height:100vh;}
         </div>
       </div>
       <button class="btn btn-ghost" onclick="openImportBundleModal()" style="background:#0c2340; border:1px solid #1d4ed8; color:#93c5fd;">📥 Nhập Cookie Bundle</button>
+      <button class="btn btn-ghost" onclick="triggerImportLiteSession()" style="background:#3b0764; border:1px solid #a855f7; color:#f3e8ff; font-weight:bold;" title="Nhập file ZIP Lite Session từ máy khác sang (bung LocalStorage & IndexedDB giữ nguyên phiên đăng nhập)">📦 Nhập Lite Session (.zip)</button>
+      <input type="file" id="liteSessionFileInput" accept=".zip" style="display:none;" onchange="handleLiteSessionFile(event)">
       <button class="btn btn-ghost" onclick="openBulkDeleteModal()" style="background:#450a0a; border:1px solid #dc2626; color:#fca5a5;">🗑️ Xóa Hàng Loạt</button>
       <button class="btn btn-ghost" onclick="manageExtensions(null)" style="background:#0f172a; border: 1px solid #475569;">🧩 Tiện Ích</button>
 
@@ -216,6 +221,11 @@ body{background:#0b0e14;color:#e5e7eb;min-height:100vh;}
       <div style="display:flex; align-items:center; gap:8px; margin-left: 8px; border: 1px solid #065f46; padding: 6px 12px; border-radius: 8px; background: #052e16; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
         <input type="checkbox" id="globalAutoSignup" onchange="localStorage.setItem('globalAutoSignup', this.checked)">
         <label for="globalAutoSignup" style="font-size:13px; cursor:pointer; color:#34d399; font-weight:bold; margin:0;" title="Bật: Sau khi mở Chrome xong sẽ TỰ ĐỘNG chạy Tạo acc + login ngay lập tức (không cần bấm tay)">🤖 Auto Tạo Acc</label>
+      </div>
+
+      <div style="display:flex; align-items:center; gap:8px; margin-left: 8px; border: 1px solid #7c3aed; padding: 6px 12px; border-radius: 8px; background: #2e1065; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
+        <input type="checkbox" id="globalSequentialSignup" onchange="localStorage.setItem('globalSequentialSignup', this.checked); updateSignup1v1UI();" style="cursor:pointer;accent-color:#a855f7;">
+        <label for="globalSequentialSignup" style="font-size:13px; cursor:pointer; color:#c084fc; font-weight:bold; margin:0;" title="Bật: Chỉ tạo 1 acc duy nhất 1 thời điểm. Các profile bấm sau sẽ đổi màu tím chờ đợi và tự động chạy lần lượt khi profile trước hoàn tất hoặc đóng Chrome.">⚡ Tạo 1:1</label>
       </div>
       <div style="display:flex; align-items:center; gap: 4px; background:#0f172a; padding:6px 12px; border-radius:6px; border:1px solid #334155;">
         <label for="globalBrowserEngine" style="font-size:13px; cursor:pointer; color:#facc15; font-weight:bold; margin:0;" title="Chọn nhân trình duyệt">Trình duyệt:</label>
@@ -240,8 +250,9 @@ body{background:#0b0e14;color:#e5e7eb;min-height:100vh;}
       <button class="btn btn-sm btn-ghost profile-tag-btn" data-tag="notfree" onclick="setProfileTag('notfree')">🟠 Không free</button>
       <button class="btn btn-sm btn-ghost profile-tag-btn" data-tag="done" onclick="setProfileTag('done')">✅ Đã ra video</button>
       <button class="btn btn-sm btn-ghost profile-tag-btn" data-tag="other" onclick="setProfileTag('other')">⚪ Khác</button>
-    </div>
   </div>
+
+  <div id="signup1v1QueueStatus" style="display:none;margin:10px 0;background:#2e1065;border:1px solid #a855f7;border-radius:8px;padding:8px 16px;font-size:13px;color:#e9d5ff;align-items:center;justify-content:space-between;"></div>
 
   <div id="profilesGrid" class="grid"></div>
   <div id="emptyState" class="empty" style="display:none;">
@@ -456,10 +467,11 @@ body{background:#0b0e14;color:#e5e7eb;min-height:100vh;}
 
     <div id="exportSelectList" style="max-height:300px; overflow-y:auto; background:#0f172a; border-radius:8px; border:1px solid #1e2535; padding:10px; display:flex; flex-direction:column; gap:8px;">
     </div>
-    <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;">
+    <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;flex-wrap:wrap;">
       <button class="btn btn-ghost" onclick="closeExportSelectModal()">Hủy</button>
       <button class="btn btn-ghost" style="background:#0f3460;border:1px solid #1d4ed8;color:#93c5fd;" onclick="doCopySelected()">📋 Copy JSON</button>
-      <button class="btn btn-primary" onclick="doExportSelected()">📤 Xuất File</button>
+      <button class="btn btn-primary" onclick="doExportSelected()">📤 Xuất File JSON</button>
+      <button class="btn btn-sm" style="background:#6b21a8;border:1px solid #a855f7;color:#f3e8ff;font-weight:bold;padding:8px 14px;cursor:pointer;" onclick="doExportLiteSessionSelected()">📦 Xuất Lite Session (ZIP ~2MB)</button>
     </div>
   </div>
 </div>
@@ -793,7 +805,7 @@ function renderProfiles(profiles){
           `<button class="btn btn-sm btn-success" onclick="launchProfile('${p.id}', true)">▶️ Mo Chrome</button>`
         }
         <button class="btn btn-sm btn-purple" onclick="randomFingerprint('${p.id}')" title="Doi thanh may moi hoan toan nhu BitBrowser Random Fingerprint">🎲 Random FP</button>
-        <button class="btn btn-sm btn-success" onclick="autoSignup('${p.id}')">🤖 Tạo acc + login</button>
+        <button id="btnAutoSignup_${p.id}" class="btn btn-sm btn-success" onclick="handleAutoSignupClick('${p.id}', this)" title="Tự động mở Chrome và tạo tài khoản + đăng nhập">🤖 Tạo acc + login</button>
         <button class="btn btn-sm" style="background:#059669;color:#fff;" onclick="checkFreeGenProfile('${p.id}', this)" title="Chỉ kiểm tra Use free gens và chất lượng, không tạo account mới">🔍 Check Free Gen</button>
         <button class="btn btn-sm" style="background:#0369a1;color:#fff;" onclick="openPasteMailModal('${p.id}')">📧 Dán mail</button>
         <button class="btn btn-sm btn-ghost" onclick="duplicateProfile('${p.id}')">📋 Clone</button>
@@ -807,6 +819,7 @@ function renderProfiles(profiles){
       </div>
     </div>`;
   }).join("");
+  updateSignup1v1UI();
 }
 
 function editProfileName(id, currentName, element) {
@@ -1293,6 +1306,110 @@ async function doExportSelected() {
     }
   } catch(e) { alert("Lỗi: " + e.message); }
 }
+
+// ===== XUẤT VÀ NHẬP LITE SESSION (ZIP ~1-3MB / PROFILE) =====
+async function doExportLiteSessionSelected() {
+  const ids = [...document.querySelectorAll(".export-select-cb:checked")].map(cb => cb.value);
+  if (!ids.length) { alert("Chưa chọn thẻ nào!"); return; }
+  closeExportSelectModal();
+  await exportLiteSession(ids);
+}
+
+async function exportLiteSessionAll() {
+  if (!allProfiles.length) { alert("Không có profile nào để xuất!"); return; }
+  await exportLiteSession(allProfiles.map(p => p.id));
+}
+
+async function exportLiteSession(ids) {
+  try {
+    const loadingToast = document.createElement("div");
+    loadingToast.textContent = "⏳ Đang đóng gói Lite Session (ZIP ~1-3MB/profile)...";
+    loadingToast.style.position = "fixed";
+    loadingToast.style.bottom = "20px";
+    loadingToast.style.right = "20px";
+    loadingToast.style.background = "#7c3aed";
+    loadingToast.style.color = "white";
+    loadingToast.style.padding = "12px 20px";
+    loadingToast.style.borderRadius = "8px";
+    loadingToast.style.zIndex = "99999";
+    loadingToast.style.boxShadow = "0 4px 12px rgba(0,0,0,0.4)";
+    document.body.appendChild(loadingToast);
+
+    const res = await fetch("/api/export-lite-session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profile_ids: ids })
+    });
+    loadingToast.remove();
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || err.message || "Lỗi đóng gói");
+    }
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `higgsfield_lite_sessions_${ids ? ids.length : allProfiles.length}profiles_${new Date().toISOString().slice(0,10)}.zip`;
+    a.click();
+    URL.revokeObjectURL(url);
+    alert(`✅ Đã xuất Lite Session ZIP thành công (${ids ? ids.length : allProfiles.length} profiles)!\n\nFile ZIP này siêu nhẹ (chỉ chứa LocalStorage + IndexedDB + tài khoản). Mang file này sang máy B và ấn nút "📦 Nhập Lite Session (.zip)" để dùng ngay mà KHÔNG CẦN LOGIN LẠI!`);
+  } catch(e) {
+    alert("❌ Lỗi xuất Lite Session: " + e.message);
+  }
+}
+
+function triggerImportLiteSession() {
+  const inp = document.getElementById("liteSessionFileInput");
+  if (inp) inp.click();
+}
+
+async function handleLiteSessionFile(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  event.target.value = "";
+
+  if (!confirm(`Bạn có muốn nhập file Lite Session "${file.name}" không?\n\nHệ thống sẽ tự động bung Local Storage, IndexedDB và tạo các profile giữ nguyên phiên đăng nhập sang máy này!`)) {
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const loadingToast = document.createElement("div");
+  loadingToast.textContent = "⏳ Đang giải nén và tạo profiles từ Lite Session...";
+  loadingToast.style.position = "fixed";
+  loadingToast.style.bottom = "20px";
+  loadingToast.style.right = "20px";
+  loadingToast.style.background = "#059669";
+  loadingToast.style.color = "white";
+  loadingToast.style.padding = "12px 20px";
+  loadingToast.style.borderRadius = "8px";
+  loadingToast.style.zIndex = "99999";
+  document.body.appendChild(loadingToast);
+
+  try {
+    const res = await fetch("/api/import-lite-session", {
+      method: "POST",
+      body: formData
+    });
+    loadingToast.remove();
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || data.message || "Lỗi import");
+    
+    let msg = `✅ Đã nhập thành công ${data.count} profiles từ Lite Session!\nPhiên đăng nhập Higgsfield được giữ nguyên 100%.`;
+    if (data.errors && data.errors.length) {
+      msg += `\n\n(Lưu ý: ${data.errors.join("; ")})`;
+    }
+    alert(msg);
+    loadProfiles();
+  } catch(e) {
+    loadingToast.remove();
+    alert("❌ Lỗi nhập Lite Session: " + e.message);
+  }
+}
+
 function openBulkDeleteModal() {
   const list = document.getElementById("bulkDeleteList");
   list.innerHTML = allProfiles.map(p => {
@@ -1720,6 +1837,179 @@ async function callAutoSignupApi(id, keepOpen = false) {
     } catch(e) {
         alert("❌ Lỗi: " + e.message);
     }
+}
+
+// ===== HÀNG ĐỢI TẠO 1:1 (SEQUENTIAL SIGNUP QUEUE) =====
+window._signup1v1ActiveId = null;
+window._signup1v1Queue = [];
+window._signup1v1PollTimer = null;
+
+function isSignup1v1Enabled() {
+  const el = document.getElementById("globalSequentialSignup");
+  return el ? el.checked : false;
+}
+
+function handleAutoSignupClick(id, btn) {
+  if (!isSignup1v1Enabled()) {
+    autoSignup(id);
+    return;
+  }
+
+  // Trường hợp 1: Profile đang ở trong hàng đợi chờ -> Click lại để HỦY CHỜ
+  const queueIdx = window._signup1v1Queue.indexOf(id);
+  if (queueIdx !== -1) {
+    window._signup1v1Queue.splice(queueIdx, 1);
+    updateSignup1v1UI();
+    showToast(`🛑 Đã hủy lệnh chờ Tạo acc cho Profile #${id}!`);
+    return;
+  }
+
+  // Trường hợp 2: Profile đang là profile active đang chạy
+  if (window._signup1v1ActiveId === id) {
+    showToast(`⏳ Profile #${id} đang trong quá trình chạy Tạo acc!`);
+    return;
+  }
+
+  // Trường hợp 3: Chưa có profile nào chạy -> Bắt đầu ngay
+  if (!window._signup1v1ActiveId) {
+    startSignup1v1ForProfile(id);
+    return;
+  }
+
+  // Trường hợp 4: Đã có profile đang chạy -> Xếp vào hàng đợi chờ (Màu tím)
+  window._signup1v1Queue.push(id);
+  updateSignup1v1UI();
+  const waitPos = window._signup1v1Queue.length;
+  showToast(`🟣 Đã xếp vào hàng đợi Tạo 1:1 (Vị trí #${waitPos}). Ấn lại vào nút tím để hủy!`);
+}
+
+async function startSignup1v1ForProfile(id) {
+  window._signup1v1ActiveId = id;
+  updateSignup1v1UI();
+
+  try {
+    await autoSignup(id);
+  } catch(e) {
+    console.error("Lỗi khi gọi autoSignup:", e);
+  }
+
+  startSignup1v1Watcher(id);
+}
+
+function startSignup1v1Watcher(id) {
+  if (window._signup1v1PollTimer) {
+    clearInterval(window._signup1v1PollTimer);
+    window._signup1v1PollTimer = null;
+  }
+
+  let checkCount = 0;
+  let consecutiveNotRunning = 0;
+
+  window._signup1v1PollTimer = setInterval(async () => {
+    checkCount++;
+    if (window._signup1v1ActiveId !== id) {
+      clearInterval(window._signup1v1PollTimer);
+      window._signup1v1PollTimer = null;
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/profiles/${id}/signup-status`);
+      if (!res.ok) return;
+      const data = await res.json();
+      
+      // Khi đã chạy quá 2 lần poll (khoảng 4 giây)
+      // Nếu signing_up = false hoặc running = false (Chrome đã đóng hoặc tiến trình kết thúc)
+      if (checkCount >= 2) {
+        if (!data.signing_up || !data.running) {
+          consecutiveNotRunning++;
+          if (consecutiveNotRunning >= 2) {
+            clearInterval(window._signup1v1PollTimer);
+            window._signup1v1PollTimer = null;
+            onSignup1v1ProfileFinished(id);
+          }
+        } else {
+          consecutiveNotRunning = 0;
+        }
+      }
+    } catch(e) {
+      console.warn("Watcher poll error:", e);
+    }
+  }, 2000);
+}
+
+async function onSignup1v1ProfileFinished(id) {
+  console.log(`[Tạo 1:1] Profile ${id} đã hoàn tất hoặc đóng Chrome!`);
+  window._signup1v1ActiveId = null;
+  updateSignup1v1UI();
+  if (typeof loadProfiles === 'function') loadProfiles();
+
+  if (window._signup1v1Queue.length > 0) {
+    const nextId = window._signup1v1Queue.shift();
+    updateSignup1v1UI();
+    showToast(`🔔 Thẻ trước đã xong! Đang tự động mở thẻ tiếp theo (#${nextId})...`);
+    setTimeout(() => {
+      startSignup1v1ForProfile(nextId);
+    }, 1500);
+  } else {
+    showToast(`🎉 Đã hoàn tất tất cả thẻ trong hàng đợi Tạo 1:1!`);
+  }
+}
+
+function updateSignup1v1UI() {
+  document.querySelectorAll("[id^='btnAutoSignup_']").forEach(btn => {
+    const pId = btn.id.replace("btnAutoSignup_", "");
+    if (window._signup1v1ActiveId === pId) {
+      btn.className = "btn btn-sm";
+      btn.style.background = "#f59e0b";
+      btn.style.color = "#ffffff";
+      btn.style.fontWeight = "bold";
+      btn.style.border = "1px solid #d97706";
+      btn.innerHTML = "⏳ Đang tạo...";
+      btn.title = "Profile này đang chạy Tạo acc + login...";
+    } else if (window._signup1v1Queue.includes(pId)) {
+      const idx = window._signup1v1Queue.indexOf(pId) + 1;
+      btn.className = "btn btn-sm";
+      btn.style.background = "#7c3aed";
+      btn.style.color = "#ffffff";
+      btn.style.fontWeight = "bold";
+      btn.style.border = "1px solid #c084fc";
+      btn.style.boxShadow = "0 0 10px rgba(168, 85, 247, 0.7)";
+      btn.innerHTML = `⏳ Đang chờ (#${idx})`;
+      btn.title = `Đang ở hàng đợi thứ ${idx}. Click vào đây để HỦY lệnh chờ!`;
+    } else {
+      btn.className = "btn btn-sm btn-success";
+      btn.style.background = "";
+      btn.style.color = "";
+      btn.style.fontWeight = "";
+      btn.style.border = "";
+      btn.style.boxShadow = "";
+      btn.innerHTML = "🤖 Tạo acc + login";
+      btn.title = "Tự động mở Chrome và tạo tài khoản + đăng nhập";
+    }
+  });
+
+  const queueBar = document.getElementById("signup1v1QueueStatus");
+  if (queueBar) {
+    if (window._signup1v1ActiveId || window._signup1v1Queue.length > 0) {
+      queueBar.style.display = "flex";
+      queueBar.innerHTML = `
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:16px;">⚡</span>
+          <span><b>Chế độ Tạo 1:1:</b> Đang tạo: <code style="color:#fde047;background:#1e1b4b;padding:2px 6px;border-radius:4px;">#${window._signup1v1ActiveId || 'None'}</code> | Chờ đợi: <b style="color:#c084fc;font-size:14px;">${window._signup1v1Queue.length} profile</b></span>
+        </div>
+        <button class="btn btn-sm btn-danger" style="padding:3px 10px;font-size:11px;font-weight:bold;cursor:pointer;" onclick="cancelAllSignup1v1Queue()">🛑 Hủy Toàn Bộ Hàng Đợi</button>
+      `;
+    } else {
+      queueBar.style.display = "none";
+    }
+  }
+}
+
+function cancelAllSignup1v1Queue() {
+  window._signup1v1Queue = [];
+  updateSignup1v1UI();
+  showToast("🛑 Đã xóa toàn bộ hàng đợi Tạo 1:1!");
 }
 
 // ================= BATCH CHECK FREE GEN =================
@@ -3356,6 +3646,10 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   if(localStorage.getItem('globalAutoSignup') === 'true') {
       const el = document.getElementById('globalAutoSignup');
+      if (el) el.checked = true;
+  }
+  if(localStorage.getItem('globalSequentialSignup') === 'true') {
+      const el = document.getElementById('globalSequentialSignup');
       if (el) el.checked = true;
   }
   if(localStorage.getItem('globalBrowserEngine')) {

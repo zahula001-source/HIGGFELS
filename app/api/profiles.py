@@ -14,7 +14,7 @@ try:
 except Exception:
     pass
 from pydantic import BaseModel
-from fastapi import APIRouter, HTTPException, Body, Request, Form
+from fastapi import APIRouter, HTTPException, Body, Request, Form, UploadFile, File
 from fastapi.responses import FileResponse, JSONResponse
 
 from app.core.state import pw_lock, video_tasks, video_tasks_chat, check_video_task_ids, MAX_RETRIES
@@ -756,6 +756,236 @@ _running_signups = set()
 _signup_options = {}
 _manual_open_sessions = {}
 _signup_lock = threading.Lock()
+
+@router.get("/api/profiles/{profile_id}/signup-status")
+def get_profile_signup_status(profile_id: str):
+    """Kiểm tra trạng thái tạo acc / running của profile phục vụ chế độ Tạo 1:1"""
+    running = is_running(profile_id)
+    signing_up = (profile_id in _running_signups)
+    return {
+        "ok": True,
+        "profile_id": profile_id,
+        "running": running,
+        "signing_up": signing_up
+    }
+
+@router.post("/api/export-lite-session")
+def export_lite_session_endpoint(payload: dict = Body(default={})):
+    """Xuất file zip chứa session tối thiểu (Local Storage + IndexedDB + ms_account + fingerprint).
+    Dung lượng chỉ khoảng 1 - 3 MB/profile.
+    """
+    import zipfile
+    profile_ids = payload.get("profile_ids", [])
+    all_p = manager.list_profiles()
+    if profile_ids:
+        all_p = [p for p in all_p if p.id in profile_ids]
+
+    if not all_p:
+        raise HTTPException(400, "Không có profile nào được chọn để xuất")
+
+    export_dir = DATA_DIR / "exports"
+    export_dir.mkdir(parents=True, exist_ok=True)
+    zip_filename = f"higgsfield_lite_sessions_{int(time.time())}.zip"
+    zip_path = export_dir / zip_filename
+
+    count = 0
+    with zipfile.ZipFile(zip_path, 'w', compression=zipfile.ZIP_DEFLATED) as zipf:
+        for p in all_p:
+            p_prefix = f"profile_{p.id}"
+            
+            # 1. Metadata
+            meta = {
+                "id": p.id,
+                "name": p.name,
+                "os": p.os,
+                "proxy": p.proxy,
+                "notes": p.notes,
+                "fingerprint": p.fingerprint
+            }
+            zipf.writestr(f"{p_prefix}/profile_meta.json", json.dumps(meta, ensure_ascii=False, indent=2))
+
+            # 2. Tìm thư mục nguồn tốt nhất của profile
+            candidate_dirs = [
+                BASE_DIR / "data" / "browsers" / f"chrome136_{p.id}",
+                Path(p.user_data_dir),
+                BASE_DIR / "data" / "browsers" / f"profile_{p.id}"
+            ]
+            source_dir = candidate_dirs[0]
+            for c in candidate_dirs:
+                if (c / "Default" / "Local Storage").is_dir():
+                    source_dir = c
+                    break
+
+            # 3. Đọc ms_account.txt, fingerprint.json, imported_cookies.json
+            for candidate in candidate_dirs:
+                ms_f = candidate / "ms_account.txt"
+                if ms_f.is_file():
+                    try:
+                        zipf.writestr(f"{p_prefix}/ms_account.txt", ms_f.read_text(encoding="utf-8"))
+                        break
+                    except Exception: pass
+
+            for candidate in candidate_dirs:
+                ck_f = candidate / "imported_cookies.json"
+                if ck_f.is_file():
+                    try:
+                        zipf.writestr(f"{p_prefix}/imported_cookies.json", ck_f.read_text(encoding="utf-8"))
+                        break
+                    except Exception: pass
+
+            for candidate in candidate_dirs:
+                fp_f = candidate / "fingerprint.json"
+                if fp_f.is_file():
+                    try:
+                        zipf.writestr(f"{p_prefix}/fingerprint.json", fp_f.read_text(encoding="utf-8"))
+                        break
+                    except Exception: pass
+
+            # 4. Nén Default/Local Storage và Default/IndexedDB (bỏ qua file lock)
+            for folder_rel in ("Default/Local Storage", "Default/IndexedDB", "Default/Session Storage"):
+                folder_path = source_dir / folder_rel
+                if folder_path.is_dir():
+                    for root, _, files in os.walk(folder_path):
+                        for file in files:
+                            if file.lower() in ("lock", "temp_lock"):
+                                continue
+                            f_full = Path(root) / file
+                            try:
+                                rel_to_source = f_full.relative_to(source_dir)
+                                arcname = f"{p_prefix}/{rel_to_source.as_posix()}"
+                                zipf.write(f_full, arcname)
+                            except Exception:
+                                pass
+            count += 1
+
+    return FileResponse(
+        path=str(zip_path),
+        filename=zip_filename,
+        media_type="application/zip"
+    )
+
+@router.post("/api/import-lite-session")
+async def import_lite_session_endpoint(file: UploadFile = File(...)):
+    """Nhập file zip Lite Session để tự động bung session và tạo profile tương ứng"""
+    import zipfile
+    import tempfile
+
+    if not file.filename.lower().endswith(".zip"):
+        raise HTTPException(400, "Vui lòng chọn file định dạng .zip")
+
+    temp_zip = Path(tempfile.gettempdir()) / f"upload_lite_{int(time.time())}.zip"
+    with open(temp_zip, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+
+    created_profiles = []
+    errors = []
+
+    try:
+        with zipfile.ZipFile(temp_zip, 'r') as zipf:
+            namelist = zipf.namelist()
+            # Tìm tất cả các folder profile trong zip
+            profile_folders = set()
+            for name in namelist:
+                parts = name.split("/")
+                if len(parts) > 1 and parts[0]:
+                    profile_folders.add(parts[0])
+
+            existing_emails = _profile_account_emails()
+
+            for p_folder in sorted(profile_folders):
+                try:
+                    meta_path = f"{p_folder}/profile_meta.json"
+                    meta = {}
+                    if meta_path in namelist:
+                        try:
+                            meta = json.loads(zipf.read(meta_path).decode("utf-8"))
+                        except Exception:
+                            pass
+
+                    name = meta.get("name") or p_folder
+                    account_raw = ""
+                    ms_acc_path = f"{p_folder}/ms_account.txt"
+                    if ms_acc_path in namelist:
+                        try:
+                            account_raw = zipf.read(ms_acc_path).decode("utf-8").strip()
+                        except Exception:
+                            pass
+
+                    account_email = _normalize_account_email(account_raw or name)
+                    if account_email and account_email in existing_emails:
+                        errors.append(f"{name}: Email {account_email} đã tồn tại, bỏ qua")
+                        continue
+
+                    # Tạo profile mới
+                    new_p = manager.create_profile(
+                        name=name,
+                        os=meta.get("os", "windows"),
+                        browser="chromium",
+                        proxy=meta.get("proxy"),
+                        notes="đã nhập lite session",
+                        fingerprint_preset=True
+                    )
+
+                    target_dirs = [
+                        Path(new_p.user_data_dir),
+                        BASE_DIR / "data" / "browsers" / f"chrome136_{new_p.id}"
+                    ]
+
+                    for tdir in target_dirs:
+                        tdir.mkdir(parents=True, exist_ok=True)
+                        (tdir / "bundle_imported.flag").write_text("1", encoding="utf-8")
+
+                    # Ghi ms_account.txt
+                    if account_raw:
+                        for tdir in target_dirs:
+                            (tdir / "ms_account.txt").write_text(account_raw, encoding="utf-8")
+
+                    # Ghi fingerprint.json
+                    fp_path = f"{p_folder}/fingerprint.json"
+                    if fp_path in namelist:
+                        try:
+                            fp_bytes = zipf.read(fp_path)
+                            for tdir in target_dirs:
+                                (tdir / "fingerprint.json").write_bytes(fp_bytes)
+                        except Exception:
+                            pass
+
+                    # Ghi imported_cookies.json
+                    ck_path = f"{p_folder}/imported_cookies.json"
+                    if ck_path in namelist:
+                        try:
+                            ck_bytes = zipf.read(ck_path)
+                            for tdir in target_dirs:
+                                (tdir / "imported_cookies.json").write_bytes(ck_bytes)
+                        except Exception:
+                            pass
+
+                    # Giải nén các file trong Default/
+                    prefix_match = f"{p_folder}/Default/"
+                    for item in namelist:
+                        if item.startswith(prefix_match) and not item.endswith("/"):
+                            rel_sub = item[len(prefix_match):]
+                            content_bytes = zipf.read(item)
+                            for tdir in target_dirs:
+                                dest_file = tdir / "Default" / rel_sub
+                                dest_file.parent.mkdir(parents=True, exist_ok=True)
+                                dest_file.write_bytes(content_bytes)
+
+                    created_profiles.append({"id": new_p.id, "name": new_p.name})
+                    if account_email:
+                        existing_emails.add(account_email)
+                except Exception as ex:
+                    errors.append(f"{p_folder}: {str(ex)}")
+    finally:
+        try: temp_zip.unlink(missing_ok=True)
+        except Exception: pass
+
+    return {
+        "ok": True,
+        "count": len(created_profiles),
+        "profiles": created_profiles,
+        "errors": errors
+    }
 
 
 def check_free_gen_full_flow(page, profile_id: str, timeout_ms: int = 15000, fast_first_step_ms: int = 4000) -> bool:
