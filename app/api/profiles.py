@@ -769,10 +769,109 @@ def get_profile_signup_status(profile_id: str):
         "signing_up": signing_up
     }
 
+def extract_profile_decrypted_cookies(candidate_dirs) -> list:
+    """Trích xuất cookies sạch dạng JSON từ profile (đọc imported_cookies.json hoặc giải mã từ SQLite Cookies).
+    Đảm bảo sang máy khác nạp vào không bao giờ bị bắt login lại!
+    """
+    # 1. Thử đọc imported_cookies.json có sẵn
+    for c in candidate_dirs:
+        ck_f = c / "imported_cookies.json"
+        if ck_f.is_file():
+            try:
+                data = json.loads(ck_f.read_text(encoding="utf-8"))
+                if isinstance(data, list) and len(data) > 0:
+                    return data
+            except Exception:
+                pass
+
+    # 2. Thử giải mã trực tiếp từ file SQLite Default/Network/Cookies bằng DPAPI
+    import base64
+    import sqlite3
+    import tempfile
+    try:
+        import win32crypt
+        from Crypto.Cipher import AES
+    except ImportError:
+        return []
+
+    for c in candidate_dirs:
+        cookie_db = c / "Default" / "Network" / "Cookies"
+        local_state_file = c / "Local State"
+        if not cookie_db.is_file() or not local_state_file.is_file():
+            continue
+
+        try:
+            ls_data = json.loads(local_state_file.read_text(encoding="utf-8"))
+            encrypted_key_b64 = ls_data.get("os_crypt", {}).get("encrypted_key")
+            if not encrypted_key_b64:
+                continue
+
+            encrypted_key = base64.b64decode(encrypted_key_b64)[5:]
+            decrypted_key = win32crypt.CryptUnprotectData(encrypted_key, None, None, None, 0)[1]
+
+            temp_db = Path(tempfile.gettempdir()) / f"tmp_ck_{int(time.time() * 1000)}.db"
+            try:
+                shutil.copy2(cookie_db, temp_db)
+                conn = sqlite3.connect(temp_db)
+                cur = conn.cursor()
+                cur.execute("SELECT host_key, path, is_secure, is_httponly, expires_utc, name, value, encrypted_value, samesite FROM cookies")
+                rows = cur.fetchall()
+                conn.close()
+            finally:
+                temp_db.unlink(missing_ok=True)
+
+            cookies = []
+            same_site_map = {0: "None", 1: "Lax", 2: "Strict", -1: "None"}
+            for host_key, path, is_secure, is_httponly, expires_utc, name, value, encrypted_value, samesite in rows:
+                decrypted_val = value or ""
+                if encrypted_value:
+                    try:
+                        if encrypted_value.startswith(b'v10') or encrypted_value.startswith(b'v11'):
+                            iv = encrypted_value[3:15]
+                            ciphertext = encrypted_value[15:-16]
+                            tag = encrypted_value[-16:]
+                            cipher = AES.new(decrypted_key, AES.MODE_GCM, iv)
+                            dec = cipher.decrypt_and_verify(ciphertext, tag)
+                            try:
+                                decrypted_val = dec.decode('utf-8')
+                            except UnicodeDecodeError:
+                                decrypted_val = dec[32:].decode('utf-8', errors='ignore')
+                        else:
+                            decrypted_val = win32crypt.CryptUnprotectData(encrypted_value, None, None, None, 0)[1].decode('utf-8', errors='ignore')
+                    except Exception:
+                        continue
+
+                unix_ts = 0
+                if expires_utc and expires_utc > 0:
+                    unix_ts = max(0, int((expires_utc / 1000000) - 11644473600))
+
+                c_item = {
+                    "name": name,
+                    "value": decrypted_val,
+                    "domain": host_key,
+                    "path": path or "/",
+                    "secure": bool(is_secure),
+                    "httpOnly": bool(is_httponly),
+                }
+                if unix_ts > 0:
+                    c_item["expires"] = unix_ts
+                ss = same_site_map.get(samesite)
+                if ss in ("None", "Lax", "Strict"):
+                    c_item["sameSite"] = ss
+                cookies.append(c_item)
+
+            if cookies:
+                return cookies
+        except Exception as e:
+            print(f"Error decrypting cookies from {c}: {e}")
+            continue
+
+    return []
+
 @router.post("/api/export-lite-session")
 def export_lite_session_endpoint(payload: dict = Body(default={})):
-    """Xuất file zip chứa session tối thiểu (Local Storage + IndexedDB + ms_account + fingerprint).
-    Dung lượng chỉ khoảng 1 - 3 MB/profile.
+    """Xuất file zip chứa session tối thiểu (Decrypted JSON Cookies + Local Storage + IndexedDB + ms_account + fingerprint).
+    Dung lượng chỉ khoảng 1 - 3 MB/profile. Đảm bảo mang sang máy khác không bị bắt đăng nhập lại!
     """
     import zipfile
     profile_ids = payload.get("profile_ids", [])
@@ -816,20 +915,12 @@ def export_lite_session_endpoint(payload: dict = Body(default={})):
                     source_dir = c
                     break
 
-            # 3. Đọc ms_account.txt, fingerprint.json, imported_cookies.json
+            # 3. Đọc ms_account.txt, fingerprint.json
             for candidate in candidate_dirs:
                 ms_f = candidate / "ms_account.txt"
                 if ms_f.is_file():
                     try:
                         zipf.writestr(f"{p_prefix}/ms_account.txt", ms_f.read_text(encoding="utf-8"))
-                        break
-                    except Exception: pass
-
-            for candidate in candidate_dirs:
-                ck_f = candidate / "imported_cookies.json"
-                if ck_f.is_file():
-                    try:
-                        zipf.writestr(f"{p_prefix}/imported_cookies.json", ck_f.read_text(encoding="utf-8"))
                         break
                     except Exception: pass
 
@@ -841,7 +932,14 @@ def export_lite_session_endpoint(payload: dict = Body(default={})):
                         break
                     except Exception: pass
 
-            # 4. Nén Default/Local Storage và Default/IndexedDB (bỏ qua file lock)
+            # 4. Trích xuất Decrypted Cookies (JSON sạch) để mang sang máy khác không bị bắt login lại
+            cookies_data = extract_profile_decrypted_cookies(candidate_dirs)
+            if cookies_data:
+                cookies_json_str = json.dumps(cookies_data, ensure_ascii=False, indent=2)
+                zipf.writestr(f"{p_prefix}/imported_cookies.json", cookies_json_str)
+                zipf.writestr(f"{p_prefix}/cookies.json", cookies_json_str)
+
+            # 5. Nén Default/Local Storage và Default/IndexedDB (bỏ qua file lock & bỏ qua file Cookies nhị phân cũ)
             for folder_rel in ("Default/Local Storage", "Default/IndexedDB", "Default/Session Storage"):
                 folder_path = source_dir / folder_rel
                 if folder_path.is_dir():
@@ -866,7 +964,9 @@ def export_lite_session_endpoint(payload: dict = Body(default={})):
 
 @router.post("/api/import-lite-session")
 async def import_lite_session_endpoint(file: UploadFile = File(...)):
-    """Nhập file zip Lite Session để tự động bung session và tạo profile tương ứng"""
+    """Nhập file zip Lite Session để tự động bung session và tạo profile tương ứng.
+    Tự động nạp cookies sạch vào profile mới để giữ nguyên phiên đăng nhập giữa các máy!
+    """
     import zipfile
     import tempfile
 
@@ -950,21 +1050,34 @@ async def import_lite_session_endpoint(file: UploadFile = File(...)):
                         except Exception:
                             pass
 
-                    # Ghi imported_cookies.json
-                    ck_path = f"{p_folder}/imported_cookies.json"
-                    if ck_path in namelist:
-                        try:
-                            ck_bytes = zipf.read(ck_path)
-                            for tdir in target_dirs:
-                                (tdir / "imported_cookies.json").write_bytes(ck_bytes)
-                        except Exception:
-                            pass
+                    # Đọc và nạp Decrypted Cookies vào profile mới
+                    cookies_list = []
+                    for ck_name in (f"{p_folder}/imported_cookies.json", f"{p_folder}/cookies.json"):
+                        if ck_name in namelist:
+                            try:
+                                raw_ck = zipf.read(ck_name).decode("utf-8")
+                                cookies_list = json.loads(raw_ck)
+                                if isinstance(cookies_list, list) and cookies_list:
+                                    break
+                            except Exception:
+                                pass
 
-                    # Giải nén các file trong Default/
+                    if cookies_list:
+                        # Ghi vào imported_cookies.json của cả 2 target dirs
+                        cookies_json_bytes = json.dumps(cookies_list, ensure_ascii=False, indent=2).encode("utf-8")
+                        for tdir in target_dirs:
+                            (tdir / "imported_cookies.json").write_bytes(cookies_json_bytes)
+                        # Nạp qua manager.import_cookies
+                        manager.import_cookies(new_p.id, cookies_list)
+
+                    # Giải nén các file trong Default/ (Local Storage, IndexedDB, Session Storage)
+                    # Bỏ qua file SQLite nhị phân Cookies cũ của máy B để tránh lỗi giải mã DPAPI
                     prefix_match = f"{p_folder}/Default/"
                     for item in namelist:
                         if item.startswith(prefix_match) and not item.endswith("/"):
                             rel_sub = item[len(prefix_match):]
+                            if rel_sub.lower().startswith("network/cookies"):
+                                continue
                             content_bytes = zipf.read(item)
                             for tdir in target_dirs:
                                 dest_file = tdir / "Default" / rel_sub
