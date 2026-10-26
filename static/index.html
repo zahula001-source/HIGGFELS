@@ -176,10 +176,12 @@ body{background:#0b0e14;color:#e5e7eb;min-height:100vh;}
          <label for="globalGenerateHma" style="font-size:12px; color:#f59e0b; font-weight:bold; margin:0; cursor:pointer;" title="Đổi sang quốc gia ngẫu nhiên bằng app HMA VPN (Logic nút 6: hma_app_switcher.py randomcountry)">🛡️ Sinh IP HMA</label>
       </div>
       
-      <div style="display:flex; align-items:center; gap:6px; border:1px solid #334155; padding: 4px 8px; border-radius: 6px; background: #1e293b; margin-right: 12px; cursor:pointer;" title="Bấm để chọn thư mục lưu (Để trống = lưu vào mục Downloads của máy)" onclick="selectFolder()">
+      <div style="display:flex; align-items:center; gap:6px; border:1px solid #334155; padding: 4px 8px; border-radius: 6px; background: #1e293b; cursor:pointer;" title="Bấm để chọn thư mục lưu (Để trống = lưu vào mục Downloads của máy)" onclick="selectFolder()">
          <span style="font-size:14px;">📁</span>
-         <input type="text" id="globalVideoSavePath" placeholder="Thư mục lưu (Mặc định: Downloads)" oninput="saveUIState()" style="background:transparent; border:none; color:#e2e8f0; font-size:12px; width:170px; outline:none; pointer-events:none;">
+         <input type="text" id="globalVideoSavePath" placeholder="Thư mục lưu..." oninput="saveUIState()" style="background:transparent; border:none; color:#e2e8f0; font-size:12px; width:110px; outline:none; pointer-events:none;">
       </div>
+
+      <button id="clearAllVideoCardsBtn" onclick="clearAllVideoCards()" style="display:inline-flex; align-items:center; justify-content:center; background:#1e293b; border:1px solid #ef4444; color:#ef4444; border-radius:6px; cursor:pointer; font-size:14px; padding:0 8px; height:28px; transition:0.2s; margin-right:12px;" onmouseover="this.style.background='#ef4444';this.style.color='#fff'" onmouseout="this.style.background='#1e293b';this.style.color='#ef4444'" title="Dọn sạch tất cả thẻ, chỉ giữ lại 1 thẻ trống duy nhất">🗑️</button>
     </div>
   </div>
 
@@ -2303,6 +2305,30 @@ function clearVideoForm() {
   addVideoForm();
 }
 
+function clearAllVideoCards() {
+  if (!confirm("Bạn có chắc muốn dọn sạch tất cả các thẻ video và chỉ giữ lại 1 thẻ trống duy nhất không?")) {
+    return;
+  }
+  if (typeof videoTimers === 'object') {
+    Object.keys(videoTimers).forEach(fId => {
+      try { cancelVideoTimer(fId, false); } catch(e){}
+    });
+  }
+  if (typeof videoTaskPolls === 'object') {
+    Object.keys(videoTaskPolls).forEach(fId => {
+      try { clearInterval(videoTaskPolls[fId]); delete videoTaskPolls[fId]; } catch(e){}
+    });
+  }
+  const container = document.getElementById("videoFormsContainer");
+  if (container) container.innerHTML = "";
+  formCounter = 0;
+  addVideoForm();
+  localStorage.removeItem("antidetect_video_state");
+  stateHistory = [];
+  historyIndex = -1;
+  setTimeout(() => { saveUIState(); }, 200);
+}
+
 let formCounter = 0;
 let isAddingForm = false;
 
@@ -2315,7 +2341,9 @@ function choosePreferredVideoProfile(profileIds, excludeIds = []) {
   const isFree = p => note(p).includes('free gen') && !note(p).includes('không free') && !note(p).includes('khong free');
   const is720 = p => isFree(p) && /720\s*p?/.test(note(p));
   const is480 = p => isFree(p) && /480\s*p?/.test(note(p));
-  return [candidates.find(is720), candidates.find(is480), candidates[0]]
+  const is720_type1 = p => is720(p) && !note(p).includes('lite');
+  const is720_type2 = p => is720(p) && note(p).includes('lite');
+  return [candidates.find(is720_type1), candidates.find(is720_type2), candidates.find(is480), candidates[0]]
     .find(Boolean)?.id || '';
 }
 
@@ -2562,11 +2590,43 @@ function categorizeProfile(p) {
   if (isFree) {
     const is720 = /720\s*p?/.test(n);
     const is480 = /480\s*p?/.test(n);
+    const isLite = n.includes('lite');
+
+    if (is720) {
+      if (isLite) {
+        return {
+          groupKey: 'free',
+          subOrder: 1, // Cụm 2: Loại 2 Lite
+          emoji: '🟢',
+          noteBadge: '720p - Loại 2 Lite',
+          style: 'color: #22c55e;'
+        };
+      } else {
+        return {
+          groupKey: 'free',
+          subOrder: 0, // Cụm 1: Loại 1
+          emoji: '🟢',
+          noteBadge: '720p - Loại 1',
+          style: 'color: #22c55e;'
+        };
+      }
+    }
+
+    if (is480) {
+      return {
+        groupKey: 'free',
+        subOrder: 2, // Cụm 3: 480p
+        emoji: '🟢',
+        noteBadge: isLite ? 'Free 480p Lite' : 'Free 480p',
+        style: 'color: #22c55e;'
+      };
+    }
+
     return {
       groupKey: 'free',
-      subOrder: is720 ? 0 : (is480 ? 1 : 2),
+      subOrder: 3,
       emoji: '🟢',
-      noteBadge: is720 ? 'Free 720p' : (is480 ? 'Free 480p' : 'Free Gen'),
+      noteBadge: 'Free Gen',
       style: 'color: #22c55e;'
     };
   }
@@ -3564,51 +3624,32 @@ function restoreStateStr(saved) {
       document.getElementById("videoFormsContainer").innerHTML = "";
       
       if (state.cards && state.cards.length > 0) {
-          state.cards.forEach(c => {
-              formCounter = Math.max(formCounter, c.fId);
-              addVideoForm(c.fId);
-              
-              setTimeout(() => {
-                  if (c.prompt) document.getElementById(`videoPrompt_${c.fId}`).value = c.prompt;
-                  if (c.profileId) document.getElementById(`videoProfileId_${c.fId}`).value = c.profileId;
-                  if (c.img1Src) {
-                      document.getElementById(`imgPreview1_${c.fId}`).src = c.img1Src;
-                      document.getElementById(`imgPreview1_${c.fId}`).style.display = "block";
-                      document.getElementById(`dzLabel1_${c.fId}`).style.display = "none";
+          // Chỉ lấy thẻ gần nhất (lần cuối cùng) để tránh bung ra một đống thẻ cũ
+          const lastCard = state.cards[state.cards.length - 1];
+          formCounter = 1;
+          addVideoForm(1, lastCard.profileId || null);
+          
+          setTimeout(() => {
+              if (lastCard.prompt) {
+                  const pEl = document.getElementById(`videoPrompt_1`);
+                  if (pEl) pEl.value = lastCard.prompt;
+              }
+              if (lastCard.profileId) {
+                  const selEl = document.getElementById(`videoProfileId_1`);
+                  if (selEl) {
+                      selEl.value = lastCard.profileId;
+                      updateVideoCardTitle(1, selEl);
                   }
-                  if (c.img2Src) {
-                      document.getElementById(`imgPreview2_${c.fId}`).src = c.img2Src;
-                      document.getElementById(`imgPreview2_${c.fId}`).style.display = "block";
-                      document.getElementById(`dzLabel2_${c.fId}`).style.display = "none";
-                  }
-                  if (c.hasOwnProperty('enableExt')) {
-                    const extEl = document.getElementById(`enableExt_${c.fId}`);
-                    if(extEl) extEl.checked = c.enableExt;
-                  }
-                  if (c.higgsModel) {
-                    const hmEl = document.getElementById(`videoHiggsModel_${c.fId}`);
-                    if (hmEl) hmEl.value = c.higgsModel;
-                  }
-                  if (c.genMode) {
-                    const gmEl = document.getElementById(`videoGenMode_${c.fId}`);
-                    if (gmEl) gmEl.value = c.genMode;
-                  }
-                  if (c.taskId) {
-                      fIdToTaskId[c.fId] = c.taskId;
-                      fIdToVideoTaskId[c.fId] = c.taskId;
-                      const bar = document.getElementById(`vtask_status_${c.fId}`);
-                      if(bar) bar.style.display = "flex";
-                      if (!videoTaskPolls[c.fId]) {
-                          videoTaskPolls[c.fId] = setInterval(() => pollTaskStatusDynamic(c.fId, c.taskId), 2000);
-                      }
-                      const btn = document.getElementById(`createVideoBtn_${c.fId}`);
-                      if(btn && btn.textContent !== "▶️ Tạo Video") {
-                          btn.disabled = true;
-                          btn.textContent = "⏳...";
-                      }
-                  }
-              }, 50);
-          });
+              }
+              if (lastCard.higgsModel) {
+                  const hmEl = document.getElementById(`videoHiggsModel_1`);
+                  if (hmEl) hmEl.value = lastCard.higgsModel;
+              }
+              if (lastCard.genMode) {
+                  const gmEl = document.getElementById(`videoGenMode_1`);
+                  if (gmEl) gmEl.value = lastCard.genMode;
+              }
+          }, 120);
       } else {
           addVideoForm();
       }
@@ -3648,8 +3689,8 @@ async function syncActiveVideoTasks() {
       return;
     }
     
-    // Lọc ra các task đang chạy hoặc vừa hoàn thành
-    const activeTasks = tasks.filter(t => t.status === "running" || t.status === "pending" || t.status === "done" || t.status === "success");
+    // CHỈ lọc các task ĐANG CHẠY THẬT SỰ (running hoặc pending), không lấy task done/success cũ
+    const activeTasks = tasks.filter(t => t.status === "running" || t.status === "pending");
     if (activeTasks.length === 0) {
       loadUIState();
       return;
@@ -3657,9 +3698,10 @@ async function syncActiveVideoTasks() {
 
     isRestoringHistory = true;
     const container = document.getElementById("videoFormsContainer");
-    if (container.children.length === 0) {
+    if (container) {
       container.innerHTML = "";
     }
+    formCounter = 0;
 
     for (let i = 0; i < activeTasks.length; i++) {
       const task = activeTasks[i];
