@@ -622,16 +622,32 @@ def export_bundle(payload: dict = Body(...)):
             "ms_account": None,
             "imported_cookies": None,
         }
-        # Đọc ms_account.txt
-        ms_file = Path(p.user_data_dir) / "ms_account.txt"
-        if ms_file.exists():
-            entry["ms_account"] = ms_file.read_text(encoding="utf-8").strip()
+        # Đọc ms_account.txt (kiểm tra cả user_data_dir và chrome136 runtime)
+        ms_account_text = None
+        for candidate_dir in (Path(p.user_data_dir), BASE_DIR / "data" / "browsers" / f"chrome136_{p.id}"):
+            ms_file = candidate_dir / "ms_account.txt"
+            if ms_file.exists():
+                try:
+                    text_content = ms_file.read_text(encoding="utf-8").strip()
+                    if text_content:
+                        ms_account_text = text_content
+                        break
+                except Exception:
+                    pass
+        entry["ms_account"] = ms_account_text
+
         # Đọc imported_cookies.json
-        cookie_file = Path(p.user_data_dir) / "imported_cookies.json"
-        if cookie_file.exists():
-            try:
-                entry["imported_cookies"] = json.loads(cookie_file.read_text(encoding="utf-8"))
-            except: pass
+        cookies_data = None
+        for candidate_dir in (Path(p.user_data_dir), BASE_DIR / "data" / "browsers" / f"chrome136_{p.id}"):
+            cookie_file = candidate_dir / "imported_cookies.json"
+            if cookie_file.exists():
+                try:
+                    cookies_data = json.loads(cookie_file.read_text(encoding="utf-8"))
+                    if cookies_data:
+                        break
+                except Exception:
+                    pass
+        entry["imported_cookies"] = cookies_data
         bundle.append(entry)
     
     return {"ok": True, "count": len(bundle), "bundle": bundle}
@@ -688,15 +704,25 @@ def import_bundle(payload: dict = Body(...)):
                 fingerprint_preset=pc.fingerprint_preset
             )
             
-            # Lưu ms_account.txt
+            # Lưu ms_account.txt vào cả user_data_dir và chrome136 runtime
             if entry.get("ms_account"):
-                ms_file = Path(new_p.user_data_dir) / "ms_account.txt"
-                ms_file.parent.mkdir(parents=True, exist_ok=True)
-                ms_file.write_text(entry["ms_account"], encoding="utf-8")
+                ms_text = entry["ms_account"]
+                for p_target in (Path(new_p.user_data_dir), BASE_DIR / "data" / "browsers" / f"chrome136_{new_p.id}"):
+                    try:
+                        p_target.mkdir(parents=True, exist_ok=True)
+                        (p_target / "ms_account.txt").write_text(ms_text, encoding="utf-8")
+                    except Exception:
+                        pass
             
             # Lưu imported_cookies.json
             if entry.get("imported_cookies"):
                 manager.import_cookies(new_p.id, entry["imported_cookies"])
+                try:
+                    c136_dir = BASE_DIR / "data" / "browsers" / f"chrome136_{new_p.id}"
+                    c136_dir.mkdir(parents=True, exist_ok=True)
+                    (c136_dir / "imported_cookies.json").write_text(json.dumps(entry["imported_cookies"], ensure_ascii=False, indent=2), encoding="utf-8")
+                except Exception:
+                    pass
             
             # Đánh dấu cờ profile được nhập từ cookie bundle
             try:

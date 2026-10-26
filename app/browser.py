@@ -788,6 +788,41 @@ def kill_profile_processes(profile_id: str):
         data_dir / f"profile_{profile_id}",
         data_dir / f"chrome136_{profile_id}"
     ]
+
+    # 1. Tìm và diệt Chrome thông qua CDP Port từ cdp_port.txt hoặc DevToolsActivePort
+    cdp_ports = set()
+    for pdir in possible_dirs:
+        for fname in ("cdp_port.txt", "DevToolsActivePort"):
+            fpath = pdir / fname
+            if fpath.exists():
+                try:
+                    content = fpath.read_text(encoding="utf-8").strip().splitlines()
+                    if content:
+                        port_candidate = int(content[0].strip())
+                        if 1000 < port_candidate < 65535:
+                            cdp_ports.add(port_candidate)
+                except Exception:
+                    pass
+
+    # Nếu có port CDP, dùng netstat tìm PID Chrome đang lắng nghe port đó và taskkill /T /F
+    for port in cdp_ports:
+        try:
+            ns_proc = subprocess.run(
+                ["netstat", "-ano", "-p", "tcp"],
+                capture_output=True, text=True, creationflags=0x08000000
+            )
+            for line in (ns_proc.stdout or "").splitlines():
+                if f":{port}" in line and "LISTENING" in line:
+                    parts = line.strip().split()
+                    if parts:
+                        pid_str = parts[-1]
+                        if pid_str.isdigit() and int(pid_str) != os.getpid():
+                            subprocess.run(["taskkill", "/PID", pid_str, "/T", "/F"],
+                                           capture_output=True, creationflags=0x08000000)
+        except Exception:
+            pass
+
+    # 2. Đọc runner.pid và kill
     for pdir in possible_dirs:
         pid_file = pdir / "runner.pid"
         if pid_file.exists():
@@ -796,24 +831,67 @@ def kill_profile_processes(profile_id: str):
                 if raw_pid != os.getpid():
                     subprocess.run(["taskkill", "/PID", str(raw_pid), "/T", "/F"],
                                    capture_output=True, creationflags=0x08000000)
+            except Exception:
+                pass
+            try:
                 pid_file.unlink(missing_ok=True)
             except Exception:
                 pass
 
+    # 3. Quét tiến trình hệ thống qua psutil: lọc Chrome và Python có commandline chứa profile_id
     try:
         import psutil
+        target_pids = set()
+        p_id_lower = profile_id.lower()
         for proc in psutil.process_iter(['pid', 'name']):
             try:
-                cmd = ' '.join(proc.cmdline())
-                if profile_id in cmd and proc.pid != os.getpid():
-                    proc.kill()
+                pname = (proc.info.get('name') or '').lower()
+                if 'chrome' in pname or 'python' in pname:
+                    cmd_list = proc.cmdline()
+                    cmd_str = ' '.join(cmd_list).lower()
+                    if p_id_lower in cmd_str and proc.pid != os.getpid():
+                        target_pids.add(proc.pid)
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                continue
+            except Exception:
+                continue
+
+        for pid in target_pids:
+            try:
+                subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"],
+                               capture_output=True, creationflags=0x08000000)
             except Exception:
                 pass
     except Exception:
         pass
 
+    # 4. Dọn sạch các file lock và socket để tránh bị kẹt cho lần mở sau
+    for pdir in possible_dirs:
+        for fname in ("runner.stop", "runner.lock", "DevToolsActivePort", "cdp_port.txt",
+                      "SingletonLock", "SingletonCookie", "SingletonSocket"):
+            fpath = pdir / fname
+            try:
+                if fpath.is_file() or fpath.is_symlink():
+                    fpath.unlink(missing_ok=True)
+            except Exception:
+                pass
+
 
 def close_profile(profile_id: str):
+    # 1. Hủy bất kỳ video tasks nào đang điều khiển profile này
+    try:
+        from app.core.state import video_tasks, check_video_task_ids
+        for tid, task in list(video_tasks.items()):
+            if isinstance(task, dict):
+                params = task.get("params", {})
+                if params.get("profile_id") == profile_id and task.get("status") in ("running", "pending"):
+                    task["force_stop"] = True
+                    task["status"] = "cancelled"
+                    task["message"] = "Đã dừng bởi lệnh đóng Chrome / Hẹn giờ"
+                    check_video_task_ids.discard(tid)
+    except Exception:
+        pass
+
     with profile_lock(profile_id):
         with running_lock:
             proc = running_browsers.get(profile_id)
@@ -826,17 +904,16 @@ def close_profile(profile_id: str):
             except Exception:
                 pass
             kill_profile_processes(profile_id)
-            return {"status": "not_running"}
+            return {"status": "closed"}
         try:
             Path(proc.profile_dir, "runner.stop").touch()
             try:
-                proc.wait(timeout=10)
+                proc.wait(timeout=3)
             except subprocess.TimeoutExpired:
                 result = subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"],
                                         capture_output=True, creationflags=0x08000000)
                 if result.returncode and proc.poll() is None:
-                    raise RuntimeError("Could not stop the profile process tree")
-                proc.wait(timeout=5)
+                    kill_profile_processes(profile_id)
             with running_lock:
                 running_browsers.pop(profile_id, None)
             kill_profile_processes(profile_id)
@@ -848,7 +925,7 @@ def close_profile(profile_id: str):
             return {"status": "closed"}
         except Exception as e:
             kill_profile_processes(profile_id)
-            return {"status": "error", "message": str(e)}
+            return {"status": "closed", "note": str(e)}
 
 
 def is_running(profile_id: str) -> bool:

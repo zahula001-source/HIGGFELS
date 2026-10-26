@@ -3853,10 +3853,22 @@ async function startTimerForFid(fId, minutes) {
 
   closeAllTimerDropdowns();
 
-  // 1. Tự động đóng Chrome nếu đang mở
+  // 1. Tự động hủy task video đang chạy (nếu có) và đóng Chrome ngay lập tức
   try {
+    const curTaskId = (typeof fIdToTaskId !== 'undefined') ? fIdToTaskId[fId] : null;
+    if (curTaskId) {
+      if (typeof videoTaskPolls !== 'undefined' && videoTaskPolls[fId]) {
+        clearInterval(videoTaskPolls[fId]);
+        delete videoTaskPolls[fId];
+      }
+      fetch(`/api/video/cancel_gen/${curTaskId}`, { method: "POST" }).catch(()=>{});
+    }
+    // Dừng task theo profile phòng trường hợp UI mất task ID
+    fetch(`/api/video/cancel_gen_by_profile/${pId}`, { method: "POST" }).catch(()=>{});
+
+    // Buộc đóng Chrome của profile này
     await fetch(`/api/profiles/${pId}/close`, { method: "POST" });
-    if (typeof loadProfiles === 'function') setTimeout(loadProfiles, 500);
+    if (typeof loadProfiles === 'function') setTimeout(loadProfiles, 400);
   } catch(e) {
     console.warn("Lỗi đóng profile:", e);
   }
