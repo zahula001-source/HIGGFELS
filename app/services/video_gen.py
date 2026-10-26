@@ -2261,13 +2261,16 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                 video_tasks[task_id]["result_urls"] = all_result_urls
                 video_tasks[task_id]["message"] = f"🎉 {len(video_urls)} Video tạo xong! Đang hiển thị lên Tool..."
                 
-                # Cập nhật thẻ profile thành "đã ra video"
+                # Cập nhật thẻ profile thành "đã ra video (giờ:phút ngày/tháng)"
                 try:
+                    from datetime import datetime
+                    now_str = datetime.now().strftime("%H:%M %d/%m")
+                    done_note = f"đã ra video ({now_str})"
                     if hasattr(manager, "update_notes"):
-                        manager.update_notes(profile_id, "đã ra video")
+                        manager.update_notes(profile_id, done_note)
                     p_obj = manager.get_profile(profile_id)
                     if p_obj:
-                        p_obj.notes = "đã ra video"
+                        p_obj.notes = done_note
                         manager._save()
                 except Exception as ex:
                     print(f"Lỗi cập nhật thẻ profile: {ex}")

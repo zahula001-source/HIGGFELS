@@ -703,12 +703,15 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                     
                     elif status_info == 'done':
                         # Video đã xong!
+                        from datetime import datetime
+                        now_str = datetime.now().strftime("%H:%M %d/%m")
+                        done_note = f"đã ra video ({now_str})"
                         video_tasks[task_id]["message"] = "✅ Video đã sẵn sàng, đang tải xuống..."
                         p_obj = manager.get_profile(profile_id)
                         if p_obj:
                             if hasattr(manager, "update_notes"):
-                                manager.update_notes(profile_id, "đã ra video")
-                            p_obj.notes = "đã ra video"
+                                manager.update_notes(profile_id, done_note)
+                            p_obj.notes = done_note
                             manager._save()
                         break
                     else:
@@ -722,12 +725,15 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                             return false;
                         }""")
                         if has_video:
+                            from datetime import datetime
+                            now_str = datetime.now().strftime("%H:%M %d/%m")
+                            done_note = f"đã ra video ({now_str})"
                             video_tasks[task_id]["message"] = "✅ Video đã sẵn sàng, đang tải xuống..."
                             p_obj = manager.get_profile(profile_id)
                             if p_obj:
                                 if hasattr(manager, "update_notes"):
-                                    manager.update_notes(profile_id, "đã ra video")
-                                p_obj.notes = "đã ra video"
+                                    manager.update_notes(profile_id, done_note)
+                                p_obj.notes = done_note
                                 manager._save()
                             break
                         else:

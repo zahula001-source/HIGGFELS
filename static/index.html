@@ -266,10 +266,11 @@ body{background:#0b0e14;color:#e5e7eb;min-height:100vh;}
     <!-- HÀNG 3: BỘ LỌC THEO TAGS -->
     <div id="profileTagFilters" style="display:flex;flex-wrap:wrap;gap:6px;">
       <button class="btn btn-sm btn-primary profile-tag-btn" data-tag="all" onclick="setProfileTag('all')">Tất cả</button>
+      <button class="btn btn-sm btn-ghost profile-tag-btn" data-tag="genning" onclick="setProfileTag('genning')" style="color:#fbbf24;border-color:#d97706;">⏳ Đang tạo video</button>
+      <button class="btn btn-sm btn-ghost profile-tag-btn" data-tag="done" onclick="setProfileTag('done')" style="color:#c084fc;border-color:#7c3aed;">✅ Đã ra video</button>
       <button class="btn btn-sm btn-ghost profile-tag-btn" data-tag="free720" onclick="setProfileTag('free720')">🟢 Free gen 720p</button>
       <button class="btn btn-sm btn-ghost profile-tag-btn" data-tag="free480" onclick="setProfileTag('free480')">🔵 Free gen 480p</button>
       <button class="btn btn-sm btn-ghost profile-tag-btn" data-tag="notfree" onclick="setProfileTag('notfree')">🟠 Không free</button>
-      <button class="btn btn-sm btn-ghost profile-tag-btn" data-tag="done" onclick="setProfileTag('done')">✅ Đã ra video</button>
       <button class="btn btn-sm btn-ghost profile-tag-btn" data-tag="other" onclick="setProfileTag('other')">⚪ Khác</button>
     </div>
   </div> <!-- end toolbar -->
@@ -718,11 +719,12 @@ function profileNote(p) {
 function profileMatchesTag(p, tag) {
   const n = profileNote(p);
   const isFree = n.includes('free gen') && !n.includes('không free') && !n.includes('khong free');
+  if (tag === 'genning') return n.includes('đang tạo video') || n.includes('dang tao video');
+  if (tag === 'done') return n.includes('đã ra video') || n.includes('da ra video');
   if (tag === 'free720') return isFree && /720\s*p?/.test(n);
   if (tag === 'free480') return isFree && /480\s*p?/.test(n);
   if (tag === 'notfree') return n === 'không free' || n === 'khong free';
-  if (tag === 'done') return n === 'đã ra video' || n === 'da ra video';
-  if (tag === 'other') return !((isFree && (/720\s*p?/.test(n) || /480\s*p?/.test(n))) || n === 'không free' || n === 'khong free' || n === 'đã ra video' || n === 'da ra video');
+  if (tag === 'other') return !(n.includes('đang tạo video') || n.includes('dang tao video') || n.includes('đã ra video') || n.includes('da ra video') || (isFree && (/720\s*p?/.test(n) || /480\s*p?/.test(n))) || n === 'không free' || n === 'khong free');
   return true;
 }
 function updateProfileTagCounts() {
@@ -756,19 +758,22 @@ function renderProfileBadge(p){
   const raw = p && p.notes ? String(p.notes).trim() : '';
   if(!raw) return '';
   const n = raw.toLowerCase().replace(/\s+/g, ' ');
+  if(n.includes('đang tạo video') || n.includes('dang tao video')){
+    return `<div style="position:absolute;top:0;right:0;background:linear-gradient(135deg,#f59e0b,#ea580c);color:#fff;font-size:10px;font-weight:bold;padding:4px 10px;border-bottom-left-radius:8px;z-index:10;box-shadow:-2px 2px 8px rgba(245,158,11,0.5);animation:pulse 1.5s infinite;">⏳ ${esc(raw)}</div>`;
+  }
+  if(n.includes('đã ra video') || n.includes('da ra video')){
+    return `<div style="position:absolute;top:0;right:0;background:linear-gradient(135deg,#7c3aed,#2563eb);color:#fff;font-size:10px;font-weight:bold;padding:4px 10px;border-bottom-left-radius:8px;z-index:10;box-shadow:-2px 2px 8px rgba(124,58,237,0.5);">✅ ${esc(raw)}</div>`;
+  }
   if(n.includes('free gen') && !n.includes('không free') && !n.includes('khong free')){
     return `<div style="position:absolute;top:0;right:0;background:#10b981;color:#fff;font-size:10px;font-weight:bold;padding:4px 12px;border-bottom-left-radius:8px;z-index:10;box-shadow:-2px 2px 4px rgba(0,0,0,0.2);">${esc(raw)}</div>`;
   }
   if(n === 'không free' || n === 'khong free'){
     return `<div style="position:absolute;top:0;right:0;background:#f59e0b;color:#fff;font-size:10px;font-weight:bold;padding:4px 12px;border-bottom-left-radius:8px;z-index:10;box-shadow:-2px 2px 4px rgba(0,0,0,0.2);">không free</div>`;
   }
-  if(n === 'đã ra video' || n === 'da ra video'){
-    return `<div style="position:absolute;top:0;right:0;background:linear-gradient(135deg,#7c3aed,#2563eb);color:#fff;font-size:10px;font-weight:bold;padding:4px 12px;border-bottom-left-radius:8px;z-index:10;box-shadow:-2px 2px 8px rgba(124,58,237,0.5);">✅ đã ra video</div>`;
-  }
   if(n.includes('lỗi') || n.includes('loi') || n.includes('xác minh') || n.includes('xac minh')){
     return `<div style="position:absolute;top:0;right:0;background:#ef4444;color:#fff;font-size:10px;font-weight:bold;padding:4px 12px;border-bottom-left-radius:8px;z-index:10;box-shadow:-2px 2px 4px rgba(0,0,0,0.2);">${esc(raw)}</div>`;
   }
-  return '';
+  return `<div style="position:absolute;top:0;right:0;background:#334155;color:#94a3b8;font-size:10px;font-weight:bold;padding:4px 8px;border-bottom-left-radius:8px;z-index:10;">${esc(raw)}</div>`;
 }
 
 function renderProfiles(profiles){
@@ -3069,6 +3074,7 @@ async function startVideoCreationDynamic(fId) {
     // Bắt đầu poll status
     if(videoTaskPolls[fId]) clearInterval(videoTaskPolls[fId]);
     videoTaskPolls[fId] = setInterval(() => pollTaskStatusDynamic(fId, taskId), 2000);
+    setTimeout(loadProfiles, 500);
     
   } catch(e) {
     alert("❌ Lỗi: " + e.message);
@@ -3109,6 +3115,7 @@ async function pollTaskStatusDynamic(fId, taskId) {
     if (data.status === "done" || data.status === "success") {
       clearInterval(videoTaskPolls[fId]);
       delete fIdToTaskId[fId];
+      setTimeout(loadProfiles, 500);
       const btn = document.getElementById(`createVideoBtn_${fId}`);
       if(btn) {
         btn.disabled = false;

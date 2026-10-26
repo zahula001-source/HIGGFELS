@@ -137,6 +137,21 @@ async def create_video(request: Request):
         }
     }
     
+    # Cập nhật trạng thái profile sang Đang tạo video kèm giờ phút
+    if profile_id:
+        try:
+            from datetime import datetime
+            now_str = datetime.now().strftime("%H:%M %d/%m")
+            gen_note = f"Đang tạo video ({now_str})"
+            if hasattr(manager, "update_notes"):
+                manager.update_notes(profile_id, gen_note)
+            p_obj = manager.get_profile(profile_id)
+            if p_obj:
+                p_obj.notes = gen_note
+                manager._save()
+        except Exception as e:
+            print(f"Lỗi cập nhật profile note khi bắt đầu gen: {e}")
+
     t = threading.Thread(
         target=run_video_automation,
         args=(task_id, prompt, saved_paths, profile_id, save_path, headless_bool, (enable_ext.lower() == "true"), (enable_ext_btn2.lower() == "true"), (telegram_enabled.lower() == "true"), telegram_token, telegram_chat_id, gen_mode, browser_engine, generate_ip),
