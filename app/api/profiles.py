@@ -336,11 +336,19 @@ def get_profiles():
                 ms_acc_file = alt_acc
         d["ms_account"] = ""
         d["ms_email"] = ""
+        d["recovery_email"] = ""
+        d["has_fviainboxes"] = False
         if ms_acc_file.exists():
             try:
                 acc_text = ms_acc_file.read_text(encoding="utf-8").strip()
                 d["ms_account"] = acc_text
-                d["ms_email"] = acc_text.split("|")[0].strip() if "|" in acc_text else acc_text
+                parts = [x.strip() for x in acc_text.split("|")]
+                if parts:
+                    d["ms_email"] = parts[0]
+                if len(parts) >= 5 and "@" in parts[4]:
+                    d["recovery_email"] = parts[4]
+                if "@fviainboxes.com" in acc_text.lower():
+                    d["has_fviainboxes"] = True
             except:
                 pass
         if not d["ms_email"] and p.name and "@" in p.name:
@@ -348,7 +356,20 @@ def get_profiles():
             m = re.search(r'[\w\.-]+@[\w\.-]+\.\w+', p.name)
             if m:
                 d["ms_email"] = m.group(0)
-                
+        if not d["has_fviainboxes"] and "@fviainboxes.com" in (p.name or "").lower():
+            d["has_fviainboxes"] = True
+
+        # Check bundle import
+        is_bundle = False
+        bundle_flag = Path(p.user_data_dir) / "bundle_imported.flag"
+        if bundle_flag.exists():
+            is_bundle = True
+        elif cookie_file.exists():
+            is_bundle = True
+        elif p.notes and ("đã nhập cookie" in p.notes.lower() or "nhập cookie" in p.notes.lower() or "bundle" in p.notes.lower()):
+            is_bundle = True
+        d["is_bundle"] = is_bundle
+
         result.append(d)
     return result
 
@@ -676,6 +697,13 @@ def import_bundle(payload: dict = Body(...)):
             # Lưu imported_cookies.json
             if entry.get("imported_cookies"):
                 manager.import_cookies(new_p.id, entry["imported_cookies"])
+            
+            # Đánh dấu cờ profile được nhập từ cookie bundle
+            try:
+                bundle_flag = Path(new_p.user_data_dir) / "bundle_imported.flag"
+                bundle_flag.write_text("1", encoding="utf-8")
+            except Exception:
+                pass
             
             created.append({"id": new_p.id, "name": new_p.name})
             if account_email:

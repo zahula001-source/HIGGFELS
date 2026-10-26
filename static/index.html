@@ -39,6 +39,7 @@ body{background:#0b0e14;color:#e5e7eb;min-height:100vh;}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:16px;}
 .card{background:#151a27;border:1px solid #212a3d;border-radius:16px;padding:16px;transition:0.2s;}
 .card.running{border-color:#10b981;box-shadow:0 0 0 1px rgba(16,185,129,0.2);}
+.card.bundle-profile{border:2px solid #eab308 !important;box-shadow:0 0 14px rgba(234,179,8,0.28) !important;}
 .card-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;}
 .card-title{font-weight:700;font-size:14px;display:flex;align-items:center;gap:8px;}
 .dot{width:8px;height:8px;border-radius:50%;background:#3f4553;}
@@ -427,11 +428,31 @@ body{background:#0b0e14;color:#e5e7eb;min-height:100vh;}
 <!-- Modal Chọn Từng Thẻ để Xuất -->
 <div id="exportSelectModal" class="modal-overlay" onclick="if(event.target==this) closeExportSelectModal()">
   <div class="modal lg">
-    <h2>☑️ Chọn Thẻ Cần Xuất</h2>
-    <p style="font-size:12px;color:#94a3b8;margin-bottom:12px;">Chọn các profile muốn xuất thành file <b>.json</b> — có thể nhập lại trên máy khác.</p>
-    <label style="display:flex; align-items:center; gap:8px; cursor:pointer; color:#fff; font-weight:bold; margin-bottom: 12px; background: #1e293b; padding: 10px; border-radius: 8px;">
-      <input type="checkbox" id="exportSelectAll" style="width:16px;height:16px;" onchange="toggleExportSelectAll(this.checked)"> Chọn tất cả
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:10px;">
+      <h2 style="margin:0;">☑️ Chọn Thẻ Cần Xuất</h2>
+      <div style="display:flex; gap:12px; font-size:12px;">
+        <span style="display:inline-flex;align-items:center;gap:4px;color:#facc15;font-weight:bold;"><span style="display:inline-block;width:10px;height:10px;background:#eab308;border-radius:2px;"></span> Acc @fviainboxes.com (Vàng)</span>
+        <span style="display:inline-flex;align-items:center;gap:4px;color:#94a3b8;"><span style="display:inline-block;width:10px;height:10px;background:#334155;border-radius:2px;"></span> Loại khác (Xám)</span>
+      </div>
+    </div>
+    <p style="font-size:12px;color:#94a3b8;margin-bottom:12px;">Chọn các profile muốn xuất thành file <b>.json</b> hoặc copy JSON — có thể nhập lại trên máy khác.</p>
+    
+    <!-- Chọn nhanh -->
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+      <label style="display:flex; align-items:center; gap:8px; cursor:pointer; color:#fff; font-weight:bold; background: #1e293b; padding: 7px 12px; border-radius: 8px; border:1px solid #334155; margin:0; font-size:13px;">
+        <input type="checkbox" id="exportSelectAll" style="width:16px;height:16px;cursor:pointer;" onchange="toggleExportSelectAll(this.checked)"> Chọn tất cả
+      </label>
+      <button class="btn btn-sm" type="button" style="background:#713f12;color:#fef08a;border:1px solid #ca8a04;font-size:12px;padding:7px 12px;" onclick="selectOnlyType('export', 'fvia')">⚡ Chỉ chọn @fviainboxes (Vàng)</button>
+      <button class="btn btn-sm" type="button" style="background:#1e293b;color:#94a3b8;border:1px solid #475569;font-size:12px;padding:7px 12px;" onclick="selectOnlyType('export', 'other')">⚡ Chỉ chọn Loại khác</button>
+      <button class="btn btn-sm" type="button" style="background:#0f172a;color:#cbd5e1;border:1px solid #334155;font-size:12px;padding:7px 12px;" onclick="selectOnlyType('export', 'none')">Bỏ chọn hết</button>
+    </div>
+
+    <!-- Tùy chọn Xuất Xong Xóa -->
+    <label style="display:flex; align-items:center; gap:10px; cursor:pointer; color:#fca5a5; font-weight:bold; font-size:13px; background:#450a0a; padding:10px 14px; border-radius:8px; border:1px solid #dc2626; margin-bottom:12px;">
+      <input type="checkbox" id="exportDeleteAfter" style="width:18px;height:18px;accent-color:#ef4444;cursor:pointer;">
+      <span>🗑️ <b>Xuất xong xóa</b> <span style="font-weight:normal;color:#fecaca;font-size:12px;">(Nếu tích: Sau khi Lưu File hoặc Copy JSON thành công, hệ thống sẽ tự động XÓA các Chrome profile đã chọn)</span></span>
     </label>
+
     <div id="exportSelectList" style="max-height:300px; overflow-y:auto; background:#0f172a; border-radius:8px; border:1px solid #1e2535; padding:10px; display:flex; flex-direction:column; gap:8px;">
     </div>
     <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;">
@@ -445,16 +466,30 @@ body{background:#0b0e14;color:#e5e7eb;min-height:100vh;}
 <!-- Modal Xóa Nhiều Profile -->
 <div id="bulkDeleteModal" class="modal-overlay" onclick="if(event.target==this) closeBulkDeleteModal()">
   <div class="modal lg">
-    <h2>🗑️ Xóa Nhiều Profile</h2>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:10px;">
+      <h2 style="margin:0;color:#f87171;">🗑️ Xóa Nhiều Profile</h2>
+      <div style="display:flex; gap:12px; font-size:12px;">
+        <span style="display:inline-flex;align-items:center;gap:4px;color:#facc15;font-weight:bold;"><span style="display:inline-block;width:10px;height:10px;background:#eab308;border-radius:2px;"></span> Acc @fviainboxes.com (Vàng)</span>
+        <span style="display:inline-flex;align-items:center;gap:4px;color:#94a3b8;"><span style="display:inline-block;width:10px;height:10px;background:#334155;border-radius:2px;"></span> Loại khác (Xám)</span>
+      </div>
+    </div>
     <p style="font-size:12px;color:#fca5a5;margin-bottom:12px;">Chọn các profile muốn xóa vĩnh viễn khỏi hệ thống.</p>
-    <label style="display:flex; align-items:center; gap:8px; cursor:pointer; color:#fff; font-weight:bold; margin-bottom: 12px; background: #450a0a; padding: 10px; border-radius: 8px; border:1px solid #7f1d1d;">
-      <input type="checkbox" id="bulkDeleteSelectAll" style="width:16px;height:16px;" onchange="toggleBulkDeleteSelectAll(this.checked)"> Chọn tất cả
-    </label>
+    
+    <!-- Chọn nhanh -->
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+      <label style="display:flex; align-items:center; gap:8px; cursor:pointer; color:#fff; font-weight:bold; background: #450a0a; padding: 7px 12px; border-radius: 8px; border:1px solid #7f1d1d; margin:0; font-size:13px;">
+        <input type="checkbox" id="bulkDeleteSelectAll" style="width:16px;height:16px;cursor:pointer;" onchange="toggleBulkDeleteSelectAll(this.checked)"> Chọn tất cả
+      </label>
+      <button class="btn btn-sm" type="button" style="background:#713f12;color:#fef08a;border:1px solid #ca8a04;font-size:12px;padding:7px 12px;" onclick="selectOnlyType('delete', 'fvia')">⚡ Chỉ chọn @fviainboxes (Vàng)</button>
+      <button class="btn btn-sm" type="button" style="background:#1e293b;color:#94a3b8;border:1px solid #475569;font-size:12px;padding:7px 12px;" onclick="selectOnlyType('delete', 'other')">⚡ Chỉ chọn Loại khác</button>
+      <button class="btn btn-sm" type="button" style="background:#0f172a;color:#cbd5e1;border:1px solid #334155;font-size:12px;padding:7px 12px;" onclick="selectOnlyType('delete', 'none')">Bỏ chọn hết</button>
+    </div>
+
     <div id="bulkDeleteList" style="max-height:300px; overflow-y:auto; background:#0f172a; border-radius:8px; border:1px solid #1e2535; padding:10px; display:flex; flex-direction:column; gap:8px;">
     </div>
     <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;">
       <button class="btn btn-ghost" onclick="closeBulkDeleteModal()">Hủy</button>
-      <button class="btn btn-primary" style="background:#dc2626;border:none;" onclick="doBulkDeleteSelected()">🗑️ Xóa Đã Chọn</button>
+      <button class="btn btn-primary" style="background:#dc2626;border:1px solid #b91c1c;font-weight:bold;padding:10px 20px;" onclick="doBulkDeleteSelected()">🗑️ Xóa Đã Chọn</button>
     </div>
   </div>
 </div>
@@ -676,11 +711,29 @@ function renderProfiles(profiles){
     const hasProxy = !!p.proxy;
     const proxyText = hasProxy ? `${p.proxy.host}:${p.proxy.port}` : "Khong proxy - IP that";
     const proxyBadge = hasProxy ? `🟢 ${p.proxy.host} 🇻🇳` : "IP that";
+
+    // Phân loại tài khoản:
+    // Loại 2: đuôi @fviainboxes.com -> chấm màu xanh
+    // Loại 1 / khác: đuôi khác @fviainboxes.com -> chấm màu vàng
+    const isFvia = isFviaAccount(p);
+    const accountDotColor = isFvia ? "#10b981" : "#facc15";
+    const accountDotTitle = isFvia ? "Loại 2: @fviainboxes.com (Chấm xanh)" : "Loại 1: Khác @fviainboxes.com (Chấm vàng)";
+    const accountDot = `<span title="${accountDotTitle}" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${accountDotColor};box-shadow:0 0 8px ${accountDotColor};margin-right:6px;flex-shrink:0;"></span>`;
+
+    // Viền màu vàng cho profile được nhập từ cookie bundle
+    const isBundle = !!p.is_bundle;
+    const bundleStyle = isBundle ? "border: 2px solid #eab308 !important; box-shadow: 0 0 14px rgba(234, 179, 8, 0.28) !important;" : "";
+
     return `
-    <div class="card ${running?'running':''}" style="position: relative; overflow: hidden;">
+    <div class="card ${running?'running':''} ${isBundle ? 'bundle-profile' : ''}" style="position: relative; overflow: hidden; ${bundleStyle}">
       ${renderProfileBadge(p)}
+      ${isBundle ? `<div style="position:absolute;bottom:0;right:0;background:#eab308;color:#000;font-size:9px;font-weight:900;padding:2px 8px;border-top-left-radius:6px;z-index:5;letter-spacing:0.5px;">📦 BUNDLE</div>` : ''}
       <div class="card-header" ondblclick="editProfileName('${p.id}', '${esc(p.name)}', this.querySelector('.card-title'))" title="Ấn đúp vào vùng này để đổi tên" style="cursor: pointer;">
-        <div class="card-title" style="font-size: 18px; font-weight: bold;"><span class="dot ${running?'running':''}"></span>${esc(p.name)}</div>
+        <div class="card-title" style="font-size: 18px; font-weight: bold; display:flex; align-items:center;">
+          <span class="dot ${running?'running':''}"></span>
+          ${accountDot}
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(p.name)}</span>
+        </div>
         <div style="font-size:10px;color:#64748b;">#${p.id} ID:${p.fingerprint?.random_id||''}</div>
       </div>
       <div class="card-meta">
@@ -693,7 +746,11 @@ function renderProfiles(profiles){
         <span>🎲 ID: ${p.fingerprint?.random_id||''}</span>
         ${p.notes && !renderProfileBadge(p) ? `<span>📝 ${esc(p.notes)}</span>` : ''}
       </div>
-      ${p.ms_email ? `<div style="padding:4px 8px; font-size:12px; color:#38bdf8; background:#0f172a; border-radius:4px; margin-bottom:8px; cursor:pointer; display:inline-block; border:1px solid #1e293b;" onclick="navigator.clipboard.writeText('${p.ms_email}'); const old=this.innerHTML; this.innerHTML='✅ Đã copy!'; setTimeout(()=>this.innerHTML=old, 1500);" title="Click để copy email">📧 ${esc(p.ms_email)}</div>` : ''}
+      ${p.ms_email ? `
+      <div style="padding:4px 8px; font-size:12px; color:${isFvia ? '#86efac' : '#fde047'}; background:#0f172a; border-radius:4px; margin-bottom:8px; cursor:pointer; display:inline-flex; align-items:center; gap:6px; border:1px solid ${isFvia ? '#166534' : '#854d0e'};" onclick="navigator.clipboard.writeText('${p.ms_account || p.ms_email}'); const old=this.innerHTML; this.innerHTML='✅ Đã copy!'; setTimeout(()=>this.innerHTML=old, 1500);" title="Click để copy tài khoản">
+        ${accountDot}
+        <span>📧 ${esc(p.ms_email)} ${isFvia ? '<b style="color:#4ade80;font-size:10px;margin-left:4px;">[@fviainboxes]</b>' : '<b style="color:#facc15;font-size:10px;margin-left:4px;">[Loại 1]</b>'}</span>
+      </div>` : ''}
       <div class="card-actions">
         ${running? 
           `<button class="btn btn-sm btn-warning" onclick="closeProfile('${p.id}')">⏹ Dong</button>` :
@@ -1084,13 +1141,73 @@ document.addEventListener("click", e => {
   }
 });
 
+function isFviaAccount(p) {
+  if (!p) return false;
+  if (p.has_fviainboxes) return true;
+  const acc = String(p.ms_account || "").toLowerCase();
+  if (acc.includes("@fviainboxes.com")) return true;
+  const em = String(p.ms_email || "").toLowerCase();
+  if (em.includes("@fviainboxes.com")) return true;
+  const rec = String(p.recovery_email || "").toLowerCase();
+  if (rec.includes("@fviainboxes.com")) return true;
+  const name = String(p.name || "").toLowerCase();
+  if (name.includes("@fviainboxes.com")) return true;
+  return false;
+}
+
+function selectOnlyType(modalType, type) {
+  const cbClass = modalType === 'export' ? '.export-select-cb' : '.bulk-delete-cb';
+  const checkboxes = document.querySelectorAll(cbClass);
+  checkboxes.forEach(cb => {
+    const p = allProfiles.find(x => x.id === cb.value);
+    const isFvia = isFviaAccount(p);
+    if (type === 'fvia') {
+      cb.checked = isFvia;
+    } else if (type === 'other') {
+      cb.checked = !isFvia;
+    } else if (type === 'all') {
+      cb.checked = true;
+    } else {
+      cb.checked = false;
+    }
+  });
+  if (modalType === 'export') {
+    document.getElementById("exportSelectAll").checked = false;
+  } else {
+    document.getElementById("bulkDeleteSelectAll").checked = false;
+  }
+}
+
 function openExportSelectModal() {
   const list = document.getElementById("exportSelectList");
-  list.innerHTML = allProfiles.map(p => `
-    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:8px;border-radius:6px;background:#1e293b;">
-      <input type="checkbox" class="export-select-cb" value="${p.id}" style="width:15px;height:15px;">
-      <span style="color:#e2e8f0;font-size:13px;">📋 ${esc(p.name)} <span style="color:#64748b;font-size:11px;">#${p.id}</span>${p.ms_email ? ` <span style="color:#38bdf8;font-size:11px;">📧${esc(p.ms_email)}</span>` : ''}</span>
-    </label>`).join("");
+  list.innerHTML = allProfiles.map(p => {
+    const isFvia = isFviaAccount(p);
+    const bg = isFvia ? "#422006" : "#1e293b";
+    const border = isFvia ? "1px solid #eab308" : "1px solid #334155";
+    const dotColor = isFvia ? "#10b981" : "#facc15";
+    const dot = `<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${dotColor};box-shadow:0 0 6px ${dotColor};flex-shrink:0;"></span>`;
+    const typeBadge = isFvia
+      ? `<span style="background:#eab308;color:#000;font-weight:bold;font-size:10px;padding:2px 6px;border-radius:4px;flex-shrink:0;">🟡 @fviainboxes.com</span>`
+      : `<span style="background:#334155;color:#94a3b8;font-size:10px;padding:2px 6px;border-radius:4px;flex-shrink:0;">⚪ Loại khác</span>`;
+    const bundleBadge = p.is_bundle
+      ? `<span style="background:#854d0e;color:#fef08a;border:1px solid #ca8a04;font-size:10px;padding:1px 5px;border-radius:3px;">📦 Bundle</span>`
+      : ``;
+    return `
+    <label style="display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;padding:8px 12px;border-radius:6px;background:${bg};border:${border};transition:all 0.2s;">
+      <div style="display:flex;align-items:center;gap:10px;overflow:hidden;">
+        <input type="checkbox" class="export-select-cb" value="${p.id}" data-isfvia="${isFvia}" style="width:16px;height:16px;cursor:pointer;">
+        ${dot}
+        <span style="color:${isFvia ? '#fef08a' : '#e2e8f0'};font-size:13px;font-weight:${isFvia ? 'bold' : 'normal'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+          📋 ${esc(p.name)} <span style="color:#64748b;font-size:11px;">#${p.id}</span>
+          ${p.ms_email ? ` <span style="color:${isFvia ? '#facc15' : '#38bdf8'};font-size:11px;">📧 ${esc(p.ms_email)}</span>` : ''}
+        </span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+        ${bundleBadge}
+        ${typeBadge}
+      </div>
+    </label>`;
+  }).join("");
   document.getElementById("exportSelectAll").checked = false;
   document.getElementById("exportSelectModal").classList.add("active");
 }
@@ -1101,6 +1218,12 @@ function toggleExportSelectAll(checked) {
 async function doExportSelected() {
   const ids = [...document.querySelectorAll(".export-select-cb:checked")].map(cb => cb.value);
   if (!ids.length) { alert("Chưa chọn thẻ nào!"); return; }
+  const deleteAfter = document.getElementById("exportDeleteAfter")?.checked;
+  if (deleteAfter) {
+    if (!confirm(`⚠️ BẠN ĐÃ TÍCH "XUẤT XONG XÓA"!\n\nSau khi xuất file, hệ thống sẽ XÓA VĨNH VIỄN ${ids.length} profiles đã chọn.\nBạn có chắc chắn muốn tiếp tục?`)) {
+      return;
+    }
+  }
   try {
     const res = await fetch("/api/export-bundle", {
       method: "POST",
@@ -1116,17 +1239,54 @@ async function doExportSelected() {
     a.download = `higgsfield_bundle_${ids.length}profiles_${new Date().toISOString().slice(0,10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    closeExportSelectModal();
-    alert(`✅ Đã xuất ${data.count} profiles ra file JSON!`);
+
+    if (deleteAfter) {
+      let count = 0;
+      for (const id of ids) {
+        try {
+          const dres = await fetch(`/api/profiles/${id}`, {method: "DELETE"});
+          if (dres.ok) count++;
+        } catch(e) { console.error("Lỗi xóa id", id, e); }
+      }
+      closeExportSelectModal();
+      alert(`✅ Đã xuất ${data.count} profiles ra file JSON và ĐÃ XÓA ${count} profiles thành công!`);
+      loadProfiles();
+    } else {
+      closeExportSelectModal();
+      alert(`✅ Đã xuất ${data.count} profiles ra file JSON!`);
+    }
   } catch(e) { alert("Lỗi: " + e.message); }
 }
 function openBulkDeleteModal() {
   const list = document.getElementById("bulkDeleteList");
-  list.innerHTML = allProfiles.map(p => `
-    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:8px;border-radius:6px;background:#1e293b;border:1px solid #334155;">
-      <input type="checkbox" class="bulk-delete-cb" value="${p.id}" style="width:15px;height:15px;">
-      <span style="color:#e2e8f0;font-size:13px;">💻 ${esc(p.name)} <span style="color:#64748b;font-size:11px;">#${p.id}</span>${p.ms_email ? ` <span style="color:#38bdf8;font-size:11px;">📧${esc(p.ms_email)}</span>` : ''}</span>
-    </label>`).join("");
+  list.innerHTML = allProfiles.map(p => {
+    const isFvia = isFviaAccount(p);
+    const bg = isFvia ? "#422006" : "#1e293b";
+    const border = isFvia ? "1px solid #eab308" : "1px solid #334155";
+    const dotColor = isFvia ? "#10b981" : "#facc15";
+    const dot = `<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${dotColor};box-shadow:0 0 6px ${dotColor};flex-shrink:0;"></span>`;
+    const typeBadge = isFvia
+      ? `<span style="background:#eab308;color:#000;font-weight:bold;font-size:10px;padding:2px 6px;border-radius:4px;flex-shrink:0;">🟡 @fviainboxes.com</span>`
+      : `<span style="background:#334155;color:#94a3b8;font-size:10px;padding:2px 6px;border-radius:4px;flex-shrink:0;">⚪ Loại khác</span>`;
+    const bundleBadge = p.is_bundle
+      ? `<span style="background:#854d0e;color:#fef08a;border:1px solid #ca8a04;font-size:10px;padding:1px 5px;border-radius:3px;">📦 Bundle</span>`
+      : ``;
+    return `
+    <label style="display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;padding:8px 12px;border-radius:6px;background:${bg};border:${border};">
+      <div style="display:flex;align-items:center;gap:10px;overflow:hidden;">
+        <input type="checkbox" class="bulk-delete-cb" value="${p.id}" data-isfvia="${isFvia}" style="width:16px;height:16px;cursor:pointer;">
+        ${dot}
+        <span style="color:${isFvia ? '#fef08a' : '#e2e8f0'};font-size:13px;font-weight:${isFvia ? 'bold' : 'normal'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+          💻 ${esc(p.name)} <span style="color:#64748b;font-size:11px;">#${p.id}</span>
+          ${p.ms_email ? ` <span style="color:${isFvia ? '#facc15' : '#38bdf8'};font-size:11px;">📧 ${esc(p.ms_email)}</span>` : ''}
+        </span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+        ${bundleBadge}
+        ${typeBadge}
+      </div>
+    </label>`;
+  }).join("");
   document.getElementById("bulkDeleteSelectAll").checked = false;
   document.getElementById("bulkDeleteModal").classList.add("active");
 }
@@ -1154,6 +1314,12 @@ async function doBulkDeleteSelected() {
 async function doCopySelected() {
   const ids = [...document.querySelectorAll(".export-select-cb:checked")].map(cb => cb.value);
   if (!ids.length) { alert("Chưa chọn thẻ nào!"); return; }
+  const deleteAfter = document.getElementById("exportDeleteAfter")?.checked;
+  if (deleteAfter) {
+    if (!confirm(`⚠️ BẠN ĐÃ TÍCH "XUẤT XONG XÓA"!\n\nSau khi copy JSON, hệ thống sẽ XÓA VĨNH VIỄN ${ids.length} profiles đã chọn.\nBạn có chắc chắn muốn tiếp tục?`)) {
+      return;
+    }
+  }
   try {
     const res = await fetch("/api/export-bundle", {
       method: "POST",
@@ -1163,8 +1329,22 @@ async function doCopySelected() {
     const data = await res.json();
     if(!data.ok) throw new Error(data.message);
     await navigator.clipboard.writeText(JSON.stringify(data.bundle, null, 2));
-    closeExportSelectModal();
-    alert(`✅ Đã copy JSON của ${data.count} profiles vào clipboard!`);
+
+    if (deleteAfter) {
+      let count = 0;
+      for (const id of ids) {
+        try {
+          const dres = await fetch(`/api/profiles/${id}`, {method: "DELETE"});
+          if (dres.ok) count++;
+        } catch(e) { console.error("Lỗi xóa id", id, e); }
+      }
+      closeExportSelectModal();
+      alert(`✅ Đã copy JSON của ${data.count} profiles vào clipboard và ĐÃ XÓA ${count} profiles thành công!`);
+      loadProfiles();
+    } else {
+      closeExportSelectModal();
+      alert(`✅ Đã copy JSON của ${data.count} profiles vào clipboard!`);
+    }
   } catch(e) { alert("Lỗi: " + e.message); }
 }
 async function exportSingleBundle(id) {
@@ -1181,10 +1361,11 @@ async function exportSingleBundle(id) {
     const jsonStr = JSON.stringify(data.bundle, null, 2);
     
     // Hiện mini dialog chọn Copy hay Save File
-    const choice = await showExportChoiceDialog(name);
+    const resDialog = await showExportChoiceDialog(name);
+    if (!resDialog) return;
+    const { choice, deleteAfter } = resDialog;
     if (choice === 'copy') {
       await navigator.clipboard.writeText(jsonStr);
-      // Flash thông báo nhỏ không chẹn màn hình
       showToast('✅ Đã copy JSON thẻ ' + (p ? p.name : id) + ' vào clipboard!');
     } else if (choice === 'file') {
       const blob = new Blob([jsonStr], {type: "application/json"});
@@ -1194,6 +1375,15 @@ async function exportSingleBundle(id) {
       a.download = `${name}_bundle.json`;
       a.click();
       URL.revokeObjectURL(url);
+    }
+    if (deleteAfter) {
+      try {
+        const dres = await fetch(`/api/profiles/${id}`, {method: "DELETE"});
+        if (dres.ok) {
+          showToast('🗑️ Đã xóa profile ' + (p ? p.name : id) + ' thành công!');
+          loadProfiles();
+        }
+      } catch(e) { console.error("Lỗi xóa", e); }
     }
   } catch(e) { alert("Lỗi: " + e.message); }
 }
@@ -1208,9 +1398,12 @@ function showExportChoiceDialog(profileName) {
     overlay.id = 'exportChoiceDialog';
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center;';
     overlay.innerHTML = `
-      <div style="background:#1e293b;border:1px solid #334155;border-radius:12px;padding:24px;min-width:280px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.8);">
+      <div style="background:#1e293b;border:1px solid #334155;border-radius:12px;padding:24px;min-width:300px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.8);">
         <div style="font-size:20px;margin-bottom:8px;">📤 Xuất Profile</div>
-        <div style="color:#94a3b8;font-size:13px;margin-bottom:20px;">Chọn cách xuất <b style='color:#e2e8f0;'>${profileName.replace(/_/g,' ')}</b></div>
+        <div style="color:#94a3b8;font-size:13px;margin-bottom:14px;">Chọn cách xuất <b style='color:#e2e8f0;'>${profileName.replace(/_/g,' ')}</b></div>
+        <label style="display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;color:#fca5a5;font-size:12px;font-weight:bold;margin-bottom:16px;background:#450a0a;padding:8px;border-radius:6px;border:1px solid #7f1d1d;">
+          <input type="checkbox" id="singleExportDeleteAfter" style="cursor:pointer;"> 🗑️ Xuất xong xóa thẻ này
+        </label>
         <div style="display:flex;gap:10px;justify-content:center;">
           <button id="ecBtnCopy" style="padding:10px 20px;background:#1d4ed8;border:none;border-radius:8px;color:#fff;cursor:pointer;font-size:14px;font-weight:bold;">📋 Copy JSON</button>
           <button id="ecBtnFile" style="padding:10px 20px;background:#059669;border:none;border-radius:8px;color:#fff;cursor:pointer;font-size:14px;font-weight:bold;">📥 Lưu File</button>
@@ -1219,8 +1412,16 @@ function showExportChoiceDialog(profileName) {
       </div>`;
     document.body.appendChild(overlay);
     
-    document.getElementById('ecBtnCopy').onclick = () => { overlay.remove(); resolve('copy'); };
-    document.getElementById('ecBtnFile').onclick = () => { overlay.remove(); resolve('file'); };
+    document.getElementById('ecBtnCopy').onclick = () => { 
+      const del = !!document.getElementById('singleExportDeleteAfter')?.checked;
+      overlay.remove(); 
+      resolve({choice: 'copy', deleteAfter: del}); 
+    };
+    document.getElementById('ecBtnFile').onclick = () => { 
+      const del = !!document.getElementById('singleExportDeleteAfter')?.checked;
+      overlay.remove(); 
+      resolve({choice: 'file', deleteAfter: del}); 
+    };
     document.getElementById('ecBtnCancel').onclick = () => { overlay.remove(); resolve(null); };
     overlay.addEventListener('click', e => { if(e.target === overlay) { overlay.remove(); resolve(null); } });
   });
