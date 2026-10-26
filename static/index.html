@@ -14,8 +14,10 @@ body{background:#0b0e14;color:#e5e7eb;min-height:100vh;}
 .logo span{color:#46c8ff}
 .header-stats{display:flex;gap:20px;font-size:13px;color:#9ca3af;}
 .stat b{color:#fff;font-size:16px;display:block}
-.main{max-width:1300px;margin:0 auto;padding:24px;}
-.toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:12px;position:sticky;top:115px;z-index:98;background:#0b0e14;padding:10px 0;border-bottom:1px solid #1e2535;margin-top:-10px;}
+.main{max-width:100%;margin:0 auto;padding:16px 24px;}
+.toolbar{display:flex;flex-direction:column;gap:10px;margin-bottom:16px;background:#0b0e14;padding:6px 0 12px 0;border-bottom:1px solid #1e2535;}
+.toolbar-row-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;width:100%;}
+.toolbar-row-settings{display:flex;gap:12px;align-items:center;flex-wrap:wrap;background:#111827;border:1px solid #1e293b;padding:6px 14px;border-radius:8px;}
 .btn{border:none;cursor:pointer;padding:10px 18px;border-radius:10px;font-weight:600;font-size:13px;transition:0.2s;display:inline-flex;align-items:center;gap:6px;}
 .btn-primary{background:linear-gradient(135deg,#6d5dfc,#46c8ff);color:#fff;}
 .btn-primary:hover{transform:translateY(-1px);}
@@ -34,14 +36,17 @@ body{background:#0b0e14;color:#e5e7eb;min-height:100vh;}
 }
 .btn-purple{background:#8b5cf6;color:#fff;}
 .btn-blue{background:#3b82f6;color:#fff;}
-.search-box{background:#151a27;border:1px solid #242e44;border-radius:10px;padding:10px 14px;color:#fff;width:340px;outline:none;}
+.search-box{background:#151a27;border:1px solid #242e44;border-radius:8px;padding:8px 12px;color:#fff;width:260px;outline:none;font-size:12px;}
 .search-box:focus{border-color:#6d5dfc;}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:16px;}
-.card{background:#151a27;border:1px solid #212a3d;border-radius:16px;padding:16px;transition:0.2s;}
+.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;}
+@media (max-width:1280px){.grid{grid-template-columns:repeat(3,minmax(0,1fr));}}
+@media (max-width:860px){.grid{grid-template-columns:repeat(2,minmax(0,1fr));}}
+@media (max-width:540px){.grid{grid-template-columns:1fr;}}
+.card{background:#151a27;border:1px solid #212a3d;border-radius:14px;padding:12px;transition:0.2s;}
 .card.running{border-color:#10b981;box-shadow:0 0 0 1px rgba(16,185,129,0.2);}
 .card.bundle-profile{border:2px solid #eab308 !important;box-shadow:0 0 14px rgba(234,179,8,0.28) !important;}
 .card-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;}
-.card-title{font-weight:700;font-size:14px;display:flex;align-items:center;gap:8px;}
+.card-title{font-weight:700;font-size:13px;display:flex;align-items:center;gap:6px;}
 .dot{width:8px;height:8px;border-radius:50%;background:#3f4553;}
 .dot.running{background:#10b981;box-shadow:0 0 8px #10b981;animation:pulse 2s infinite;}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
@@ -178,15 +183,13 @@ body{background:#0b0e14;color:#e5e7eb;min-height:100vh;}
   <!-- TAB: PROFILES -->
   <div id="tab-profiles" class="tab-content active">
   <div class="toolbar">
-    <div style="display:flex;gap:10px;align-items:center;">
-      <button class="btn btn-primary" onclick="openModal()">+ Tao Profile Moi (Chrome moi hoan toan)</button>
-      <div style="display:flex;align-items:center;gap:6px;border:1px solid #0ea5e9;padding:6px 10px;border-radius:8px;background:#082f49;">
-        <input type="checkbox" id="globalKeepChrome" onchange="localStorage.setItem('globalKeepChrome', this.checked)" style="cursor:pointer;">
-        <label for="globalKeepChrome" style="font-size:12px;cursor:pointer;color:#7dd3fc;font-weight:bold;margin:0;" title="Bật: sau khi Check Free Gen xong Chrome vẫn giữ nguyên để bạn tự đóng">Giữ Chrome</label>
-      </div>
+    <!-- HÀNG 1: CÁC NÚT THAO TÁC CHÍNH & TÌM KIẾM -->
+    <div class="toolbar-row-actions">
+      <button class="btn btn-primary" onclick="openModal()">+ Tạo Profile Mới</button>
+      
       <div style="position:relative;display:inline-block;" id="exportCookieDropdownWrap">
-        <button class="btn btn-ghost" onclick="toggleExportDropdown()" id="exportCookieMainBtn">🍪 Xuất Cookie ▾</button>
-        <div id="exportCookieDropdown" style="display:none;position:absolute;top:calc(100% + 4px);left:0;background:#1e293b;border:1px solid #334155;border-radius:8px;min-width:180px;z-index:999;box-shadow:0 8px 24px rgba(0,0,0,0.5);">
+        <button class="btn btn-ghost" onclick="toggleExportDropdown()" id="exportCookieMainBtn">📤 Xuất Profile ▾</button>
+        <div id="exportCookieDropdown" style="display:none;position:absolute;top:calc(100% + 4px);left:0;background:#1e293b;border:1px solid #334155;border-radius:8px;min-width:190px;z-index:999;box-shadow:0 8px 24px rgba(0,0,0,0.5);">
           <div onclick="exportAllCookies(document.getElementById('exportCookieMainBtn'), 'file'); toggleExportDropdown()" style="padding:10px 16px;cursor:pointer;color:#e2e8f0;font-size:13px;" onmouseover="this.style.background='#334155'" onmouseout="this.style.background=''">
             🍪 Xuất Cookie Tất Cả
           </div>
@@ -201,56 +204,75 @@ body{background:#0b0e14;color:#e5e7eb;min-height:100vh;}
           </div>
         </div>
       </div>
+
       <button class="btn btn-ghost" onclick="openImportBundleModal()" style="background:#0c2340; border:1px solid #1d4ed8; color:#93c5fd;">📥 Nhập Cookie Bundle</button>
-      <button class="btn btn-ghost" onclick="triggerImportLiteSession()" style="background:#3b0764; border:1px solid #a855f7; color:#f3e8ff; font-weight:bold;" title="Nhập file ZIP Lite Session từ máy khác sang (bung LocalStorage & IndexedDB giữ nguyên phiên đăng nhập)">📦 Nhập Lite Session (.zip)</button>
+      <button class="btn btn-ghost" onclick="triggerImportLiteSession()" style="background:#3b0764; border:1px solid #a855f7; color:#f3e8ff; font-weight:bold;" title="Nhập file ZIP Lite Session từ máy khác sang (giữ nguyên phiên đăng nhập)">📦 Nhập Lite Session (.zip)</button>
       <input type="file" id="liteSessionFileInput" accept=".zip" style="display:none;" onchange="handleLiteSessionFile(event)">
       <button class="btn btn-ghost" onclick="openBulkDeleteModal()" style="background:#450a0a; border:1px solid #dc2626; color:#fca5a5;">🗑️ Xóa Hàng Loạt</button>
       <button class="btn btn-ghost" onclick="manageExtensions(null)" style="background:#0f172a; border: 1px solid #475569;">🧩 Tiện Ích</button>
+      <button class="btn btn-ghost" onclick="openBatchCheckFreeGenModal()" style="border:1px solid #10b981; color:#10b981; font-weight: bold; background: rgba(16,185,129,0.1);">🔍 Check Free Gen</button>
 
-      <div style="display:flex; align-items:center; gap:8px; margin-left: 20px; border: 1px solid #334155; padding: 6px 12px; border-radius: 8px; background: #1e293b; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
-        <input type="checkbox" id="globalEnableExt" onchange="localStorage.setItem('globalEnableExt', this.checked)">
-        <label for="globalEnableExt" style="font-size:13px; cursor:pointer; color:#f8fafc; font-weight:bold; margin:0;" title="Bật: Sẽ tự động nạp các tiện ích mở rộng vào Chrome khi khởi chạy">Bật Tiện Ích</label>
+      <div style="margin-left:auto; display:flex; align-items:center;">
+        <input id="searchInput" class="search-box" placeholder="🔍 Tìm tên, proxy, OS..." oninput="filterProfiles()">
+      </div>
+    </div>
+
+    <!-- HÀNG 2: CÁC CÀI ĐẶT TỰ ĐỘNG & ENGINE TRÌNH DUYỆT -->
+    <div class="toolbar-row-settings">
+      <div style="display:flex; align-items:center; gap:6px; cursor:pointer;" onclick="const chk=document.getElementById('globalEnableExt'); chk.checked=!chk.checked; localStorage.setItem('globalEnableExt', chk.checked);">
+        <input type="checkbox" id="globalEnableExt" onchange="localStorage.setItem('globalEnableExt', this.checked)" onclick="event.stopPropagation();" style="cursor:pointer;">
+        <label for="globalEnableExt" style="font-size:12px; cursor:pointer; color:#cbd5e1; font-weight:600; margin:0;" title="Bật: Sẽ tự động nạp các tiện ích mở rộng vào Chrome khi khởi chạy">🧩 Bật Tiện Ích</label>
       </div>
 
-      <div style="display:flex; align-items:center; gap:8px; margin-left: 8px; border: 1px solid #334155; padding: 6px 12px; border-radius: 8px; background: #1e293b; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
-        <input type="checkbox" id="globalAutoFp" onchange="localStorage.setItem('globalAutoFp', this.checked)">
-        <label for="globalAutoFp" style="font-size:13px; cursor:pointer; color:#46c8ff; font-weight:bold; margin:0;" title="Bật cái này: Mỗi lần bấm Mở Chrome của bất kỳ Profile nào sẽ TỰ ĐỘNG random lại vân tay mới toanh (như ấn nút Random FP)">Auto Random FP khi mở Chrome</label>
+      <span style="color:#334155;">|</span>
+
+      <div style="display:flex; align-items:center; gap:6px; cursor:pointer;" onclick="const chk=document.getElementById('globalAutoFp'); chk.checked=!chk.checked; localStorage.setItem('globalAutoFp', chk.checked);">
+        <input type="checkbox" id="globalAutoFp" onchange="localStorage.setItem('globalAutoFp', this.checked)" onclick="event.stopPropagation();" style="cursor:pointer;">
+        <label for="globalAutoFp" style="font-size:12px; cursor:pointer; color:#38bdf8; font-weight:600; margin:0;" title="Bật cái này: Mỗi lần bấm Mở Chrome sẽ TỰ ĐỘNG random lại vân tay mới toanh">🎲 Auto Random FP</label>
       </div>
 
+      <span style="color:#334155;">|</span>
 
-      <div style="display:flex; align-items:center; gap:8px; margin-left: 8px; border: 1px solid #065f46; padding: 6px 12px; border-radius: 8px; background: #052e16; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
-        <input type="checkbox" id="globalAutoSignup" onchange="localStorage.setItem('globalAutoSignup', this.checked)">
-        <label for="globalAutoSignup" style="font-size:13px; cursor:pointer; color:#34d399; font-weight:bold; margin:0;" title="Bật: Sau khi mở Chrome xong sẽ TỰ ĐỘNG chạy Tạo acc + login ngay lập tức (không cần bấm tay)">🤖 Auto Tạo Acc</label>
+      <div style="display:flex; align-items:center; gap:6px; cursor:pointer;" onclick="const chk=document.getElementById('globalAutoSignup'); chk.checked=!chk.checked; localStorage.setItem('globalAutoSignup', chk.checked);">
+        <input type="checkbox" id="globalAutoSignup" onchange="localStorage.setItem('globalAutoSignup', this.checked)" onclick="event.stopPropagation();" style="cursor:pointer;">
+        <label for="globalAutoSignup" style="font-size:12px; cursor:pointer; color:#34d399; font-weight:600; margin:0;" title="Bật: Sau khi mở Chrome xong sẽ TỰ ĐỘNG chạy Tạo acc + login ngay lập tức">🤖 Auto Tạo Acc</label>
       </div>
 
-      <div style="display:flex; align-items:center; gap:8px; margin-left: 8px; border: 1px solid #7c3aed; padding: 6px 12px; border-radius: 8px; background: #2e1065; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
-        <input type="checkbox" id="globalSequentialSignup" onchange="localStorage.setItem('globalSequentialSignup', this.checked); updateSignup1v1UI();" style="cursor:pointer;accent-color:#a855f7;">
-        <label for="globalSequentialSignup" style="font-size:13px; cursor:pointer; color:#c084fc; font-weight:bold; margin:0;" title="Bật: Chỉ tạo 1 acc duy nhất 1 thời điểm. Các profile bấm sau sẽ đổi màu tím chờ đợi và tự động chạy lần lượt khi profile trước hoàn tất hoặc đóng Chrome.">⚡ Tạo 1:1</label>
+      <span style="color:#334155;">|</span>
+
+      <div style="display:flex; align-items:center; gap:6px; cursor:pointer;" onclick="const chk=document.getElementById('globalSequentialSignup'); chk.checked=!chk.checked; localStorage.setItem('globalSequentialSignup', chk.checked); updateSignup1v1UI();">
+        <input type="checkbox" id="globalSequentialSignup" onchange="localStorage.setItem('globalSequentialSignup', this.checked); updateSignup1v1UI();" onclick="event.stopPropagation();" style="cursor:pointer;accent-color:#a855f7;">
+        <label for="globalSequentialSignup" style="font-size:12px; cursor:pointer; color:#c084fc; font-weight:600; margin:0;" title="Bật: Chỉ tạo 1 acc duy nhất 1 thời điểm. Các thẻ bấm sau sẽ đổi màu tím chờ đợi và chạy tuần tự.">⚡ Tạo 1:1</label>
       </div>
-      <div style="display:flex; align-items:center; gap: 4px; background:#0f172a; padding:6px 12px; border-radius:6px; border:1px solid #334155;">
-        <label for="globalBrowserEngine" style="font-size:13px; cursor:pointer; color:#facc15; font-weight:bold; margin:0;" title="Chọn nhân trình duyệt">Trình duyệt:</label>
-        <select id="globalBrowserEngine" onchange="localStorage.setItem('globalBrowserEngine', this.value)" style="background:#1e293b; color:#fff; border:1px solid #334155; border-radius:4px; font-size:12px; padding:2px 4px; outline:none;">
+
+      <span style="color:#334155;">|</span>
+
+      <div style="display:flex; align-items:center; gap:6px;">
+        <label for="globalBrowserEngine" style="font-size:12px; color:#facc15; font-weight:600; margin:0;" title="Chọn nhân trình duyệt">Trình duyệt:</label>
+        <select id="globalBrowserEngine" onchange="localStorage.setItem('globalBrowserEngine', this.value)" style="background:#1e293b; color:#fff; border:1px solid #334155; border-radius:4px; font-size:11px; padding:3px 6px; outline:none; cursor:pointer;">
           <option value="cloakbrowser">CloakBrowser</option>
           <option value="chrome">Chrome + Extension (v136)</option>
         </select>
       </div>
 
-      <div style="display:flex; align-items:center; gap: 4px; background:#0f172a; padding:6px 12px; border-radius:6px; border:1px solid #334155; margin-left: 8px;">
-        <label for="globalProcessingTimeout" style="font-size:13px; cursor:pointer; color:#fb923c; font-weight:bold; margin:0;" title="Thời gian chờ tối đa ở trạng thái Processing trước khi tự động Cancel + Gen lại (tính bằng giây)">⏳ Processing (s):</label>
-        <input type="number" id="globalProcessingTimeout" value="120" style="background:#1e293b; color:#fff; border:1px solid #334155; border-radius:4px; font-size:12px; padding:2px 4px; outline:none; width: 60px;" onchange="localStorage.setItem('globalProcessingTimeout', this.value)">
-      </div>
+      <span style="color:#334155;">|</span>
 
-      <button class="btn btn-ghost" onclick="openBatchCheckFreeGenModal()" style="border:1px solid #10b981; color:#10b981; margin-left: 8px; font-weight: bold;">🔍 Check Free Gen</button>
+      <div style="display:flex; align-items:center; gap:6px;">
+        <label for="globalProcessingTimeout" style="font-size:12px; color:#fb923c; font-weight:600; margin:0;" title="Thời gian chờ tối đa ở trạng thái Processing (tính bằng giây)">⏳ Processing (s):</label>
+        <input type="number" id="globalProcessingTimeout" value="120" style="background:#1e293b; color:#fff; border:1px solid #334155; border-radius:4px; font-size:11px; padding:3px 6px; outline:none; width:55px;" onchange="localStorage.setItem('globalProcessingTimeout', this.value)">
+      </div>
     </div>
-    <input id="searchInput" class="search-box" placeholder="🔍 Tim ten, proxy, OS..." oninput="filterProfiles()">
-    <div id="profileTagFilters" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;">
+
+    <!-- HÀNG 3: BỘ LỌC THEO TAGS -->
+    <div id="profileTagFilters" style="display:flex;flex-wrap:wrap;gap:6px;">
       <button class="btn btn-sm btn-primary profile-tag-btn" data-tag="all" onclick="setProfileTag('all')">Tất cả</button>
       <button class="btn btn-sm btn-ghost profile-tag-btn" data-tag="free720" onclick="setProfileTag('free720')">🟢 Free gen 720p</button>
       <button class="btn btn-sm btn-ghost profile-tag-btn" data-tag="free480" onclick="setProfileTag('free480')">🔵 Free gen 480p</button>
       <button class="btn btn-sm btn-ghost profile-tag-btn" data-tag="notfree" onclick="setProfileTag('notfree')">🟠 Không free</button>
       <button class="btn btn-sm btn-ghost profile-tag-btn" data-tag="done" onclick="setProfileTag('done')">✅ Đã ra video</button>
       <button class="btn btn-sm btn-ghost profile-tag-btn" data-tag="other" onclick="setProfileTag('other')">⚪ Khác</button>
-  </div>
+    </div>
+  </div> <!-- end toolbar -->
 
   <div id="signup1v1QueueStatus" style="display:none;margin:10px 0;background:#2e1065;border:1px solid #a855f7;border-radius:8px;padding:8px 16px;font-size:13px;color:#e9d5ff;align-items:center;justify-content:space-between;"></div>
 
@@ -777,7 +799,7 @@ function renderProfiles(profiles){
       ${renderProfileBadge(p)}
       ${isBundle ? `<div style="position:absolute;bottom:0;right:0;background:#eab308;color:#000;font-size:9px;font-weight:900;padding:2px 8px;border-top-left-radius:6px;z-index:5;letter-spacing:0.5px;">📦 BUNDLE</div>` : ''}
       <div class="card-header" ondblclick="editProfileName('${p.id}', '${esc(p.name)}', this.querySelector('.card-title'))" title="Ấn đúp vào vùng này để đổi tên" style="cursor: pointer;">
-        <div class="card-title" style="font-size: 18px; font-weight: bold; display:flex; align-items:center;">
+        <div class="card-title" style="font-size: 13px; font-weight: bold; display:flex; align-items:center;">
           <span class="dot ${running?'running':''}"></span>
           ${accountDot}
           <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(p.name)}</span>
@@ -833,7 +855,7 @@ function editProfileName(id, currentName, element) {
   input.style.color = "#fff";
   input.style.border = "none";
   input.style.outline = "none";
-  input.style.fontSize = "18px";
+  input.style.fontSize = "13px";
   input.style.fontWeight = "bold";
   input.style.padding = "0";
   input.style.margin = "0";
@@ -3659,10 +3681,6 @@ document.addEventListener('DOMContentLoaded', () => {
   if(localStorage.getItem('globalProcessingTimeout')) {
       const el = document.getElementById('globalProcessingTimeout');
       if (el) el.value = localStorage.getItem('globalProcessingTimeout');
-  }
-  if(localStorage.getItem('globalKeepChrome') === 'true') {
-      const el = document.getElementById('globalKeepChrome');
-      if (el) el.checked = true;
   }
   if(localStorage.getItem('globalEnableExt') === 'true') {
       const el = document.getElementById('globalEnableExt');
