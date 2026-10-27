@@ -1555,15 +1555,19 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                                 print("Clicked 'Continue with Microsoft'!")
                         except Exception as e:
                             if not _is_microsoft_auth_url(page.url):
-                                keep_open = True
-                                signup_options["keep_open"] = True
+                                if signup_options.get("manual_open"):
+                                    keep_open = True
+                                    signup_options["keep_open"] = True
+                                else:
+                                    keep_open = False
+                                    signup_options["keep_open"] = False
                                 live_profile = manager.get_profile(profile_id)
                                 if live_profile:
                                     if hasattr(manager, "update_notes"):
                                         manager.update_notes(profile_id, "⚠️ Cần đăng nhập thủ công")
                                     live_profile.notes = "⚠️ Cần đăng nhập thủ công"
                                     manager._save()
-                                print(f"Login entry did not reach Microsoft sign-in: {e}; keeping Chrome open.")
+                                print(f"Login entry did not reach Microsoft sign-in: {e}; {'giữ Chrome mở' if signup_options.get('manual_open') else 'đóng Chrome theo luồng tự động'}.")
                                 return
                     else:
                         print(f"Trang hiện tại đã ở Microsoft sign-in ({page.url}), tiếp tục đăng nhập...")
@@ -1598,15 +1602,19 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                         )
                     )
                     if not already_logged_in and not auth_transitioned:
-                        keep_open = True
-                        signup_options["keep_open"] = True
+                        if signup_options.get("manual_open"):
+                            keep_open = True
+                            signup_options["keep_open"] = True
+                        else:
+                            keep_open = False
+                            signup_options["keep_open"] = False
                         live_profile = manager.get_profile(profile_id)
                         if live_profile:
                             if hasattr(manager, "update_notes"):
                                 manager.update_notes(profile_id, "⚠️ Cần đăng nhập thủ công")
                             live_profile.notes = "⚠️ Cần đăng nhập thủ công"
                             manager._save()
-                        print("Login chưa chuyển khỏi homepage sau khi bấm; giữ Chrome để đăng nhập thủ công.")
+                        print(f"Login chưa chuyển khỏi homepage sau khi bấm; {'giữ Chrome để đăng nhập thủ công' if signup_options.get('manual_open') else 'đóng Chrome theo luồng tự động'}.")
                         return
                     
                     if ms_email and ms_password:
@@ -1863,7 +1871,8 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                     if _click_microsoft_kmsi_yes(page):
                         print("Watchdog: Đã bấm 'Yes' tại trang Stay signed in sau khi tắt Security Key!")
                         return True
-                    keep_open = True
+                    if signup_options.get("manual_open"):
+                        keep_open = True
                     set_watchdog_note("⚠️ Xác minh bảo mật Microsoft")
                     try:
                         page.bring_to_front()
@@ -2191,7 +2200,8 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                                     pass
                             if (otp_input is not None or is_otp_stage) and recovery_code_requested:
                                 if recovery_email.lower().endswith("@fviainboxes.com"):
-                                    keep_open = True
+                                    if signup_options.get("manual_open"):
+                                        keep_open = True
                                     set_watchdog_note("📧 Đang lấy mã OTP từ fviainboxes.com...")
                                     try:
                                         web_code = read_code_in_fviainboxes_tab(
@@ -2210,7 +2220,8 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                                     return False
 
                                 if recovery_api_denied:
-                                    keep_open = True
+                                    if signup_options.get("manual_open"):
+                                        keep_open = True
                                     set_watchdog_note("⚠️ Xác minh OTP: smail1s chặn API")
                                     try:
                                         web_code = read_code_in_smail_tab(
@@ -2439,7 +2450,8 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                     if captcha_detected:
                         if not captcha_active:
                             captcha_active = True
-                            keep_open = True
+                            if signup_options.get("manual_open"):
+                                keep_open = True
                             set_watchdog_note("⚠️ Xác minh người")
                             try:
                                 page.bring_to_front()
@@ -2663,8 +2675,26 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                             pass
 
                         handle_quiz_step(page, quiz_state)
-                        if time.monotonic() - quiz_state.get("step_since", time.monotonic()) >= 90:
-                            print("Quiz: câu hỏi không chuyển sau 90 giây; giữ Chrome mở để kiểm tra và thử lại.")
+                        quiz_elapsed = time.monotonic() - quiz_state.get("step_since", time.monotonic())
+                        if quiz_elapsed >= 35 and not quiz_state.get("reloaded_once"):
+                            quiz_state["reloaded_once"] = True
+                            print("Quiz: câu hỏi chưa chuyển sau 35 giây; đang thử reload lại trang quiz...")
+                            try:
+                                page.reload(wait_until="domcontentloaded", timeout=20000)
+                                page.wait_for_timeout(2000)
+                            except Exception:
+                                pass
+                            continue
+
+                        if quiz_elapsed >= 90:
+                            if signup_options.get("manual_open"):
+                                print("Quiz: câu hỏi không chuyển sau 90 giây; giữ Chrome mở để kiểm tra và thử lại.")
+                            else:
+                                keep_open = False
+                                with _signup_lock:
+                                    signup_options["keep_open"] = False
+                                set_watchdog_note("⚠️ Treo Quiz quá 90s")
+                                print("Quiz: câu hỏi không chuyển sau 90 giây; đóng Chrome để tránh treo profile.")
                             return
                         continue
 
@@ -3049,13 +3079,19 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                             continue
 
                 if captcha_active:
-                    keep_open = True
-                    set_watchdog_note("⚠️ Xác minh người")
+                    if signup_options.get("manual_open"):
+                        keep_open = True
+                        print("Watchdog: hết thời gian chờ Cloudflare; giữ Chrome mở để người dùng xác minh.")
+                    else:
+                        keep_open = False
+                        with _signup_lock:
+                            signup_options["keep_open"] = False
+                        print("Watchdog: hết thời gian chờ Cloudflare; đóng Chrome để tránh treo profile.")
+                    set_watchdog_note("⚠️ Hết giờ chờ xác minh người" if not signup_options.get("manual_open") else "⚠️ Xác minh người")
                     try:
                         page.bring_to_front()
                     except Exception:
                         pass
-                    print("Watchdog: hết thời gian chờ Cloudflare; giữ Chrome mở để người dùng xác minh.")
                     return
 
                 restore_watchdog_note()
@@ -3091,12 +3127,10 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
         finally:
             if signup_options.get("manual_open"):
                 keep_open = True
-            elif check_completed or login_state is True:
-                # Đã đăng nhập vào trang video rồi thì đóng Chrome theo keep_open, không giữ mở khi có lỗi check
+            else:
+                # Luồng tự động: luôn đóng Chrome khi gặp lỗi, timeout hoặc check xong
                 with _signup_lock:
                     keep_open = signup_options.get("keep_open", False)
-            else:
-                keep_open = True
 
             try:
                 if not keep_open or (not check_completed and not signup_options.get("manual_open")):
@@ -3106,7 +3140,10 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                 if not keep_open:
                     close_result = close_profile(profile.id)
                     if close_result.get("status") == "closed":
-                        print(f"Đã đóng Chrome cho profile {profile.name} sau khi hoàn tất cập nhật.")
+                        if check_completed or login_state is True:
+                            print(f"Đã đóng Chrome cho profile {profile.name} sau khi hoàn tất cập nhật.")
+                        else:
+                            print(f"Đã đóng Chrome cho profile {profile.name} sau khi dừng luồng tự động.")
                     elif close_result.get("status") == "not_running":
                         print(f"Chrome cho profile {profile.name} đã đóng trước đó.")
                     else:

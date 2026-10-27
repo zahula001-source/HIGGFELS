@@ -416,7 +416,7 @@ class SignupBrowserCloseTests(unittest.TestCase):
         self.assertEqual(self.profile.notes, "⚠️ Cần đăng nhập thủ công")
         self.manager._save.assert_called_once()
         self.assertIn("Microsoft sign-in option did not appear", self.output.getvalue())
-        self.close_profile.assert_not_called()
+        self.close_profile.assert_called_once_with(self.profile.id)
         self.playwright.stop.assert_called_once()
 
     def test_manual_open_checks_once_and_keeps_chrome(self):
@@ -586,7 +586,7 @@ class SignupBrowserCloseTests(unittest.TestCase):
         self.start_signup(keep_open=False)
         self.run_worker()
         self.assertEqual(self.page.goto.call_count, 3)
-        self.close_profile.assert_not_called()
+        self.close_profile.assert_called_once_with(self.profile.id)
         self.api.read_free_gens.assert_not_called()
         self.assertEqual(self.profile.notes, 'existing tag')
         self.playwright.stop.assert_called_once()
@@ -607,7 +607,7 @@ class SignupBrowserCloseTests(unittest.TestCase):
         self.profile.notes = 'existing tag'
         self.start_signup(keep_open=False)
         self.run_worker()
-        self.close_profile.assert_not_called()
+        self.close_profile.assert_called_once_with(self.profile.id)
         self.api.read_free_gens.assert_not_called()
         self.assertNotIn('sau khi hoàn tất cập nhật', self.output.getvalue())
 
