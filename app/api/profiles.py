@@ -31,6 +31,7 @@ from app.services.microsoft_recovery import (
     read_code_in_fviainboxes_tab,
     parse_microsoft_account,
     fill_and_submit_otp,
+    click_human_like,
 )
 from app.services.higgsfield_login import (
     video_login_state,
@@ -1831,6 +1832,7 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                 recovery_api_denied = False
                 recovery_last_web_code = ""
                 use_password_last_click = 0.0
+                verify_error_human_clicks = 0
                 original_profile_note = getattr(profile, "notes", "") or ""
 
                 def set_watchdog_note(note):
@@ -1879,7 +1881,7 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                     nonlocal recovery_known_uids, recovery_baseline_ready
                     nonlocal recovery_code_requested, recovery_last_poll
                     nonlocal recovery_api_denied, recovery_last_web_code, keep_open
-                    nonlocal use_password_last_click
+                    nonlocal use_password_last_click, verify_error_human_clicks
                     if not ms_email or not ms_password:
                         return False
                     try:
@@ -2170,8 +2172,21 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                                             or "hết hạn" in error_text
                                             or "không đúng" in error_text
                                         ):
-                                            recovery_code_requested = True
-                                            print("Watchdog: Microsoft rejected OTP; refreshing mailbox")
+                                            next_btn = first_visible(
+                                                '#iVerifyCodeAction, input#iVerifyCodeAction, input[value="Next"], '
+                                                'button:has-text("Next"), #idSubmit_SAOTCC_Continue, '
+                                                'button[data-testid="primaryButton"], input[type="submit"]'
+                                            )
+                                            if next_btn is not None and verify_error_human_clicks < 3:
+                                                verify_error_human_clicks += 1
+                                                print(f"Watchdog: Thấy cảnh báo 'That code didn't work' (#iVerifyCodeError) -> bấm nút Next (#iVerifyCodeAction) như người thật (lần {verify_error_human_clicks}/3)...")
+                                                click_human_like(page, next_btn)
+                                                page.wait_for_timeout(1500)
+                                                return True
+                                            else:
+                                                recovery_code_requested = True
+                                                verify_error_human_clicks = 0
+                                                print("Watchdog: Microsoft rejected OTP after human click attempts; refreshing mailbox")
                                 except Exception:
                                     pass
                             if (otp_input is not None or is_otp_stage) and recovery_code_requested:

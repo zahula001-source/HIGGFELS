@@ -351,6 +351,126 @@ def click_use_password(page) -> bool:
     return False
 
 
+def click_human_like(page, target) -> bool:
+    """Mô phỏng click chuột như người thật:
+    - Blur phần tử đang focus để kích hoạt xác thực giá trị (tránh lỗi 'That code didn't work')
+    - Cuộn phần tử vào màn hình (scroll_into_view_if_needed)
+    - Di chuyển chuột từ từ đến tâm nút (page.mouse.move)
+    - Hover phần tử (element.hover)
+    - Giữ chuột (page.mouse.down -> sleep 80ms -> page.mouse.up)
+    - Playwright click với delay
+    - JavaScript dispatch đầy đủ chuỗi sự kiện chuột
+    """
+    if target is None:
+        return False
+    try:
+        # Blur phần tử đang focus để kích hoạt sự kiện change/blur của Microsoft
+        try:
+            if hasattr(page, "evaluate"):
+                page.evaluate("() => { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); }")
+        except Exception:
+            pass
+
+        if isinstance(target, str):
+            loc = page.locator(target) if hasattr(page, "locator") else None
+            if loc is None or (hasattr(loc, "count") and loc.count() == 0):
+                return False
+            elem = loc.first if hasattr(loc, "first") else loc
+        else:
+            elem = target
+
+        if hasattr(elem, "is_visible") and not elem.is_visible(timeout=500):
+            return False
+
+        # 1. Scroll vào tầm nhìn
+        if hasattr(elem, "scroll_into_view_if_needed"):
+            try:
+                elem.scroll_into_view_if_needed(timeout=1000)
+            except Exception:
+                pass
+
+        # 2. Lấy tọa độ bounding box và di chuyển chuột đến nút
+        box = None
+        if hasattr(elem, "bounding_box"):
+            try:
+                b = elem.bounding_box()
+                if isinstance(b, dict):
+                    box = b
+            except Exception:
+                box = None
+
+        if box and hasattr(page, "mouse"):
+            target_x = box.get("x", 0) + box.get("width", 0) / 2
+            target_y = box.get("y", 0) + box.get("height", 0) / 2
+            try:
+                page.mouse.move(target_x, target_y, steps=5)
+                if hasattr(page, "wait_for_timeout"):
+                    page.wait_for_timeout(80)
+            except Exception:
+                pass
+
+        # 3. Hover vào nút
+        if hasattr(elem, "hover"):
+            try:
+                elem.hover(timeout=1000)
+                if hasattr(page, "wait_for_timeout"):
+                    page.wait_for_timeout(80)
+            except Exception:
+                pass
+
+        # 4. Nhấn giữ chuột như người thật (mousedown -> wait 80ms -> mouseup)
+        if box and hasattr(page, "mouse"):
+            try:
+                page.mouse.down()
+                if hasattr(page, "wait_for_timeout"):
+                    page.wait_for_timeout(80)
+                page.mouse.up()
+                if hasattr(page, "wait_for_timeout"):
+                    page.wait_for_timeout(50)
+            except Exception:
+                pass
+
+        # 5. Playwright click
+        clicked = False
+        if hasattr(elem, "click"):
+            try:
+                elem.click(timeout=3000)
+                clicked = True
+            except TypeError:
+                try:
+                    elem.click()
+                    clicked = True
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
+        # 6. JavaScript dispatch chuỗi sự kiện chuột đầy đủ
+        if hasattr(elem, "evaluate"):
+            try:
+                elem.evaluate(r"""(btn) => {
+                    if (!btn) return;
+                    btn.focus();
+                    const opts = { bubbles: true, cancelable: true, view: window };
+                    btn.dispatchEvent(new MouseEvent('mouseenter', opts));
+                    btn.dispatchEvent(new MouseEvent('mouseover', opts));
+                    btn.dispatchEvent(new MouseEvent('mousedown', opts));
+                    btn.dispatchEvent(new MouseEvent('mouseup', opts));
+                    btn.dispatchEvent(new MouseEvent('click', opts));
+                    if (btn.form) {
+                        try { btn.form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); } catch(e){}
+                    }
+                }""")
+                clicked = True
+            except Exception:
+                pass
+
+        return clicked
+    except Exception as e:
+        print(f"click_human_like error: {e}")
+        return False
+
+
 def fill_and_submit_otp(page, otp_code: str, first_visible_func=None) -> bool:
     """Điền mã OTP vào trang Microsoft (hỗ trợ cả ô đơn lẻ và nhiều ô rời rạc Fluent UI: codeEntry-0..5)
     và bấm nút xác nhận / Tiếp theo hoặc Enter.
@@ -518,8 +638,10 @@ def fill_and_submit_otp(page, otp_code: str, first_visible_func=None) -> bool:
                 except Exception:
                     is_en = True
             if is_en:
-                submit_button.click(timeout=3000)
-                submitted = True
+                submitted = click_human_like(page, submit_button)
+                if not submitted and hasattr(submit_button, "click"):
+                    submit_button.click(timeout=3000)
+                    submitted = True
                 print("Watchdog: clicked submit button for OTP")
         except Exception as e:
             print(f"Watchdog: error clicking OTP submit button: {e}")
