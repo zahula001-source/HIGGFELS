@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from fastapi import APIRouter, HTTPException, Body, Request, Form
 from fastapi.responses import FileResponse, JSONResponse
 
-from app.core.state import pw_lock, video_tasks, video_tasks_chat, check_video_task_ids, MAX_RETRIES
+from app.core.state import pw_lock, video_tasks, video_tasks_chat, check_video_task_ids, MAX_RETRIES, save_video_tasks_cache
 from app.core.config import BASE_DIR, STATIC_DIR, DATA_DIR, PROFILES_FILE
 from app.models import ProfileCreate, LaunchRequest
 from app.manager import manager
@@ -30,12 +30,28 @@ def health():
 
 @router.get("/api/profiles/free")
 def get_free_profile():
+    now_ts = time.time()
+    running_pids = set(list_running().keys())
+    for tid, task in list(video_tasks.items()):
+        if isinstance(task, dict) and task.get("status") in ["running", "pending"]:
+            pid = task.get("params", {}).get("profile_id")
+            created_ts = task.get("created_at_ts", 0)
+            if pid and (now_ts - created_ts > 15) and (pid not in running_pids or not is_running(pid)):
+                task["status"] = "error"
+                task["message"] = "Đã dừng (Chrome không còn mở)"
+                save_video_tasks_cache()
+            elif not pid and (now_ts - created_ts > 15):
+                task["status"] = "error"
+                task["message"] = "Đã dừng"
+                save_video_tasks_cache()
+
     used_profiles = set()
     for task in video_tasks.values():
         if task.get("status") in ["running", "pending"]:
-            used_profiles.add(task.get("params", {}).get("profile_id"))
-    for p in list_running():
-        used_profiles.add(p["id"])
+            pid = task.get("params", {}).get("profile_id")
+            if pid and (pid in running_pids or is_running(pid)):
+                used_profiles.add(pid)
+    used_profiles.update(running_pids)
     
     all_profiles = manager.list_profiles()
     free_profiles = [p.id for p in all_profiles if p.id not in used_profiles]

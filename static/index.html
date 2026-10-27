@@ -134,7 +134,7 @@ body{background:#0b0e14;color:#e5e7eb;min-height:100vh;}
     <div style="display:flex; gap:6px; align-items:center;">
       <button class="tab-btn active" id="tabBtnProfiles" onclick="switchTab('profiles')">🖥️ Profiles</button>
       <button class="tab-btn" id="tabBtnVideo" onclick="switchTab('video')">🎬 Tạo Video (BFL.AI)</button>
-      <button id="addVideoBtn" onclick="addVideoForm()" style="display:none; align-items:center; justify-content:center; background:none; border:1px solid #10b981; color:#10b981; border-radius:6px; cursor:pointer; font-size:18px; line-height:1; width:28px; height:28px; transition:0.2s; padding:0;" onmouseover="this.style.background='#10b981';this.style.color='#fff'" onmouseout="this.style.background='none';this.style.color='#10b981'" title="Mở thẻ trống mới để điền">+</button>
+      <button id="addVideoBtn" onclick="addVideoForm(null, null, false)" style="display:none; align-items:center; justify-content:center; background:none; border:1px solid #10b981; color:#10b981; border-radius:6px; cursor:pointer; font-size:18px; line-height:1; width:28px; height:28px; transition:0.2s; padding:0;" onmouseover="this.style.background='#10b981';this.style.color='#fff'" onmouseout="this.style.background='none';this.style.color='#10b981'" title="Mở thẻ trống mới để điền">+</button>
 
       <button id="checkVideoBtn" onclick="openCheckVideoModal()" style="display:none; align-items:center; justify-content:center; background:none; border:1px solid #3b82f6; color:#3b82f6; border-radius:6px; cursor:pointer; font-size:12px; padding:0 8px; height:28px; transition:0.2s; margin-left:6px;" onmouseover="this.style.background='#3b82f6';this.style.color='#fff'" onmouseout="this.style.background='none';this.style.color='#3b82f6'" title="Kiểm tra trạng thái video của nhiều Profile">🔍 Check Video</button>
       <button id="stopCheckVideoBtn" onclick="stopAllCheckVideo()" style="display:none; align-items:center; justify-content:center; background:none; border:1px solid #ef4444; color:#ef4444; border-radius:6px; cursor:pointer; font-size:12px; padding:0 8px; height:28px; transition:0.2s; margin-left:4px;" onmouseover="this.style.background='#ef4444';this.style.color='#fff'" onmouseout="this.style.background='none';this.style.color='#ef4444'" title="Dừng tất cả tiến trình đang kiểm tra video">🛑 Dừng Check</button>
@@ -2574,19 +2574,12 @@ function switchTab(tab) {
   
   if (tab === "video") {
     if (document.getElementById("videoFormsContainer").children.length === 0) {
-      syncActiveVideoTasks();
+      resetToSingleEmptyCard();
     }
   }
 }
 
-function clearVideoForm() {
-  addVideoForm();
-}
-
-function clearAllVideoCards() {
-  if (!confirm("Bạn có chắc muốn dọn sạch tất cả các thẻ video và chỉ giữ lại 1 thẻ trống duy nhất không?")) {
-    return;
-  }
+async function resetToSingleEmptyCard() {
   if (typeof videoTimers === 'object') {
     Object.keys(videoTimers).forEach(fId => {
       try { cancelVideoTimer(fId, false); } catch(e){}
@@ -2597,14 +2590,28 @@ function clearAllVideoCards() {
       try { clearInterval(videoTaskPolls[fId]); delete videoTaskPolls[fId]; } catch(e){}
     });
   }
+  try {
+    fetch('/api/video/clear-stuck-tasks', { method: 'POST' }).catch(()=>{});
+  } catch(e){}
+
   const container = document.getElementById("videoFormsContainer");
   if (container) container.innerHTML = "";
   formCounter = 0;
-  addVideoForm();
   localStorage.removeItem("antidetect_video_state");
   stateHistory = [];
   historyIndex = -1;
-  setTimeout(() => { saveUIState(); }, 200);
+  await addVideoForm(1, null, false);
+}
+
+function clearVideoForm() {
+  addVideoForm(null, null, false);
+}
+
+function clearAllVideoCards() {
+  if (!confirm("Bạn có chắc muốn dọn sạch tất cả các thẻ video và chỉ giữ lại 1 thẻ trống duy nhất không?")) {
+    return;
+  }
+  resetToSingleEmptyCard();
 }
 
 let formCounter = 0;
@@ -2625,7 +2632,7 @@ function choosePreferredVideoProfile(profileIds, excludeIds = []) {
     .find(Boolean)?.id || '';
 }
 
-async function addVideoForm(force_fId = null, forceProfileId = null) {
+async function addVideoForm(force_fId = null, forceProfileId = null, autoSelect = false) {
   if (isAddingForm && force_fId === null) return;
   if (force_fId === null) isAddingForm = true;
   
@@ -2633,23 +2640,18 @@ async function addVideoForm(force_fId = null, forceProfileId = null) {
   const fId = force_fId || formCounter;
   
   try {
-    const res = await fetch('/api/profiles/free');
-    const data = await res.json();
-    const freeFromBackend = data.free_profiles || [];
-    
-    const usedInUI = Array.from(document.querySelectorAll("select[id^='videoProfileId_']"))
-      .map(s => s.value).filter(v => v);
-      
-    const trulyFree = freeFromBackend.filter(id => !usedInUI.includes(id));
-    
-    if (trulyFree.length === 0 && !forceProfileId) {
-      alert("Hết Profile Chrome rảnh! Vui lòng tạo thêm Profile trước khi mở thẻ mới!");
-      if (force_fId === null) {
-          formCounter--;
-          isAddingForm = false;
+    let trulyFree = [];
+    let usedInUI = [];
+    try {
+      const res = await fetch('/api/profiles/free');
+      if (res.ok) {
+        const data = await res.json();
+        const freeFromBackend = data.free_profiles || [];
+        usedInUI = Array.from(document.querySelectorAll("select[id^='videoProfileId_']"))
+          .map(s => s.value).filter(v => v);
+        trulyFree = freeFromBackend.filter(id => !usedInUI.includes(id));
       }
-      return;
-    }
+    } catch(e) {}
     
     const html = `
       <div id="vform_${fId}" style="background:#151a27;border:1px solid #212a3d;border-radius:14px;padding:16px;position:relative;">
@@ -2673,7 +2675,7 @@ async function addVideoForm(force_fId = null, forceProfileId = null) {
               <button class="btn btn-ghost" style="height:40px;padding:0 8px;font-size:11px;font-weight:bold;border:1px solid #46c8ff;color:#46c8ff;" onclick="reloadChromeTab(${fId})" title="Tải lại trang">
                 🔄 Load
               </button>
-              <button class="btn btn-ghost" style="height:40px;padding:0 8px;font-size:11px;font-weight:bold;border:1px solid #10b981;color:#10b981;" onclick="let p = document.getElementById('videoProfileId_'+${fId}).value; if(p) launchProfile(p, true); else alert('Chọn Profile trước!');" title="Mở Chrome thủ công">
+              <button class="btn btn-ghost" style="height:40px;padding:0 8px;font-size:11px;font-weight:bold;border:1px solid #10b981;color:#10b981;" onclick="let p = document.getElementById('videoProfileId_'+${fId}).value; if(p) { addRecentProfile(p); launchProfile(p, true); } else alert('Chọn Profile trước!');" title="Mở Chrome thủ công">
                 🌐 Mở Chrome
               </button>
               <button class="btn btn-ghost" style="height:40px;padding:0 8px;font-size:11px;font-weight:bold;border:1px solid #eab308;color:#eab308;" onclick="submitCheckVideoForFid(${fId})" title="Kiểm tra trạng thái Video">
@@ -2839,8 +2841,13 @@ async function addVideoForm(force_fId = null, forceProfileId = null) {
         if (forceProfileId) {
             sel.value = forceProfileId;
             updateVideoCardTitle(fId, sel);
-        } else if (trulyFree.length > 0) {
+            addRecentProfile(forceProfileId);
+        } else if (autoSelect && trulyFree.length > 0) {
             sel.value = choosePreferredVideoProfile(trulyFree, usedInUI);
+            updateVideoCardTitle(fId, sel);
+            if (sel.value) addRecentProfile(sel.value);
+        } else {
+            sel.value = "";
             updateVideoCardTitle(fId, sel);
         }
         if (sel) sel.dataset.previousValue = sel.value;
@@ -2965,6 +2972,26 @@ function categorizeProfile(p) {
   };
 }
 
+function getRecentProfileIds() {
+  try {
+    const raw = localStorage.getItem("antidetect_recent_profiles");
+    const list = JSON.parse(raw);
+    return Array.isArray(list) ? list : [];
+  } catch(e) {
+    return [];
+  }
+}
+
+function addRecentProfile(profileId) {
+  if (!profileId) return;
+  try {
+    let list = getRecentProfileIds().filter(id => id !== profileId);
+    list.unshift(profileId);
+    if (list.length > 20) list = list.slice(0, 20);
+    localStorage.setItem("antidetect_recent_profiles", JSON.stringify(list));
+  } catch(e) {}
+}
+
 function populateVideoProfiles() {
   const selects = document.querySelectorAll("select[id^='videoProfileId_']");
   if (!selects.length) return;
@@ -3045,6 +3072,41 @@ function populateVideoProfiles() {
       optionsHtml += `</optgroup>`;
     });
 
+    // Cụm tài khoản vừa dùng gần nhất ở cuối danh sách dropdown
+    const recentIds = getRecentProfileIds();
+    const recentProfiles = [];
+    recentIds.forEach(rid => {
+      const p = (allProfiles || []).find(x => x.id === rid);
+      if (p) recentProfiles.push(p);
+    });
+
+    if (recentProfiles.length > 0) {
+      optionsHtml += `<optgroup label="────── 🕒 VỪA DÙNG GẦN ĐÂY (${recentProfiles.length}) ──────" style="background:#1e1b4b;color:#38bdf8;font-weight:700;">`;
+      recentProfiles.forEach(p => {
+        const info = categorizeProfile(p);
+        const isSelected = (p.id === cur);
+        const duplicate = usedByOtherCards.has(p.id);
+
+        let emoji = '🕒';
+        let optStyle = 'color: #38bdf8; font-weight: 600;';
+        if (p.running) {
+          optStyle = 'color: #10b981; font-weight: bold;';
+        }
+        if (duplicate) {
+          optStyle = 'color: #64748b; font-style: italic;';
+        }
+
+        const runningText = p.running ? ' [Đang mở]' : '';
+        const osText = (p.os && p.os.toLowerCase() === 'linux') ? ' [Linux]' : '';
+        const noteText = info.noteBadge ? ` — [${info.noteBadge}]` : '';
+        const lockText = duplicate ? '🔒 [Đang chọn ở thẻ khác] ' : '';
+        const displayText = `${lockText}${emoji} ${p.name}${osText}${runningText}${noteText}`;
+
+        optionsHtml += `<option value="${p.id}" data-name="${esc(p.name)}" data-emoji="${emoji}" style="${optStyle}" ${isSelected ? 'selected' : ''} ${duplicate ? 'disabled' : ''}>${displayText}</option>`;
+      });
+      optionsHtml += `</optgroup>`;
+    }
+
     sel.innerHTML = optionsHtml;
     sel.value = cur;
     sel.dataset.previousValue = cur;
@@ -3054,6 +3116,7 @@ function populateVideoProfiles() {
 function handleVideoProfileChange(fId, selectEl) {
     const selected = selectEl.value;
     if (selected) {
+        addRecentProfile(selected);
         const duplicate = Array.from(document.querySelectorAll("select[id^='videoProfileId_']"))
             .some(other => other !== selectEl && other.value === selected);
         if (duplicate) {
@@ -3324,6 +3387,8 @@ const fIdToTaskId = {}; // map fId to actual task_id
 const fIdToVideoTaskId = {}; // task video riêng, không dùng chung với task check/account
 
 async function startCancelAndGen(fId) {
+  const currentProf = document.getElementById(`videoProfileId_${fId}`)?.value;
+  if (currentProf) addRecentProfile(currentProf);
   // Task tạo video được lưu ở cả hai map. Sau khi khôi phục UI/localStorage,
   // map video riêng có thể chưa được nạp nhưng fIdToTaskId vẫn còn chính xác.
   let taskId = fIdToVideoTaskId[fId] || fIdToTaskId[fId];
@@ -3468,6 +3533,7 @@ async function startVideoCreationDynamic(fId) {
   if (typeof backendConfigSave !== "undefined" && !await backendConfigSave) return;
   const prompt = document.getElementById(`videoPrompt_${fId}`).value.trim();
   const profileId = document.getElementById(`videoProfileId_${fId}`).value;
+  if (profileId) addRecentProfile(profileId);
 
   if (!prompt) { alert("Vui lòng nhập prompt mô tả video!"); return; }
 
@@ -3540,8 +3606,12 @@ async function startVideoCreationDynamic(fId) {
     fIdToVideoTaskId[fId] = taskId;
     
     if (data.profile_id) {
+      addRecentProfile(data.profile_id);
       const select = document.getElementById(`videoProfileId_${fId}`);
-      if (select) select.value = data.profile_id;
+      if (select) {
+        select.value = data.profile_id;
+        updateVideoCardTitle(fId, select);
+      }
     }
     
     const bar = document.getElementById(`vtask_status_${fId}`);
@@ -3942,101 +4012,17 @@ function restoreStateStr(saved) {
 let isStateLoaded = false;
 function loadUIState() {
   if (isStateLoaded) return;
-  const saved = localStorage.getItem("antidetect_video_state");
-  if (!saved) {
-      if (document.getElementById("videoFormsContainer").children.length === 0) {
-          addVideoForm();
-      }
-      isStateLoaded = true;
-      return;
-  }
-  restoreStateStr(saved);
   isStateLoaded = true;
+  if (document.getElementById("videoFormsContainer").children.length === 0) {
+    resetToSingleEmptyCard();
+  }
 }
 
 async function syncActiveVideoTasks() {
-  try {
-    const res = await fetch('/api/video/active-tasks');
-    if (!res.ok) {
-      loadUIState();
-      return;
-    }
-    const tasks = await res.json();
-    if (!tasks || tasks.length === 0) {
-      loadUIState();
-      return;
-    }
-    
-    // CHỈ lọc các task ĐANG CHẠY THẬT SỰ (running hoặc pending), không lấy task done/success cũ
-    const activeTasks = tasks.filter(t => t.status === "running" || t.status === "pending");
-    if (activeTasks.length === 0) {
-      loadUIState();
-      return;
-    }
-
-    isRestoringHistory = true;
-    const container = document.getElementById("videoFormsContainer");
-    if (container) {
-      container.innerHTML = "";
-    }
-    formCounter = 0;
-
-    for (let i = 0; i < activeTasks.length; i++) {
-      const task = activeTasks[i];
-      const fId = i + 1;
-      formCounter = Math.max(formCounter, fId);
-      
-      let formEl = document.getElementById(`vform_${fId}`);
-      if (!formEl) {
-        await addVideoForm(fId, task.profile_id);
-      }
-      
-      setTimeout(() => {
-        const promptEl = document.getElementById(`videoPrompt_${fId}`);
-        if (promptEl && task.prompt) promptEl.value = task.prompt;
-        
-        const selEl = document.getElementById(`videoProfileId_${fId}`);
-        if (selEl && task.profile_id) {
-          selEl.value = task.profile_id;
-          updateVideoCardTitle(fId, selEl);
-        }
-
-        fIdToTaskId[fId] = task.task_id;
-        fIdToVideoTaskId[fId] = task.task_id;
-
-        const bar = document.getElementById(`vtask_status_${fId}`);
-        if (bar) {
-          bar.style.display = "flex";
-          const isDone = (task.status === "done" || task.status === "success");
-          bar.className = "status-bar " + (isDone ? "done" : "running");
-          const icon = isDone ? '<span style="flex-shrink:0;">✅</span>' : '<div class="spinner" style="flex-shrink:0;"></div>';
-          bar.innerHTML = `${icon} <div style="font-size:11px;flex:1;word-break:break-word;">${task.message || (isDone ? 'Hoàn thành' : 'Đang xử lý...')}</div>`;
-        }
-
-        const btn = document.getElementById(`createVideoBtn_${fId}`);
-        if (btn) {
-          if (task.status === "running" || task.status === "pending") {
-            btn.disabled = true;
-            btn.textContent = "⏳...";
-          } else {
-            btn.disabled = false;
-            btn.textContent = "▶️ Tạo Video";
-          }
-        }
-
-        if (task.status === "running" || task.status === "pending") {
-          if (!videoTaskPolls[fId]) {
-            videoTaskPolls[fId] = setInterval(() => pollTaskStatusDynamic(fId, task.task_id), 2000);
-          }
-        } else if (task.status === "done" || task.status === "success") {
-          pollTaskStatusDynamic(fId, task.task_id);
-        }
-      }, 150);
-    }
-    setTimeout(() => { isRestoringHistory = false; }, 300);
-  } catch(e) {
-    console.error("Lỗi syncActiveVideoTasks:", e);
-    loadUIState();
+  // Đã bỏ tính năng tự khôi phục task chạy ngầm vào thẻ khi load lại trang theo yêu cầu.
+  // Khi load trang hoặc treo tool luôn hiển thị 1 thẻ trống duy nhất.
+  if (document.getElementById("videoFormsContainer").children.length === 0) {
+    resetToSingleEmptyCard();
   }
 }
 
@@ -4644,6 +4630,7 @@ async function submitCheckVideoForFid(fId) {
   const profileSelect = document.getElementById(`videoProfileId_${fId}`);
   if (!profileSelect || !profileSelect.value) { alert('Không tìm thấy profile!'); return; }
   const pId = profileSelect.value;
+  addRecentProfile(pId);
   
   const retryBtn = document.getElementById(`vtask_retry_${fId}`);
   if (retryBtn) retryBtn.style.display = 'none';
@@ -5190,7 +5177,7 @@ async function quickDeleteProfile(fId) {
     if (savedTab === 'video') {
       switchTab('video');
     }
-    syncActiveVideoTasks();
+    resetToSingleEmptyCard();
   });
 </script>
 </body>

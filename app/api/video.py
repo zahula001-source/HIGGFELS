@@ -61,12 +61,31 @@ async def create_video(request: Request):
     processing_timeout = int(form.get("processing_timeout", 120))
     higgs_model = str(form.get("higgs_model", "vip")).strip().lower()
 
-    # Lấy danh sách các profile đang bận
+    # Dọn dẹp các task cũ đã chết nhưng còn lưu status running/pending
+    now_ts = time.time()
+    running_pids = set(list_running().keys())
+    for tid, task in list(video_tasks.items()):
+        if isinstance(task, dict) and task.get("status") in ["running", "pending"]:
+            pid = task.get("params", {}).get("profile_id")
+            created_ts = task.get("created_at_ts", 0)
+            # Nếu task tạo > 15s mà Chrome không chạy -> task đã chết
+            if pid and (now_ts - created_ts > 15) and (pid not in running_pids or not is_running(pid)):
+                task["status"] = "error"
+                task["message"] = "Đã dừng (Chrome không còn mở)"
+                save_video_tasks_cache()
+            elif not pid and (now_ts - created_ts > 15):
+                task["status"] = "error"
+                task["message"] = "Đã dừng"
+                save_video_tasks_cache()
+
+    # Lấy danh sách các profile thực sự đang bận
     used_profiles = set()
     for task in video_tasks.values():
         if task.get("status") in ["running", "pending"]:
-            used_profiles.add(task.get("params", {}).get("profile_id"))
-    used_profiles.update(list_running())
+            pid = task.get("params", {}).get("profile_id")
+            if pid and (pid in running_pids or is_running(pid)):
+                used_profiles.add(pid)
+    used_profiles.update(running_pids)
 
     if not profile_id:
         # Tự động gán profile rảnh
@@ -118,6 +137,7 @@ async def create_video(request: Request):
         "status": "pending", 
         "message": "Đang chuẩn bị...",
         "created_at": now_task_time,
+        "created_at_ts": time.time(),
         "params": {
             "prompt": prompt,
             "img1_path": img1_path,
@@ -175,6 +195,7 @@ def api_check_video(req: CheckVideoReq):
     video_tasks[task_id] = {
         "status": "pending",
         "message": "Chuẩn bị kiểm tra video...",
+        "created_at_ts": time.time(),
         "params": {"profile_id": req.profile_id, "check_task": True, "higgs_model": getattr(req, "higgs_model", "vip")},
     }
     check_video_task_ids.add(task_id)
@@ -333,5 +354,26 @@ def get_active_video_tasks():
             "force_stop": t.get("force_stop", False),
         })
     return res
+
+
+@router.post("/api/video/clear-stuck-tasks")
+def clear_stuck_tasks(payload: dict = Body(default=None)):
+    """Giải phóng tất cả các task bị treo hoặc các task không còn Chrome chạy"""
+    cleared = []
+    running_pids = set(list_running().keys())
+    target_prof = (payload or {}).get("profile_id")
+    for tid, task in list(video_tasks.items()):
+        if isinstance(task, dict) and task.get("status") in ["running", "pending"]:
+            pid = task.get("params", {}).get("profile_id")
+            if target_prof and pid == target_prof:
+                task["status"] = "error"
+                task["message"] = "Đã giải phóng bởi người dùng"
+                cleared.append(tid)
+            elif not pid or pid not in running_pids or not is_running(pid):
+                task["status"] = "error"
+                task["message"] = "Đã giải phóng tác vụ treo"
+                cleared.append(tid)
+    save_video_tasks_cache()
+    return {"ok": True, "cleared_count": len(cleared)}
 
 

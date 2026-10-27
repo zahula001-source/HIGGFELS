@@ -19,6 +19,11 @@ def load_video_tasks_cache():
         try:
             data = json.loads(TASKS_FILE.read_text(encoding="utf-8"))
             if isinstance(data, dict):
+                # Khi server vừa bật lên, các task running/pending cũ không thể còn chạy
+                for tid, t in data.items():
+                    if isinstance(t, dict) and t.get("status") in ["running", "pending"]:
+                        t["status"] = "error"
+                        t["message"] = "Đã dừng (Server khởi động lại)"
                 video_tasks.update(data)
         except Exception as e:
             print("Error loading video_tasks.json:", e)
