@@ -64,6 +64,20 @@ def _is_microsoft_security_key_challenge(url: str) -> bool:
     return "/fido" in path or "/passkey" in path or path.endswith("/fido") or path.endswith("/passkey")
 
 
+def _is_microsoft_auth_url(url: str) -> bool:
+    if not url:
+        return False
+    from urllib.parse import urlsplit
+    try:
+        parsed = urlsplit(str(url or "").lower())
+        host = parsed.hostname or ""
+    except Exception:
+        host = ""
+    return host in {
+        "login.live.com", "login.microsoftonline.com", "login.microsoft.com", "account.live.com",
+    } or any(k in host for k in ("login.microsoft", "login.live", "account.live"))
+
+
 def _is_microsoft_kmsi_page(page) -> bool:
     try:
         current_url = str(getattr(page, "url", "") or "").lower()
@@ -1432,7 +1446,7 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                         print(f"Cookie consent click failed: {cookie_error}")
                         return False
 
-                if initial_login_state is not True and not ms_btn_visible and "auth/sign-in" not in page.url and "higgsfield.ai/quiz" not in page.url:
+                if initial_login_state is not True and not ms_btn_visible and "auth/sign-in" not in page.url and "higgsfield.ai/quiz" not in page.url and not _is_microsoft_auth_url(page.url):
                     accept_cookie_notice()
                     for selector, label in (
                         (".hfnav-auth-login", "Login"),
@@ -1459,10 +1473,10 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                                     break
                             except Exception:
                                 pass
-                            if "login.microsoft" in page.url or "login.live" in page.url or "higgsfield.ai/quiz" in page.url:
+                            if _is_microsoft_auth_url(page.url) or "higgsfield.ai/quiz" in page.url:
                                 break
                             page.wait_for_timeout(500)
-                        if ms_btn_visible or "login.microsoft" in page.url or "login.live" in page.url or "higgsfield.ai/quiz" in page.url:
+                        if ms_btn_visible or _is_microsoft_auth_url(page.url) or "higgsfield.ai/quiz" in page.url:
                             break
                         print(f"{label} did not open Microsoft sign-in; trying the other button.")
                         accept_cookie_notice()
@@ -1483,6 +1497,9 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                             already_logged_in = True
                             break
                         if page.locator('button:has-text("Continue with Microsoft"):visible').count() > 0:
+                            break
+                        if _is_microsoft_auth_url(page.url):
+                            print(f"Đã phát hiện URL Microsoft sign-in sẵn ({page.url}), bỏ qua chờ popup!")
                             break
                         wel_loc = page.locator("text=Welcome to Higgsfield")
                         if wel_loc.count() > 0 and wel_loc.first.is_visible():
@@ -1517,36 +1534,42 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                         print(f"Error reading ms_account.txt: {e}")
                 
                 if not already_logged_in:
-                    # B3: Click "Continue with Microsoft"
-                    try:
-                        accept_cookie_notice()
-                        consent_checked = _check_higgsfield_signup_consent(page)
-                        if consent_checked is False:
-                            raise RuntimeError("Could not check the signup Terms of Use consent")
-                        if consent_checked is True:
-                            print("Checked Higgsfield signup consent")
-                        ms_btn = page.locator('button:has-text("Continue with Microsoft"):visible').first
-                        if not ms_btn.is_visible(timeout=1000):
-                            raise RuntimeError("Microsoft sign-in option did not appear after Login/Sign up")
-                        ms_btn.scroll_into_view_if_needed(timeout=1000)
-                        ms_btn.click(timeout=3000, force=True)
-                        print("Clicked 'Continue with Microsoft'!")
-                    except Exception as e:
-                        keep_open = True
-                        signup_options["keep_open"] = True
-                        live_profile = manager.get_profile(profile_id)
-                        if live_profile:
-                            if hasattr(manager, "update_notes"):
-                                manager.update_notes(profile_id, "⚠️ Cần đăng nhập thủ công")
-                            live_profile.notes = "⚠️ Cần đăng nhập thủ công"
-                            manager._save()
-                        print(f"Login entry did not reach Microsoft sign-in: {e}; keeping Chrome open.")
-                        return
+                    # B3: Click "Continue with Microsoft" nếu chưa chuyển sang Microsoft
+                    if not _is_microsoft_auth_url(page.url):
+                        try:
+                            accept_cookie_notice()
+                            consent_checked = _check_higgsfield_signup_consent(page)
+                            if consent_checked is False:
+                                raise RuntimeError("Could not check the signup Terms of Use consent")
+                            if consent_checked is True:
+                                print("Checked Higgsfield signup consent")
+                            ms_btn = page.locator('button:has-text("Continue with Microsoft"):visible').first
+                            if not ms_btn.is_visible(timeout=1000):
+                                if not _is_microsoft_auth_url(page.url):
+                                    raise RuntimeError("Microsoft sign-in option did not appear after Login/Sign up")
+                            else:
+                                ms_btn.scroll_into_view_if_needed(timeout=1000)
+                                ms_btn.click(timeout=3000, force=True)
+                                print("Clicked 'Continue with Microsoft'!")
+                        except Exception as e:
+                            if not _is_microsoft_auth_url(page.url):
+                                keep_open = True
+                                signup_options["keep_open"] = True
+                                live_profile = manager.get_profile(profile_id)
+                                if live_profile:
+                                    if hasattr(manager, "update_notes"):
+                                        manager.update_notes(profile_id, "⚠️ Cần đăng nhập thủ công")
+                                    live_profile.notes = "⚠️ Cần đăng nhập thủ công"
+                                    manager._save()
+                                print(f"Login entry did not reach Microsoft sign-in: {e}; keeping Chrome open.")
+                                return
+                    else:
+                        print(f"Trang hiện tại đã ở Microsoft sign-in ({page.url}), tiếp tục đăng nhập...")
                     
                     # Đợi chuyển sang trang login.microsoftonline.com / login.live.com hoặc đợi đến khi avatar xuất hiện
                     try:
                         for _ in range(30):
-                            if "login.microsoft" in page.url or "login.live" in page.url:
+                            if _is_microsoft_auth_url(page.url):
                                 break
                             if "higgsfield.ai/quiz" in page.url:
                                 break
@@ -1588,11 +1611,19 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                         page.wait_for_timeout(500)
                         print(f"MS login page URL: {page.url}")
                         
+                        # Kiểm tra ngay xem có nút "Use your password" / "Sử dụng mật khẩu" không
+                        try:
+                            if click_use_password(page):
+                                print("Đã tự động bấm 'Use your password' ngay khi mở trang đăng nhập!")
+                                page.wait_for_timeout(1000)
+                        except Exception as e:
+                            print(f"Initial use password click check error: {e}")
+
                         # Điền email vào ô input
                         try:
                             import time
-                            if "account.live.com" in page.url or "fido" in page.url: 
-                                raise ValueError("Stuck on protection page")
+                            if "fido" in page.url: 
+                                raise ValueError("Stuck on fido protection page")
                             if page.url.startswith("https://higgsfield.ai") and not page.locator('button:has-text("Continue with Microsoft")').is_visible():
                                 raise ValueError("Already logged in or stuck on protection page, skipping email")
                             
@@ -1601,9 +1632,8 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                             for _ in range(20):
                                 try:
                                     # Kiểm tra xem có nút "Sử dụng mật khẩu của bạn" không
-                                    use_pwd_btn = page.locator('span[role="button"]:has-text("Use your password"), span[role="button"]:has-text("Sử dụng mật khẩu của bạn"), a:has-text("Use your password"), a:has-text("Sử dụng mật khẩu của bạn"), #iUsePasswordLink, #idA_PWD_SwitchToPassword')
-                                    if use_pwd_btn.count() > 0:
-                                        print("Bỏ qua chờ nhập email vì đã thấy nút Sử dụng mật khẩu")
+                                    if click_use_password(page):
+                                        print("Bỏ qua chờ nhập email vì đã bấm nút Sử dụng mật khẩu")
                                         raise ValueError("Thấy nút sử dụng mật khẩu")
                                         
                                     if page.locator('#i0116:not([type="hidden"])').is_visible():
@@ -1659,64 +1689,39 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                         # Nếu có, bấm "Sử dụng mật khẩu của bạn" để quay lại form mật khẩu
                         try:
                             page.wait_for_timeout(100 if is_v2_account else 500)
-                            if page.url.startswith("https://higgsfield.ai") or "account.live.com" in page.url or "fido" in page.url: 
-                                raise ValueError("Already logged in or stuck on protection page, skipping use password")
+                            if page.url.startswith("https://higgsfield.ai") or "fido" in page.url: 
+                                raise ValueError("Already logged in or stuck on fido page, skipping use password")
                             
-                            # Sử dụng JS để tìm và click chính xác
-                            clicked_pwd = page.evaluate("""() => {
-                                const elements = document.querySelectorAll('span, a, div, button, [role="button"]');
-                                for (let el of elements) {
-                                    const text = (el.innerText || el.textContent || '').trim().toLowerCase();
-                                    if (text === 'use your password' || text === 'sử dụng mật khẩu của bạn' || text.includes('sử dụng mật khẩu') || text.includes('use your password') || el.id === 'iUsePasswordLink' || el.id === 'idA_PWD_SwitchToPassword') {
-                                        if (el.getAttribute('role') === 'button' || el.tagName === 'A' || el.tabIndex === 0 || el.offsetParent !== null) {
-                                            el.click();
-                                            return true;
-                                        }
-                                    }
-                                }
-                                return false;
-                            }""")
-                            
-                            if clicked_pwd:
-                                print("Clicked 'Sử dụng mật khẩu của bạn' (Use your password) via JS")
-                                page.wait_for_timeout(2000)
-                            else:
-                                # Fallback bằng locator Playwright
-                                use_pwd_btn = page.locator('span[role="button"]:has-text("Use your password"), span[role="button"]:has-text("Sử dụng mật khẩu của bạn"), a:has-text("Use your password"), a:has-text("Sử dụng mật khẩu của bạn"), #iUsePasswordLink, #idA_PWD_SwitchToPassword')
-                                if use_pwd_btn.count() > 0:
-                                    use_pwd_btn.first.click(force=True)
-                                    print("Clicked 'Sử dụng mật khẩu của bạn' (Use your password) via Locator")
-                                    page.wait_for_timeout(2000)
+                            if click_use_password(page):
+                                print("Clicked 'Sử dụng mật khẩu của bạn' (Use your password)")
+                                page.wait_for_timeout(1500)
                         except Exception as e:
                             print(f"Error checking 'Sử dụng mật khẩu': {e}")
                             pass
                             
                         # Điền mật khẩu
                         try:
-                            if "account.live.com" in page.url or "fido" in page.url: 
-                                raise ValueError("Stuck on protection page")
+                            if "fido" in page.url: 
+                                raise ValueError("Stuck on fido protection page")
                             if page.url.startswith("https://higgsfield.ai") and not page.locator('button:has-text("Continue with Microsoft")').is_visible():
                                 raise ValueError("Already logged in or stuck on protection page, skipping password")
                             
-                            # Đợi ô password xuất hiện
-                            if is_v2_account:
-                                # Poll both states every 100ms: the modern Microsoft
-                                # page can render a button after the first DOM check.
-                                password_deadline = time.monotonic() + 10
-                                while time.monotonic() < password_deadline:
-                                    password_ready = page.locator('input[type="password"]:visible')
-                                    if password_ready.count() > 0:
-                                        break
-                                    try:
-                                        if click_use_password(page):
-                                            print("V2: clicked 'Use your password' immediately")
-                                    except Exception:
-                                        pass  # Navigation can temporarily destroy the DOM.
-                                    page.wait_for_timeout(100)
-                                else:
-                                    raise ValueError("V2: password form did not appear within 10s")
-                            else:
-                                page.wait_for_selector('input[type="password"]', state='visible', timeout=10000)
+                            # Đợi ô password xuất hiện (poll click_use_password liên tục nếu chưa thấy ô nhập mật khẩu)
+                            password_deadline = time.monotonic() + 10
+                            password_ready = False
+                            while time.monotonic() < password_deadline:
+                                if page.locator('input[type="password"]:visible, #i0118:visible, input[name="passwd"]:visible, #passwordEntry:visible').count() > 0:
+                                    password_ready = True
+                                    break
+                                try:
+                                    if click_use_password(page):
+                                        print("Clicked 'Use your password' while waiting for password input")
+                                except Exception:
+                                    pass
+                                page.wait_for_timeout(200)
+                            
+                            if not password_ready:
+                                raise ValueError("Password form did not appear within 10s")
                             
                             # Dùng JavaScript để set giá trị và trigger Knockout binding
                             filled_pwd = page.evaluate("""(pwd) => {
@@ -1725,7 +1730,7 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                                 let el = null;
                                 for (const s of sel) {
                                     const found = document.querySelector(s);
-                                    if (found && found.offsetParent !== null) { el = found; break; }
+                                    if (found && (found.offsetParent !== null || found.getClientRects().length > 0)) { el = found; break; }
                                 }
                                 if (!el) return false;
                                 el.focus();
@@ -1911,11 +1916,12 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                         # Microsoft may show a method picker while a generic email
                         # input is also present. Always choose password first.
                         if (
-                            time.monotonic() - use_password_last_click >= 3
+                            time.monotonic() - use_password_last_click >= 2
                             and click_use_password(page)
                         ):
                             use_password_last_click = time.monotonic()
                             print("Watchdog: clicked 'Use your password'")
+                            page.wait_for_timeout(1000)
                             return True
                         use_password = first_visible(
                             'a#iUsePasswordLink, a#idA_PWD_SwitchToPassword, '
@@ -1928,6 +1934,7 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                         if use_password is not None:
                             use_password.click(timeout=3000, force=True)
                             print("Watchdog: clicked 'Use your password'")
+                            page.wait_for_timeout(1000)
                             return True
 
                         # V2: after password Microsoft asks which recovery address
@@ -1996,6 +2003,18 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                                 print("Watchdog: selected V2 recovery email method")
                                 return True
 
+                            has_use_password = (
+                                "use your password" in body_lower
+                                or "sử dụng mật khẩu" in body_lower
+                                or "dùng mật khẩu" in body_lower
+                            )
+                            if has_use_password:
+                                if click_use_password(page):
+                                    use_password_last_click = time.monotonic()
+                                    print("Watchdog: clicked 'Use your password' instead of requesting recovery code")
+                                    page.wait_for_timeout(1000)
+                                    return True
+
                             recovery_input = first_visible(
                                 'input#iProofEmail, #iProofEmail:not([type="radio"]):not([type="checkbox"]), '
                                 'input[name="ProofConfirmation"]:not([type="radio"]):not([type="checkbox"]), '
@@ -2008,7 +2027,8 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                                 'input[id*="Proof" i]:not([type="radio"]):not([type="checkbox"]):not([type="hidden"])'
                             )
                             is_recovery_confirmation = (
-                                recovery_input is not None
+                                not has_use_password
+                                and recovery_input is not None
                                 and (
                                     exact_recovery_input is not None
                                     or
@@ -2021,7 +2041,7 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                                     or "alternate email" in body_lower
                                 )
                             )
-                            if not is_recovery_confirmation and (
+                            if not is_recovery_confirmation and not has_use_password and (
                                 "verify your email" in body_lower
                                 or "xác minh email" in body_lower
                                 or "send code" in body_lower

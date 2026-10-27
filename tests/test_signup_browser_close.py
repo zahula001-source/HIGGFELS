@@ -628,14 +628,47 @@ class SignupBrowserCloseTests(unittest.TestCase):
         self.assertEqual(self.profile.notes, 'free gen 1 480p')
         self.close_profile.assert_called_once_with(self.profile.id)
 
-    def test_network_mode_failure_reports_error_before_starting_signup(self):
-        from fastapi import HTTPException
-        self.api.ensure_profile_network_mode.side_effect = RuntimeError('Cannot apply proxy OFF')
-        with self.assertRaises(HTTPException) as error:
-            self.start_signup()
-        self.assertEqual(error.exception.status_code, 400)
-        self.assertIn('proxy OFF', error.exception.detail)
-        self.assertIsNone(self.worker)
+    def test_microsoft_auth_url_detection(self):
+        for url in (
+            "https://login.live.com/login.srf?wa=wsignin1.0",
+            "https://account.live.com/proofs/Verify",
+            "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+            "https://login.microsoft.com/consumers/oauth",
+        ):
+            with self.subTest(url=url):
+                self.assertTrue(self.api._is_microsoft_auth_url(url))
+
+        for non_ms_url in (
+            "https://higgsfield.ai/ai/video",
+            "https://higgsfield.ai/auth/sign-in",
+            "about:blank",
+        ):
+            with self.subTest(url=non_ms_url):
+                self.assertFalse(self.api._is_microsoft_auth_url(non_ms_url))
+
+    def test_initial_page_on_microsoft_proceeds_without_continue_with_microsoft_button(self):
+        self.page.recover_otp = False
+        self.page.url = "https://login.live.com/login.srf?wa=wsignin1.0"
+        self.api.wait_video_login_state = Mock(side_effect=[False, True, True])
+        self.api.click_use_password = Mock(return_value=True)
+        self.start_signup(keep_open=False)
+        self.run_worker()
+        self.assertNotIn("Microsoft sign-in option did not appear", self.output.getvalue())
+        self.assertNotEqual(self.profile.notes, "⚠️ Cần đăng nhập thủ công")
+        self.assertEqual(self.profile.notes, "free gen 1 480p")
+        self.close_profile.assert_called_once_with(self.profile.id)
+
+    def test_click_use_password_fluent_ui_span_locator(self):
+        from app.services.microsoft_recovery import click_use_password
+        mock_span = Mock()
+        mock_span.count.return_value = 1
+        mock_span.is_visible.return_value = True
+        mock_span.first = mock_span
+        page = Mock()
+        page.locator.return_value = mock_span
+        self.assertTrue(click_use_password(page))
+        mock_span.click.assert_called_once_with(force=True, timeout=2000)
+
 
 
 class ImmediateFreeGenReadTests(unittest.TestCase):

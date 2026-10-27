@@ -198,28 +198,83 @@ def read_code_in_fviainboxes_tab(
 
 
 def click_use_password(page) -> bool:
-    """Check the current DOM without waiting for a missing password input."""
+    """Check the current DOM and click 'Use your password' / 'Sử dụng mật khẩu của bạn'."""
+    selectors = [
+        'span[role="button"]:has-text("Use your password")',
+        'span.fui-Link:has-text("Use your password")',
+        '[role="button"]:has-text("Use your password")',
+        'span:has-text("Use your password")',
+        'a:has-text("Use your password")',
+        'button:has-text("Use your password")',
+        'span[role="button"]:has-text("Sử dụng mật khẩu")',
+        'span.fui-Link:has-text("Sử dụng mật khẩu")',
+        '[role="button"]:has-text("Sử dụng mật khẩu")',
+        'span:has-text("Sử dụng mật khẩu")',
+        'a:has-text("Sử dụng mật khẩu")',
+        'button:has-text("Sử dụng mật khẩu")',
+        '#iUsePasswordLink',
+        '#idA_PWD_SwitchToPassword',
+    ]
+    for sel in selectors:
+        try:
+            loc = page.locator(sel).first
+            if loc.count() > 0 and loc.is_visible(timeout=250):
+                try:
+                    loc.scroll_into_view_if_needed(timeout=1000)
+                except Exception:
+                    pass
+                loc.click(force=True, timeout=2000)
+                page.wait_for_timeout(500)
+                print(f"[click_use_password] Clicked via selector: {sel}")
+                return True
+        except Exception:
+            pass
+
     try:
-        exact = page.locator('span[role="button"]:has-text("Use your password"), span[role="button"]:has-text("Sử dụng mật khẩu của bạn"), a:has-text("Use your password"), a:has-text("Sử dụng mật khẩu của bạn"), #iUsePasswordLink, #idA_PWD_SwitchToPassword').first
-        if exact.count() > 0:
-            exact.click(force=True, timeout=3000)
-            page.wait_for_timeout(500)
-            return True
-    except Exception:
-        pass
-    return page.evaluate("""() => {
-        const nodes = document.querySelectorAll('button, a, [role="button"], span');
-        for (const el of nodes) {
-            const text = (el.innerText || el.textContent || '').trim().toLowerCase();
-            if (text === 'use your password' || text === 'sử dụng mật khẩu của bạn' || text.includes('sử dụng mật khẩu') || text.includes('use your password') || el.id === 'iUsePasswordLink' || el.id === 'idA_PWD_SwitchToPassword') {
-                if (el.offsetParent !== null || el.getClientRects().length > 0) {
-                    el.click();
+        clicked = page.evaluate("""() => {
+            const isVisible = (el) => {
+                if (!el) return false;
+                const style = window.getComputedStyle(el);
+                if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+                const rect = el.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0;
+            };
+
+            const candidates = document.querySelectorAll('span, a, button, div, [role="button"], .fui-Link, input[type="button"]');
+            for (const el of candidates) {
+                const text = (el.innerText || el.textContent || el.value || '').trim().toLowerCase();
+                const matches = (
+                    text === 'use your password' ||
+                    text.includes('use your password') ||
+                    text.includes('use password') ||
+                    text.includes('sử dụng mật khẩu') ||
+                    text.includes('dùng mật khẩu') ||
+                    text.includes('usar su contraseña') ||
+                    text.includes('usar contraseña') ||
+                    text.includes('utiliser votre mot de passe') ||
+                    el.id === 'iUsePasswordLink' ||
+                    el.id === 'idA_PWD_SwitchToPassword'
+                );
+                if (matches && isVisible(el)) {
+                    try { el.focus(); } catch(e) {}
+                    try { el.click(); } catch(e) {}
+                    try { el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true })); } catch(e) {}
+                    try { el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true })); } catch(e) {}
+                    try { el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); } catch(e) {}
+                    try { el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true })); } catch(e) {}
                     return true;
                 }
             }
-        }
-        return false;
-    }""")
+            return false;
+        }""")
+        if clicked:
+            page.wait_for_timeout(500)
+            print("[click_use_password] Clicked via JS evaluation")
+            return True
+    except Exception as e:
+        print(f"[click_use_password] JS error: {e}")
+
+    return False
 
 
 @dataclass(frozen=True)
