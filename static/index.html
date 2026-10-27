@@ -471,21 +471,33 @@ body{background:#0b0e14;color:#e5e7eb;min-height:100vh;}
   <div class="modal lg">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:10px;">
       <h2 style="margin:0;">☑️ Chọn Thẻ Cần Xuất</h2>
-      <div style="display:flex; gap:12px; font-size:12px;">
+      <div style="display:flex; gap:10px; font-size:12px; flex-wrap:wrap;">
+        <span style="display:inline-flex;align-items:center;gap:4px;color:#6ee7b7;font-weight:bold;"><span style="display:inline-block;width:10px;height:10px;background:#10b981;border-radius:2px;"></span> 720p</span>
+        <span style="display:inline-flex;align-items:center;gap:4px;color:#67e8f9;font-weight:bold;"><span style="display:inline-block;width:10px;height:10px;background:#06b6d4;border-radius:2px;"></span> 480p</span>
         <span style="display:inline-flex;align-items:center;gap:4px;color:#facc15;font-weight:bold;"><span style="display:inline-block;width:10px;height:10px;background:#eab308;border-radius:2px;"></span> Acc @fviainboxes.com (Vàng)</span>
         <span style="display:inline-flex;align-items:center;gap:4px;color:#94a3b8;"><span style="display:inline-block;width:10px;height:10px;background:#334155;border-radius:2px;"></span> Loại khác (Xám)</span>
       </div>
     </div>
     <p style="font-size:12px;color:#94a3b8;margin-bottom:12px;">Chọn các profile muốn xuất thành file <b>.json</b> hoặc copy JSON — có thể nhập lại trên máy khác.</p>
+
+    <!-- Thống kê & Tìm kiếm -->
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:10px; flex-wrap:wrap;">
+      <div id="exportModalStats" style="display:flex; gap:6px; font-size:11px; flex-wrap:wrap;"></div>
+      <input type="text" id="exportSearchInput" placeholder="🔍 Lọc nhanh theo tên, mail, 720p, 480p..." oninput="filterExportModalList('export', this.value)" style="background:#0f172a; border:1px solid #334155; color:#fff; border-radius:6px; padding:6px 12px; font-size:12px; flex:1; max-width:280px;">
+    </div>
     
     <!-- Chọn nhanh -->
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
-      <label style="display:flex; align-items:center; gap:8px; cursor:pointer; color:#fff; font-weight:bold; background: #1e293b; padding: 7px 12px; border-radius: 8px; border:1px solid #334155; margin:0; font-size:13px;">
-        <input type="checkbox" id="exportSelectAll" style="width:16px;height:16px;cursor:pointer;" onchange="toggleExportSelectAll(this.checked)"> Chọn tất cả
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;flex-wrap:wrap;">
+      <label style="display:flex; align-items:center; gap:6px; cursor:pointer; color:#fff; font-weight:bold; background: #1e293b; padding: 6px 10px; border-radius: 6px; border:1px solid #334155; margin:0; font-size:12px;">
+        <input type="checkbox" id="exportSelectAll" style="width:15px;height:15px;cursor:pointer;" onchange="toggleExportSelectAll(this.checked)"> Chọn tất cả
       </label>
-      <button class="btn btn-sm" type="button" style="background:#713f12;color:#fef08a;border:1px solid #ca8a04;font-size:12px;padding:7px 12px;" onclick="selectOnlyType('export', 'fvia')">⚡ Chỉ chọn @fviainboxes (Vàng)</button>
-      <button class="btn btn-sm" type="button" style="background:#1e293b;color:#94a3b8;border:1px solid #475569;font-size:12px;padding:7px 12px;" onclick="selectOnlyType('export', 'other')">⚡ Chỉ chọn Loại khác</button>
-      <button class="btn btn-sm" type="button" style="background:#0f172a;color:#cbd5e1;border:1px solid #334155;font-size:12px;padding:7px 12px;" onclick="selectOnlyType('export', 'none')">Bỏ chọn hết</button>
+      <button class="btn btn-sm" id="btnExport720_2" type="button" style="background:#064e3b;color:#a7f3d0;border:1px solid #059669;font-size:12px;padding:6px 10px;font-weight:bold;" onclick="selectOnlyType('export', '720p_2cre')">⚡ 720p (2 cre)</button>
+      <button class="btn btn-sm" id="btnExport720_1" type="button" style="background:#065f46;color:#6ee7b7;border:1px solid #10b981;font-size:12px;padding:6px 10px;font-weight:bold;" onclick="selectOnlyType('export', '720p_1cre')">⚡ 720p (1 cre)</button>
+      <button class="btn btn-sm" id="btnExport720_all" type="button" style="background:#047857;color:#ecfdf5;border:1px solid #34d399;font-size:12px;padding:6px 10px;" onclick="selectOnlyType('export', '720p')">🎬 Tất cả 720p</button>
+      <button class="btn btn-sm" id="btnExport480" type="button" style="background:#164e63;color:#67e8f9;border:1px solid #06b6d4;font-size:12px;padding:6px 10px;font-weight:bold;" onclick="selectOnlyType('export', '480p')">📺 Chỉ 480p</button>
+      <button class="btn btn-sm" id="btnExportFvia" type="button" style="background:#713f12;color:#fef08a;border:1px solid #ca8a04;font-size:12px;padding:6px 10px;" onclick="selectOnlyType('export', 'fvia')">🟡 Chỉ @fvia</button>
+      <button class="btn btn-sm" type="button" style="background:#1e293b;color:#94a3b8;border:1px solid #475569;font-size:12px;padding:6px 10px;" onclick="selectOnlyType('export', 'other')">⚪ Chỉ Khác</button>
+      <button class="btn btn-sm" type="button" style="background:#0f172a;color:#cbd5e1;border:1px solid #334155;font-size:12px;padding:6px 10px;" onclick="selectOnlyType('export', 'none')">Bỏ chọn hết</button>
     </div>
 
     <!-- Tùy chọn Xuất Xong Xóa -->
@@ -496,11 +508,14 @@ body{background:#0b0e14;color:#e5e7eb;min-height:100vh;}
 
     <div id="exportSelectList" style="max-height:300px; overflow-y:auto; background:#0f172a; border-radius:8px; border:1px solid #1e2535; padding:10px; display:flex; flex-direction:column; gap:8px;">
     </div>
-    <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;flex-wrap:wrap;">
-      <button class="btn btn-ghost" onclick="closeExportSelectModal()">Hủy</button>
-      <button class="btn btn-ghost" style="background:#0f3460;border:1px solid #1d4ed8;color:#93c5fd;" onclick="doCopySelected()">📋 Copy JSON</button>
-      <button class="btn btn-primary" onclick="doExportSelected()">📤 Xuất File JSON</button>
-      <button class="btn btn-sm" style="background:#6b21a8;border:1px solid #a855f7;color:#f3e8ff;font-weight:bold;padding:8px 14px;cursor:pointer;" onclick="doExportLiteSessionSelected()">📦 Xuất Lite Session (ZIP ~2MB)</button>
+    <div style="display:flex;gap:10px;margin-top:16px;justify-content:space-between;align-items:center;flex-wrap:wrap;">
+      <div id="exportSelectedCount" style="color:#38bdf8; font-size:13px; font-weight:bold;">Đã chọn: 0 thẻ</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <button class="btn btn-ghost" onclick="closeExportSelectModal()">Hủy</button>
+        <button class="btn btn-ghost" style="background:#0f3460;border:1px solid #1d4ed8;color:#93c5fd;" onclick="doCopySelected()">📋 Copy JSON</button>
+        <button class="btn btn-primary" onclick="doExportSelected()">📤 Xuất File JSON</button>
+        <button class="btn btn-sm" style="background:#6b21a8;border:1px solid #a855f7;color:#f3e8ff;font-weight:bold;padding:8px 14px;cursor:pointer;" onclick="doExportLiteSessionSelected()">📦 Xuất Lite Session (ZIP ~2MB)</button>
+      </div>
     </div>
   </div>
 </div>
@@ -510,28 +525,43 @@ body{background:#0b0e14;color:#e5e7eb;min-height:100vh;}
   <div class="modal lg">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:10px;">
       <h2 style="margin:0;color:#f87171;">🗑️ Xóa Nhiều Profile</h2>
-      <div style="display:flex; gap:12px; font-size:12px;">
+      <div style="display:flex; gap:10px; font-size:12px; flex-wrap:wrap;">
+        <span style="display:inline-flex;align-items:center;gap:4px;color:#6ee7b7;font-weight:bold;"><span style="display:inline-block;width:10px;height:10px;background:#10b981;border-radius:2px;"></span> 720p</span>
+        <span style="display:inline-flex;align-items:center;gap:4px;color:#67e8f9;font-weight:bold;"><span style="display:inline-block;width:10px;height:10px;background:#06b6d4;border-radius:2px;"></span> 480p</span>
         <span style="display:inline-flex;align-items:center;gap:4px;color:#facc15;font-weight:bold;"><span style="display:inline-block;width:10px;height:10px;background:#eab308;border-radius:2px;"></span> Acc @fviainboxes.com (Vàng)</span>
         <span style="display:inline-flex;align-items:center;gap:4px;color:#94a3b8;"><span style="display:inline-block;width:10px;height:10px;background:#334155;border-radius:2px;"></span> Loại khác (Xám)</span>
       </div>
     </div>
     <p style="font-size:12px;color:#fca5a5;margin-bottom:12px;">Chọn các profile muốn xóa vĩnh viễn khỏi hệ thống.</p>
+
+    <!-- Thống kê & Tìm kiếm -->
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:10px; flex-wrap:wrap;">
+      <div id="bulkDeleteModalStats" style="display:flex; gap:6px; font-size:11px; flex-wrap:wrap;"></div>
+      <input type="text" id="bulkDeleteSearchInput" placeholder="🔍 Lọc nhanh theo tên, mail, 720p, 480p..." oninput="filterExportModalList('delete', this.value)" style="background:#0f172a; border:1px solid #334155; color:#fff; border-radius:6px; padding:6px 12px; font-size:12px; flex:1; max-width:280px;">
+    </div>
     
     <!-- Chọn nhanh -->
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
-      <label style="display:flex; align-items:center; gap:8px; cursor:pointer; color:#fff; font-weight:bold; background: #450a0a; padding: 7px 12px; border-radius: 8px; border:1px solid #7f1d1d; margin:0; font-size:13px;">
-        <input type="checkbox" id="bulkDeleteSelectAll" style="width:16px;height:16px;cursor:pointer;" onchange="toggleBulkDeleteSelectAll(this.checked)"> Chọn tất cả
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;flex-wrap:wrap;">
+      <label style="display:flex; align-items:center; gap:6px; cursor:pointer; color:#fff; font-weight:bold; background: #450a0a; padding: 6px 10px; border-radius: 6px; border:1px solid #7f1d1d; margin:0; font-size:12px;">
+        <input type="checkbox" id="bulkDeleteSelectAll" style="width:15px;height:15px;cursor:pointer;" onchange="toggleBulkDeleteSelectAll(this.checked)"> Chọn tất cả
       </label>
-      <button class="btn btn-sm" type="button" style="background:#713f12;color:#fef08a;border:1px solid #ca8a04;font-size:12px;padding:7px 12px;" onclick="selectOnlyType('delete', 'fvia')">⚡ Chỉ chọn @fviainboxes (Vàng)</button>
-      <button class="btn btn-sm" type="button" style="background:#1e293b;color:#94a3b8;border:1px solid #475569;font-size:12px;padding:7px 12px;" onclick="selectOnlyType('delete', 'other')">⚡ Chỉ chọn Loại khác</button>
-      <button class="btn btn-sm" type="button" style="background:#0f172a;color:#cbd5e1;border:1px solid #334155;font-size:12px;padding:7px 12px;" onclick="selectOnlyType('delete', 'none')">Bỏ chọn hết</button>
+      <button class="btn btn-sm" id="btnDelete720_2" type="button" style="background:#064e3b;color:#a7f3d0;border:1px solid #059669;font-size:12px;padding:6px 10px;font-weight:bold;" onclick="selectOnlyType('delete', '720p_2cre')">⚡ 720p (2 cre)</button>
+      <button class="btn btn-sm" id="btnDelete720_1" type="button" style="background:#065f46;color:#6ee7b7;border:1px solid #10b981;font-size:12px;padding:6px 10px;font-weight:bold;" onclick="selectOnlyType('delete', '720p_1cre')">⚡ 720p (1 cre)</button>
+      <button class="btn btn-sm" id="btnDelete720_all" type="button" style="background:#047857;color:#ecfdf5;border:1px solid #34d399;font-size:12px;padding:6px 10px;" onclick="selectOnlyType('delete', '720p')">🎬 Tất cả 720p</button>
+      <button class="btn btn-sm" id="btnDelete480" type="button" style="background:#164e63;color:#67e8f9;border:1px solid #06b6d4;font-size:12px;padding:6px 10px;font-weight:bold;" onclick="selectOnlyType('delete', '480p')">📺 Chỉ 480p</button>
+      <button class="btn btn-sm" id="btnDeleteFvia" type="button" style="background:#713f12;color:#fef08a;border:1px solid #ca8a04;font-size:12px;padding:6px 10px;" onclick="selectOnlyType('delete', 'fvia')">🟡 Chỉ @fvia</button>
+      <button class="btn btn-sm" type="button" style="background:#1e293b;color:#94a3b8;border:1px solid #475569;font-size:12px;padding:6px 10px;" onclick="selectOnlyType('delete', 'other')">⚪ Chỉ Khác</button>
+      <button class="btn btn-sm" type="button" style="background:#0f172a;color:#cbd5e1;border:1px solid #334155;font-size:12px;padding:6px 10px;" onclick="selectOnlyType('delete', 'none')">Bỏ chọn hết</button>
     </div>
 
     <div id="bulkDeleteList" style="max-height:300px; overflow-y:auto; background:#0f172a; border-radius:8px; border:1px solid #1e2535; padding:10px; display:flex; flex-direction:column; gap:8px;">
     </div>
-    <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;">
-      <button class="btn btn-ghost" onclick="closeBulkDeleteModal()">Hủy</button>
-      <button class="btn btn-primary" style="background:#dc2626;border:1px solid #b91c1c;font-weight:bold;padding:10px 20px;" onclick="doBulkDeleteSelected()">🗑️ Xóa Đã Chọn</button>
+    <div style="display:flex;gap:10px;margin-top:16px;justify-content:space-between;align-items:center;flex-wrap:wrap;">
+      <div id="bulkDeleteSelectedCount" style="color:#f87171; font-size:13px; font-weight:bold;">Đã chọn: 0 thẻ</div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button class="btn btn-ghost" onclick="closeBulkDeleteModal()">Hủy</button>
+        <button class="btn btn-primary" style="background:#dc2626;border:1px solid #b91c1c;font-weight:bold;padding:10px 20px;" onclick="doBulkDeleteSelected()">🗑️ Xóa Đã Chọn</button>
+      </div>
     </div>
   </div>
 </div>
@@ -1237,33 +1267,213 @@ function isFviaAccount(p) {
   return false;
 }
 
+function getProfileQualityInfo(p) {
+  const raw = (p && p.notes ? String(p.notes).trim() : '');
+  const n = raw.toLowerCase().replace(/\s+/g, ' ');
+
+  const is720 = /720\s*p?/.test(n);
+  const is480 = /480\s*p?/.test(n);
+  const isLite = n.includes('lite');
+  const isFree = n.includes('free gen') && !n.includes('không free') && !n.includes('khong free');
+
+  let cre = null;
+  const matchCre = n.match(/free\s*gen\s*(\d+)/) || n.match(/(\d+)\s*(cre|credit|lần)/);
+  if (matchCre) {
+    cre = parseInt(matchCre[1], 10);
+  } else {
+    const matchLoai = n.match(/loại\s*(\d+)/) || n.match(/loai\s*(\d+)/);
+    if (matchLoai) {
+      cre = parseInt(matchLoai[1], 10);
+    } else if (isLite) {
+      cre = 2; // Nhóm 720p Lite tương đương 2 cre
+    }
+  }
+
+  let typeKey = 'other';
+  let label = '';
+  let badgeStyle = '';
+
+  if (is720) {
+    if (cre === 2 || isLite) {
+      typeKey = '720p_2cre';
+      label = `🟢 720p (2 cre)${isLite ? ' Lite' : ''}`;
+      badgeStyle = 'background:#064e3b; color:#a7f3d0; border:1px solid #059669; font-weight:bold;';
+    } else if (cre === 1) {
+      typeKey = '720p_1cre';
+      label = `🟢 720p (1 cre)${isLite ? ' Lite' : ''}`;
+      badgeStyle = 'background:#065f46; color:#6ee7b7; border:1px solid #10b981; font-weight:bold;';
+    } else if (cre) {
+      typeKey = '720p_cre';
+      label = `🟢 720p (${cre} cre)${isLite ? ' Lite' : ''}`;
+      badgeStyle = 'background:#064e3b; color:#a7f3d0; border:1px solid #059669; font-weight:bold;';
+    } else {
+      typeKey = '720p_1cre';
+      label = `🟢 720p (1 cre)`;
+      badgeStyle = 'background:#065f46; color:#6ee7b7; border:1px solid #10b981; font-weight:bold;';
+    }
+  } else if (is480) {
+    typeKey = '480p';
+    label = `📺 480p${cre ? ` (${cre} cre)` : ''}${isLite ? ' Lite' : ''}`;
+    badgeStyle = 'background:#164e63; color:#67e8f9; border:1px solid #06b6d4; font-weight:bold;';
+  } else if (isFree) {
+    typeKey = 'free_other';
+    label = `🟢 Free Gen${cre ? ` (${cre} cre)` : ''}`;
+    badgeStyle = 'background:#065f46; color:#a7f3d0; border:1px solid #10b981; font-weight:bold;';
+  } else if (n.includes('không free') || n.includes('khong free')) {
+    typeKey = 'notfree';
+    label = `🟠 Không free`;
+    badgeStyle = 'background:#451a03; color:#fbbf24; border:1px solid #f59e0b; font-weight:bold;';
+  } else if (n.includes('đã ra video') || n.includes('da ra video')) {
+    typeKey = 'done';
+    label = `🟣 Đã ra video`;
+    badgeStyle = 'background:#3b0764; color:#d8b4fe; border:1px solid #a855f7; font-weight:bold;';
+  } else if (n.includes('lỗi') || n.includes('loi') || n.includes('xác minh') || n.includes('xac minh') || n.includes('login')) {
+    typeKey = 'error';
+    label = `🔴 Lỗi / Login`;
+    badgeStyle = 'background:#450a0a; color:#fca5a5; border:1px solid #ef4444; font-weight:bold;';
+  } else if (raw) {
+    typeKey = 'other';
+    label = raw.length > 20 ? raw.slice(0, 18) + '...' : raw;
+    badgeStyle = 'background:#1e293b; color:#94a3b8; border:1px solid #475569;';
+  } else {
+    typeKey = 'empty';
+    label = `⚪ Chưa check`;
+    badgeStyle = 'background:#1e293b; color:#64748b; border:1px solid #334155;';
+  }
+
+  return { is720, is480, isLite, cre, typeKey, label, badgeStyle, raw };
+}
+
+function filterExportModalList(modalType, query) {
+  const q = (query || '').toLowerCase().trim();
+  const listId = modalType === 'export' ? 'exportSelectList' : 'bulkDeleteList';
+  const labels = document.querySelectorAll(`#${listId} label.profile-select-item`);
+  labels.forEach(lbl => {
+    const text = (lbl.innerText || '').toLowerCase();
+    const notes = (lbl.getAttribute('data-notes') || '').toLowerCase();
+    if (!q || text.includes(q) || notes.includes(q)) {
+      lbl.style.display = 'flex';
+    } else {
+      lbl.style.display = 'none';
+    }
+  });
+}
+
+function updateExportCount(modalType) {
+  const cbClass = modalType === 'export' ? '.export-select-cb' : '.bulk-delete-cb';
+  const cbs = document.querySelectorAll(cbClass);
+  const checked = document.querySelectorAll(`${cbClass}:checked`);
+  let c720_2 = 0, c720_1 = 0, c720_other = 0, c480 = 0;
+
+  checked.forEach(cb => {
+    const p = allProfiles.find(x => x.id === cb.value);
+    if (!p) return;
+    const q = getProfileQualityInfo(p);
+    if (q.is720) {
+      if (q.cre === 2 || q.isLite || q.typeKey === '720p_2cre') c720_2++;
+      else if (q.cre === 1 || q.typeKey === '720p_1cre' || (!q.isLite && q.cre === null)) c720_1++;
+      else c720_other++;
+    } else if (q.is480) {
+      c480++;
+    }
+  });
+
+  const details = [];
+  if (c720_2) details.push(`${c720_2} thẻ 720p (2 cre)`);
+  if (c720_1) details.push(`${c720_1} thẻ 720p (1 cre)`);
+  if (c720_other) details.push(`${c720_other} thẻ 720p khác`);
+  if (c480) details.push(`${c480} thẻ 480p`);
+
+  const detailText = details.length ? ` — [${details.join(', ')}]` : '';
+  const countEl = document.getElementById(modalType === 'export' ? "exportSelectedCount" : "bulkDeleteSelectedCount");
+  if (countEl) {
+    countEl.innerHTML = `Đã chọn: <b style="color:#facc15;font-size:14px;">${checked.length}</b> / ${cbs.length} thẻ${detailText ? `<span style="color:#a7f3d0;font-size:12px;margin-left:6px;font-weight:normal;">${detailText}</span>` : ''}`;
+  }
+
+  const selectAllCb = document.getElementById(modalType === 'export' ? "exportSelectAll" : "bulkDeleteSelectAll");
+  if (selectAllCb) {
+    selectAllCb.checked = (cbs.length > 0 && checked.length === cbs.length);
+  }
+}
+
 function selectOnlyType(modalType, type) {
   const cbClass = modalType === 'export' ? '.export-select-cb' : '.bulk-delete-cb';
   const checkboxes = document.querySelectorAll(cbClass);
   checkboxes.forEach(cb => {
     const p = allProfiles.find(x => x.id === cb.value);
+    if (!p) return;
     const isFvia = isFviaAccount(p);
+    const q = getProfileQualityInfo(p);
+
     if (type === 'fvia') {
       cb.checked = isFvia;
     } else if (type === 'other') {
       cb.checked = !isFvia;
+    } else if (type === '720p') {
+      cb.checked = q.is720;
+    } else if (type === '720p_2cre') {
+      cb.checked = q.is720 && (q.cre === 2 || q.isLite || q.typeKey === '720p_2cre');
+    } else if (type === '720p_1cre') {
+      cb.checked = q.is720 && (q.cre === 1 || q.typeKey === '720p_1cre' || (!q.isLite && q.cre === null));
+    } else if (type === '480p') {
+      cb.checked = q.is480;
+    } else if (type === 'notfree') {
+      cb.checked = q.typeKey === 'notfree';
     } else if (type === 'all') {
       cb.checked = true;
     } else {
       cb.checked = false;
     }
   });
-  if (modalType === 'export') {
-    document.getElementById("exportSelectAll").checked = false;
-  } else {
-    document.getElementById("bulkDeleteSelectAll").checked = false;
-  }
+  updateExportCount(modalType);
 }
 
 function openExportSelectModal() {
   const list = document.getElementById("exportSelectList");
+  if (document.getElementById("exportSearchInput")) {
+    document.getElementById("exportSearchInput").value = "";
+  }
+
+  let s720_2 = 0, s720_1 = 0, s720_all = 0, s480 = 0, sFvia = 0, sNotFree = 0;
+  allProfiles.forEach(p => {
+    const isFvia = isFviaAccount(p);
+    if (isFvia) sFvia++;
+    const q = getProfileQualityInfo(p);
+    if (q.is720) {
+      s720_all++;
+      if (q.cre === 2 || q.isLite || q.typeKey === '720p_2cre') s720_2++;
+      else if (q.cre === 1 || q.typeKey === '720p_1cre' || (!q.isLite && q.cre === null)) s720_1++;
+    } else if (q.is480) {
+      s480++;
+    } else if (q.typeKey === 'notfree') {
+      sNotFree++;
+    }
+  });
+
+  const b720_2 = document.getElementById("btnExport720_2");
+  if (b720_2) b720_2.innerHTML = `⚡ 720p (2 cre) (${s720_2})`;
+  const b720_1 = document.getElementById("btnExport720_1");
+  if (b720_1) b720_1.innerHTML = `⚡ 720p (1 cre) (${s720_1})`;
+  const b720_all = document.getElementById("btnExport720_all");
+  if (b720_all) b720_all.innerHTML = `🎬 Tất cả 720p (${s720_all})`;
+  const b480 = document.getElementById("btnExport480");
+  if (b480) b480.innerHTML = `📺 Chỉ 480p (${s480})`;
+  const bFvia = document.getElementById("btnExportFvia");
+  if (bFvia) bFvia.innerHTML = `🟡 Chỉ @fvia (${sFvia})`;
+
+  const statsEl = document.getElementById("exportModalStats");
+  if (statsEl) {
+    statsEl.innerHTML = `
+      <span style="background:#064e3b;color:#a7f3d0;padding:2px 7px;border-radius:4px;border:1px solid #059669;">720p (2 cre): <b>${s720_2}</b></span>
+      <span style="background:#065f46;color:#6ee7b7;padding:2px 7px;border-radius:4px;border:1px solid #10b981;">720p (1 cre): <b>${s720_1}</b></span>
+      <span style="background:#164e63;color:#67e8f9;padding:2px 7px;border-radius:4px;border:1px solid #06b6d4;">480p: <b>${s480}</b></span>
+      <span style="background:#451a03;color:#fbbf24;padding:2px 7px;border-radius:4px;border:1px solid #f59e0b;">Không free: <b>${sNotFree}</b></span>
+    `;
+  }
+
   list.innerHTML = allProfiles.map(p => {
     const isFvia = isFviaAccount(p);
+    const qInfo = getProfileQualityInfo(p);
     const bg = isFvia ? "#422006" : "#1e293b";
     const border = isFvia ? "1px solid #eab308" : "1px solid #334155";
     const dotColor = isFvia ? "#10b981" : "#facc15";
@@ -1272,30 +1482,43 @@ function openExportSelectModal() {
       ? `<span style="background:#eab308;color:#000;font-weight:bold;font-size:10px;padding:2px 6px;border-radius:4px;flex-shrink:0;">🟡 @fviainboxes.com</span>`
       : `<span style="background:#334155;color:#94a3b8;font-size:10px;padding:2px 6px;border-radius:4px;flex-shrink:0;">⚪ Loại khác</span>`;
     const bundleBadge = p.is_bundle
-      ? `<span style="background:#854d0e;color:#fef08a;border:1px solid #ca8a04;font-size:10px;padding:1px 5px;border-radius:3px;">📦 Bundle</span>`
+      ? `<span style="background:#854d0e;color:#fef08a;border:1px solid #ca8a04;font-size:10px;padding:1px 5px;border-radius:3px;flex-shrink:0;">📦 Bundle</span>`
       : ``;
+    const qualityBadge = `<span style="font-size:11px;font-weight:bold;padding:3px 8px;border-radius:4px;white-space:nowrap;flex-shrink:0;${qInfo.badgeStyle}" title="${esc(p.notes || '')}">${qInfo.label}</span>`;
+
     return `
-    <label style="display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;padding:8px 12px;border-radius:6px;background:${bg};border:${border};transition:all 0.2s;">
-      <div style="display:flex;align-items:center;gap:10px;overflow:hidden;">
-        <input type="checkbox" class="export-select-cb" value="${p.id}" data-isfvia="${isFvia}" style="width:16px;height:16px;cursor:pointer;">
+    <label class="profile-select-item" data-notes="${esc(p.notes || '')}" style="display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;padding:8px 12px;border-radius:6px;background:${bg};border:${border};transition:all 0.2s;">
+      <div style="display:flex;align-items:center;gap:10px;overflow:hidden;flex:1;">
+        <input type="checkbox" class="export-select-cb" value="${p.id}" data-isfvia="${isFvia}" data-qtype="${qInfo.typeKey}" onchange="updateExportCount('export')" style="width:16px;height:16px;cursor:pointer;flex-shrink:0;">
         ${dot}
-        <span style="color:${isFvia ? '#fef08a' : '#e2e8f0'};font-size:13px;font-weight:${isFvia ? 'bold' : 'normal'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-          📋 ${esc(p.name)} <span style="color:#64748b;font-size:11px;">#${p.id}</span>
-          ${p.ms_email ? ` <span style="color:${isFvia ? '#facc15' : '#38bdf8'};font-size:11px;">📧 ${esc(p.ms_email)}</span>` : ''}
-        </span>
+        <div style="display:flex;flex-direction:column;gap:3px;overflow:hidden;flex:1;">
+          <div style="display:flex;align-items:center;gap:6px;overflow:hidden;">
+            <span style="color:${isFvia ? '#fef08a' : '#e2e8f0'};font-size:13px;font-weight:${isFvia ? 'bold' : 'normal'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+              📋 ${esc(p.name)} <span style="color:#64748b;font-size:11px;">#${p.id}</span>
+            </span>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;overflow:hidden;flex-wrap:wrap;">
+            ${p.ms_email ? `<span style="color:${isFvia ? '#facc15' : '#38bdf8'};font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">📧 ${esc(p.ms_email)}</span>` : ''}
+            ${p.notes ? `<span style="color:#a7f3d0;font-size:10px;background:#064e3b;border:1px solid #059669;padding:1px 6px;border-radius:3px;">📝 ${esc(p.notes)}</span>` : ''}
+          </div>
+        </div>
       </div>
-      <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+      <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;">
+        ${qualityBadge}
         ${bundleBadge}
         ${typeBadge}
       </div>
     </label>`;
   }).join("");
+
   document.getElementById("exportSelectAll").checked = false;
+  updateExportCount('export');
   document.getElementById("exportSelectModal").classList.add("active");
 }
 function closeExportSelectModal() { document.getElementById("exportSelectModal").classList.remove("active"); }
 function toggleExportSelectAll(checked) {
   document.querySelectorAll(".export-select-cb").forEach(cb => cb.checked = checked);
+  updateExportCount('export');
 }
 async function doExportSelected() {
   const ids = [...document.querySelectorAll(".export-select-cb:checked")].map(cb => cb.value);
@@ -1445,8 +1668,50 @@ async function handleLiteSessionFile(event) {
 
 function openBulkDeleteModal() {
   const list = document.getElementById("bulkDeleteList");
+  if (document.getElementById("bulkDeleteSearchInput")) {
+    document.getElementById("bulkDeleteSearchInput").value = "";
+  }
+
+  let s720_2 = 0, s720_1 = 0, s720_all = 0, s480 = 0, sFvia = 0, sNotFree = 0;
+  allProfiles.forEach(p => {
+    const isFvia = isFviaAccount(p);
+    if (isFvia) sFvia++;
+    const q = getProfileQualityInfo(p);
+    if (q.is720) {
+      s720_all++;
+      if (q.cre === 2 || q.isLite || q.typeKey === '720p_2cre') s720_2++;
+      else if (q.cre === 1 || q.typeKey === '720p_1cre' || (!q.isLite && q.cre === null)) s720_1++;
+    } else if (q.is480) {
+      s480++;
+    } else if (q.typeKey === 'notfree') {
+      sNotFree++;
+    }
+  });
+
+  const b720_2 = document.getElementById("btnDelete720_2");
+  if (b720_2) b720_2.innerHTML = `⚡ 720p (2 cre) (${s720_2})`;
+  const b720_1 = document.getElementById("btnDelete720_1");
+  if (b720_1) b720_1.innerHTML = `⚡ 720p (1 cre) (${s720_1})`;
+  const b720_all = document.getElementById("btnDelete720_all");
+  if (b720_all) b720_all.innerHTML = `🎬 Tất cả 720p (${s720_all})`;
+  const b480 = document.getElementById("btnDelete480");
+  if (b480) b480.innerHTML = `📺 Chỉ 480p (${s480})`;
+  const bFvia = document.getElementById("btnDeleteFvia");
+  if (bFvia) bFvia.innerHTML = `🟡 Chỉ @fvia (${sFvia})`;
+
+  const statsEl = document.getElementById("bulkDeleteModalStats");
+  if (statsEl) {
+    statsEl.innerHTML = `
+      <span style="background:#064e3b;color:#a7f3d0;padding:2px 7px;border-radius:4px;border:1px solid #059669;">720p (2 cre): <b>${s720_2}</b></span>
+      <span style="background:#065f46;color:#6ee7b7;padding:2px 7px;border-radius:4px;border:1px solid #10b981;">720p (1 cre): <b>${s720_1}</b></span>
+      <span style="background:#164e63;color:#67e8f9;padding:2px 7px;border-radius:4px;border:1px solid #06b6d4;">480p: <b>${s480}</b></span>
+      <span style="background:#451a03;color:#fbbf24;padding:2px 7px;border-radius:4px;border:1px solid #f59e0b;">Không free: <b>${sNotFree}</b></span>
+    `;
+  }
+
   list.innerHTML = allProfiles.map(p => {
     const isFvia = isFviaAccount(p);
+    const qInfo = getProfileQualityInfo(p);
     const bg = isFvia ? "#422006" : "#1e293b";
     const border = isFvia ? "1px solid #eab308" : "1px solid #334155";
     const dotColor = isFvia ? "#10b981" : "#facc15";
@@ -1455,30 +1720,43 @@ function openBulkDeleteModal() {
       ? `<span style="background:#eab308;color:#000;font-weight:bold;font-size:10px;padding:2px 6px;border-radius:4px;flex-shrink:0;">🟡 @fviainboxes.com</span>`
       : `<span style="background:#334155;color:#94a3b8;font-size:10px;padding:2px 6px;border-radius:4px;flex-shrink:0;">⚪ Loại khác</span>`;
     const bundleBadge = p.is_bundle
-      ? `<span style="background:#854d0e;color:#fef08a;border:1px solid #ca8a04;font-size:10px;padding:1px 5px;border-radius:3px;">📦 Bundle</span>`
+      ? `<span style="background:#854d0e;color:#fef08a;border:1px solid #ca8a04;font-size:10px;padding:1px 5px;border-radius:3px;flex-shrink:0;">📦 Bundle</span>`
       : ``;
+    const qualityBadge = `<span style="font-size:11px;font-weight:bold;padding:3px 8px;border-radius:4px;white-space:nowrap;flex-shrink:0;${qInfo.badgeStyle}" title="${esc(p.notes || '')}">${qInfo.label}</span>`;
+
     return `
-    <label style="display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;padding:8px 12px;border-radius:6px;background:${bg};border:${border};">
-      <div style="display:flex;align-items:center;gap:10px;overflow:hidden;">
-        <input type="checkbox" class="bulk-delete-cb" value="${p.id}" data-isfvia="${isFvia}" style="width:16px;height:16px;cursor:pointer;">
+    <label class="profile-select-item" data-notes="${esc(p.notes || '')}" style="display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;padding:8px 12px;border-radius:6px;background:${bg};border:${border};transition:all 0.2s;">
+      <div style="display:flex;align-items:center;gap:10px;overflow:hidden;flex:1;">
+        <input type="checkbox" class="bulk-delete-cb" value="${p.id}" data-isfvia="${isFvia}" data-qtype="${qInfo.typeKey}" onchange="updateExportCount('delete')" style="width:16px;height:16px;cursor:pointer;flex-shrink:0;">
         ${dot}
-        <span style="color:${isFvia ? '#fef08a' : '#e2e8f0'};font-size:13px;font-weight:${isFvia ? 'bold' : 'normal'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-          💻 ${esc(p.name)} <span style="color:#64748b;font-size:11px;">#${p.id}</span>
-          ${p.ms_email ? ` <span style="color:${isFvia ? '#facc15' : '#38bdf8'};font-size:11px;">📧 ${esc(p.ms_email)}</span>` : ''}
-        </span>
+        <div style="display:flex;flex-direction:column;gap:3px;overflow:hidden;flex:1;">
+          <div style="display:flex;align-items:center;gap:6px;overflow:hidden;">
+            <span style="color:${isFvia ? '#fef08a' : '#e2e8f0'};font-size:13px;font-weight:${isFvia ? 'bold' : 'normal'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+              💻 ${esc(p.name)} <span style="color:#64748b;font-size:11px;">#${p.id}</span>
+            </span>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;overflow:hidden;flex-wrap:wrap;">
+            ${p.ms_email ? `<span style="color:${isFvia ? '#facc15' : '#38bdf8'};font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">📧 ${esc(p.ms_email)}</span>` : ''}
+            ${p.notes ? `<span style="color:#a7f3d0;font-size:10px;background:#064e3b;border:1px solid #059669;padding:1px 6px;border-radius:3px;">📝 ${esc(p.notes)}</span>` : ''}
+          </div>
+        </div>
       </div>
-      <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+      <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;">
+        ${qualityBadge}
         ${bundleBadge}
         ${typeBadge}
       </div>
     </label>`;
   }).join("");
+
   document.getElementById("bulkDeleteSelectAll").checked = false;
+  updateExportCount('delete');
   document.getElementById("bulkDeleteModal").classList.add("active");
 }
 function closeBulkDeleteModal() { document.getElementById("bulkDeleteModal").classList.remove("active"); }
 function toggleBulkDeleteSelectAll(checked) {
   document.querySelectorAll(".bulk-delete-cb").forEach(cb => cb.checked = checked);
+  updateExportCount('delete');
 }
 async function doBulkDeleteSelected() {
   const ids = [...document.querySelectorAll(".bulk-delete-cb:checked")].map(cb => cb.value);
