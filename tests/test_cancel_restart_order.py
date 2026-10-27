@@ -43,7 +43,7 @@ class CancelRestartOrderTest(unittest.TestCase):
             self.assertFalse(kw["reuse_existing"])
             events.append(("open", "new"))
             return new, False
-        def vpn(context, profile_id):
+        def vpn(context, profile_id, **kw):
             events.append(("vpn", "new" if context is new else "old"))
             return {"ip": "test-ip", "country": "test-country"}
         state = {"task": {"restart_browser_before_cancel": restart}}

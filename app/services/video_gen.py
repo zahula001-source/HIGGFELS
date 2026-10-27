@@ -482,7 +482,10 @@ def _prepare_video_network(context, task_id, profile_id, generate_ip, generate_h
             message="Đang kết nối Sinh IP EXTVPN (1Click -> HMA -> Urban -> HMA)..."
         )
         print(f"Task {task_id}: Sinh IP EXTVPN ON - bat dau quy trinh 1Click -> HMA -> Urban -> HMA", flush=True)
-        vpn_info = connect_unique_vpn_ip(context, profile_id)
+        if generate_hma:
+            vpn_info = connect_unique_vpn_ip(context, profile_id, rotate_hma_first=True)
+        else:
+            vpn_info = connect_unique_vpn_ip(context, profile_id)
         video_tasks[task_id].update(
             vpn_ip=vpn_info["ip"], vpn_country=vpn_info["country"],
             message=f"Đã kết nối VPN: {vpn_info['country']} — IP {vpn_info['ip']}",
@@ -1922,7 +1925,11 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
 
                     video_tasks[task_id]["message"] = "Chrome đã mở, đang đổi IP mới..."
                     from app.services.vpn_ip import connect_unique_vpn_ip
-                    vpn_info = connect_unique_vpn_ip(context, profile_id)
+                    task_gen_hma = bool(video_tasks.get(task_id, {}).get("params", {}).get("generate_hma", False))
+                    if task_gen_hma:
+                        vpn_info = connect_unique_vpn_ip(context, profile_id, rotate_hma_first=True)
+                    else:
+                        vpn_info = connect_unique_vpn_ip(context, profile_id)
                     print(f"Cancel + Gen đổi IP thành công: {vpn_info['ip']} ({vpn_info['country']})")
                     page.goto(resume_url or video_model_url, timeout=30000)
                     page.wait_for_load_state("domcontentloaded")

@@ -1343,7 +1343,10 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                 if generate_ip:
                     try:
                         from app.services.vpn_ip import connect_unique_vpn_ip
-                        vpn_info = connect_unique_vpn_ip(context, profile_id)
+                        if generate_hma:
+                            vpn_info = connect_unique_vpn_ip(context, profile_id, rotate_hma_first=True)
+                        else:
+                            vpn_info = connect_unique_vpn_ip(context, profile_id)
                         print(f"Sinh IP thanh cong: {vpn_info['ip']} ({vpn_info['country']})")
                     except Exception as vpn_error:
                         print(f"Sinh IP that bai, dung tao acc de tranh trung IP: {vpn_error}")

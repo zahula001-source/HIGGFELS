@@ -122,11 +122,22 @@ def _wait_for_popup_ready(page) -> None:
     deadline = time.time() + 60
     registration_retries = 0
     max_registration_retries = 4
+    blocked_retries = 0
+    max_blocked_retries = 4
     while time.time() < deadline:
         body = page.locator("body").inner_text(timeout=3000)
         body_lower = body.casefold()
 
         if "err_blocked_by_client" in body_lower or "bị chặn" in body_lower:
+            if blocked_retries < max_blocked_retries:
+                blocked_retries += 1
+                print(f"  [VPN] 1ClickVPN báo bị chặn tạm thời, đợi 2s rồi tải lại popup ({blocked_retries}/{max_blocked_retries})...", flush=True)
+                page.wait_for_timeout(2000)
+                try:
+                    page.goto(ONECLICK_POPUP_URL, wait_until="domcontentloaded", timeout=10000)
+                except Exception:
+                    pass
+                continue
             raise RuntimeError("1ClickVPN bị Chrome chặn (ERR_BLOCKED_BY_CLIENT)")
 
         # This is an extension-reported initialization failure, not a normal
@@ -377,9 +388,29 @@ def _wait_for_urban_ready(page) -> None:
     page.bring_to_front()
 
     deadline = time.time() + 30
+    blocked_retries = 0
+    max_blocked_retries = 4
     while time.time() < deadline:
         if page.is_closed():
             raise RuntimeError("Trang Urban VPN bi dong")
+
+        try:
+            body = page.locator("body").inner_text(timeout=2000)
+            body_lower = body.casefold()
+            if "err_blocked_by_client" in body_lower or "bị chặn" in body_lower:
+                if blocked_retries < max_blocked_retries:
+                    blocked_retries += 1
+                    print(f"  [VPN] Urban VPN báo bị chặn tạm thời, đợi 2s rồi tải lại popup ({blocked_retries}/{max_blocked_retries})...", flush=True)
+                    page.wait_for_timeout(2000)
+                    try:
+                        page.goto(URBAN_POPUP_URL, wait_until="domcontentloaded", timeout=10000)
+                    except Exception:
+                        pass
+                    continue
+                raise RuntimeError("Urban VPN bị Chrome chặn (ERR_BLOCKED_BY_CLIENT)")
+        except Exception as e:
+            if "err_blocked_by_client" in str(e).lower() or "bị chặn" in str(e).lower():
+                raise
 
         # 1. Kiểm tra màn hình 'Service interruption' (xung đột proxy extension khác)
         try:
@@ -668,6 +699,24 @@ def _disconnect_1clickvpn(context) -> None:
             pass
 
 
+def _disconnect_urban_vpn(context) -> None:
+    """Tắt kết nối Urban VPN nếu đang kết nối."""
+    popup = context.new_page()
+    try:
+        popup.goto(URBAN_POPUP_URL, wait_until="domcontentloaded", timeout=4000)
+        pause_btn = popup.locator(".play-button, button:has-text('Pause'), button:has-text('Stop')").first
+        if pause_btn.count() and pause_btn.is_visible(timeout=1500):
+            pause_btn.click(timeout=1000)
+            popup.wait_for_timeout(500)
+    except Exception:
+        pass
+    finally:
+        try:
+            popup.close()
+        except Exception:
+            pass
+
+
 def _connect_1clickvpn(context, profile_id: str, max_attempts: int = 8) -> dict[str, str]:
     """Kết nối 1ClickVPN và trả về IP mới độc nhất."""
     popup = context.new_page()
@@ -745,23 +794,27 @@ def _connect_1clickvpn(context, profile_id: str, max_attempts: int = 8) -> dict[
             pass
 
 
-def connect_unique_vpn_ip(context, profile_id: str, max_attempts: int = 1) -> dict[str, str]:
+def connect_unique_vpn_ip(context, profile_id: str, max_attempts: int = 1, rotate_hma_first: bool = False) -> dict[str, str]:
     """Ket noi VPN voi IP doc nhat theo logic:
+    - Neu bat ca 2 (rotate_hma_first=True): Kich hoat Sinh IP HMA truoc.
     1. Thu sinh IP bang 1ClickVPN lan 1.
     2. Neu 1ClickVPN lan 1 loi:
        -> Kich hoat Sinh IP HMA (Logic nut 6: rotate_hma_random_country).
        -> Thu lai 1ClickVPN lan 2.
-    3. Neu van khong duoc:
-       -> Tat 1ClickVPN, doi sang UrbanVPN lan 1.
+    3. Neu 1ClickVPN lan 2 van loi:
+       -> Kich hoat Sinh IP HMA.
+       -> Tat 1ClickVPN, chuyen sang UrbanVPN lan 1.
     4. Neu UrbanVPN lan 1 loi:
        -> Kich hoat Sinh IP HMA.
        -> Thu lai UrbanVPN lan 2.
-    5. Neu van khong duoc sau tat ca -> Bao loi.
+    5. Neu UrbanVPN lan 2 van loi (ca 2 extension deu that bai):
+       -> Tat UrbanVPN, sinh IP HMA va tiep tuc lam viec.
     """
     attempts = max(1, max_attempts or 1)
 
-    def _trigger_hma(reason: str):
+    def _trigger_hma(reason: str) -> dict[str, str]:
         print(f"  [VPN] {reason} -> Dang kich hoat Sinh IP HMA (Logic nut 6)...", flush=True)
+        hma_info = {}
         try:
             from app.services.hma_vpn import rotate_hma_random_country
             hma_info = rotate_hma_random_country()
@@ -770,6 +823,12 @@ def connect_unique_vpn_ip(context, profile_id: str, max_attempts: int = 1) -> di
             print(f"  [VPN] Kich hoat Sinh IP HMA that bai hoac khong kha dung: {hma_error}", flush=True)
         import time as _t
         _t.sleep(2)
+        return hma_info
+
+    # ── BUOC 0: Neu bat ca 2 (rotate_hma_first=True) -> Sinh IP HMA truoc ──
+    if rotate_hma_first:
+        print("  [VPN] [BUOC 0] Bat ca Sinh IP EXTVPN va HMA -> Kich hoat Sinh IP HMA truoc...", flush=True)
+        _trigger_hma("Khoi dong: Bat ca 2 (EXTVPN + HMA)")
 
     # ── BUOC 1: Thu 1ClickVPN Lan 1 ──
     print("  [VPN] [BUOC 1] Bat dau thu sinh IP bang 1ClickVPN (Lan 1)...", flush=True)
@@ -796,7 +855,8 @@ def connect_unique_vpn_ip(context, profile_id: str, max_attempts: int = 1) -> di
     except Exception as e_1click_2:
         print(f"  [VPN] 1ClickVPN Lan 2 van that bai: {e_1click_2}", flush=True)
 
-    # ── BUOC 3: Tat 1ClickVPN va chuyen sang UrbanVPN Lan 1 ──
+    # ── BUOC 3: Kich hoat HMA xong tat 1ClickVPN va chuyen sang UrbanVPN Lan 1 ──
+    _trigger_hma("1ClickVPN Lan 2 loi")
     print("  [VPN] [BUOC 3] 1ClickVPN khong duoc sau 2 lan -> Tat 1ClickVPN va chuyen sang UrbanVPN (Lan 1)...", flush=True)
     try:
         _disconnect_1clickvpn(context)
@@ -832,9 +892,28 @@ def connect_unique_vpn_ip(context, profile_id: str, max_attempts: int = 1) -> di
         return result
     except Exception as e_urban_2:
         print(f"  [VPN] UrbanVPN Lan 2 van that bai: {e_urban_2}", flush=True)
-        raise RuntimeError(
-            f"Sinh IP EXTVPN that bai sau ca 1ClickVPN (Lan 1 & 2) va UrbanVPN (Lan 1 & 2): {e_urban_2}"
-        ) from e_urban_2
+
+    # ── BUOC 5: Tat ca deu that bai -> Tat UrbanVPN, sinh IP HMA va tiep tuc lam viec ──
+    print("  [VPN] [BUOC 5] Ca 1ClickVPN va UrbanVPN deu khong duoc -> Tat ca extension, sinh IP HMA va tiep tuc lam viec...", flush=True)
+    try:
+        _disconnect_urban_vpn(context)
+    except Exception:
+        pass
+    try:
+        _disable_extension(context, URBAN_EXTENSION_ID)
+    except Exception as e:
+        print(f"  [VPN] Bo qua buoc tat extension UrbanVPN: {e}", flush=True)
+
+    last_hma = _trigger_hma("Fallback cuoi cung: Ca 2 extension VPN deu khong duoc -> Sinh IP HMA va lam viec")
+    final_ip = (last_hma.get("ip") if last_hma else "") or ""
+    final_country = (last_hma.get("country") if last_hma else "HMA") or "HMA"
+    if not final_ip:
+        try:
+            final_ip = _public_ip(context)
+        except Exception:
+            final_ip = ""
+    print(f"  [VPN] Tiep tuc cong viec voi IP HMA: {final_ip} ({final_country})", flush=True)
+    return {"ip": final_ip, "country": final_country}
 
 
 _load_reservations()

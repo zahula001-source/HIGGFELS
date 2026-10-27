@@ -414,7 +414,11 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
 
                             video_tasks[task_id]["message"] = "Chrome đã mở, đang đổi IP mới..."
                             from app.services.vpn_ip import connect_unique_vpn_ip
-                            vpn_info = connect_unique_vpn_ip(context, profile_id)
+                            task_gen_hma = bool(video_tasks.get(task_id, {}).get("params", {}).get("generate_hma", False))
+                            if task_gen_hma:
+                                vpn_info = connect_unique_vpn_ip(context, profile_id, rotate_hma_first=True)
+                            else:
+                                vpn_info = connect_unique_vpn_ip(context, profile_id)
                             print(f"Cancel + Gen (Check) đổi IP thành công: {vpn_info['ip']} ({vpn_info['country']})")
                             page.goto(resume_url or check_model_url, timeout=30000)
                             page.wait_for_load_state("domcontentloaded")

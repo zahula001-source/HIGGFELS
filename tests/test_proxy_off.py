@@ -195,8 +195,8 @@ class ProxyOffBrowserTests(unittest.TestCase):
         manifest = json.loads((real_extension / 'manifest.json').read_text(encoding='utf-8-sig'))
         # Identify the shipped bundle under the isolated test config root.
         fixture = self.root / 'extensions' / '1clickvpn'
-        fixture.mkdir(parents=True)
-        (fixture / 'manifest.json').write_text(json.dumps(manifest), encoding='utf-8')
+        import shutil
+        shutil.copytree(real_extension, fixture, dirs_exist_ok=True)
         runtime = self.root / 'actual-oneclick-profile'
         profile = SimpleNamespace(id='actual-oneclick-visible', name='Test', user_data_dir=str(runtime), fingerprint={}, extensions='')
         with sync_playwright() as pw:
@@ -377,6 +377,7 @@ class FrontendVpnTests(unittest.TestCase):
                         }
                         return {ok:true, json:async()=>({disable_algodata:true})};
                     };
+                    window.addRecentProfile = () => {};
                 }''')
                 html = (browser.BASE_DIR / 'static' / 'index.html').read_text(encoding='utf-8')
                 page.add_script_tag(content=html[html.index('function restoreOneClickVpnToggle()'):html.index('async function loadProfiles(){')])

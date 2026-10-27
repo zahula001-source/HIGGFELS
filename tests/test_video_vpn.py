@@ -179,7 +179,41 @@ class VpnIpTests(unittest.TestCase):
             result = vpn_ip.connect_unique_vpn_ip(context, "test-p")
             self.assertEqual(result["ip"], "9.9.9.9")
             self.assertEqual(result["country"], "Germany")
-            self.assertEqual(hma_mock.call_count, 2)
+            # Call 1: after 1Click 1 error
+            # Call 2: after 1Click 2 error (before Urban 1)
+            # Call 3: after Urban 1 error (before Urban 2)
+            self.assertEqual(hma_mock.call_count, 3)
+
+    def test_both_vpn_and_hma_enabled_rotates_hma_first(self):
+        context = Mock()
+        hma_mock = Mock(return_value={"ip": "7.7.7.7", "country": "Japan"})
+        with patch("app.services.hma_vpn.rotate_hma_random_country", hma_mock), \
+                patch.object(vpn_ip, "_connect_1clickvpn", return_value={"ip": "1.2.3.4", "country": "USA"}), \
+                patch("time.sleep"):
+            result = vpn_ip.connect_unique_vpn_ip(context, "test-p", rotate_hma_first=True)
+            self.assertEqual(result["ip"], "1.2.3.4")
+            self.assertEqual(result["country"], "USA")
+            self.assertEqual(hma_mock.call_count, 1)
+
+    def test_both_extensions_fail_falls_back_to_hma_without_error(self):
+        context = Mock()
+        hma_mock = Mock(return_value={"ip": "5.5.5.5", "country": "Canada"})
+        with patch("app.services.hma_vpn.rotate_hma_random_country", hma_mock), \
+                patch.object(vpn_ip, "_connect_1clickvpn", side_effect=[RuntimeError("1click 1"), RuntimeError("1click 2")]), \
+                patch.object(vpn_ip, "_disconnect_1clickvpn"), \
+                patch.object(vpn_ip, "_disconnect_urban_vpn"), \
+                patch.object(vpn_ip, "_disable_extension"), \
+                patch.object(vpn_ip, "_connect_urban_vpn", side_effect=[RuntimeError("urban 1"), RuntimeError("urban 2")]), \
+                patch("time.sleep"):
+            result = vpn_ip.connect_unique_vpn_ip(context, "test-p", rotate_hma_first=True)
+            # Step 0: HMA rotate (call 1)
+            # Step 1: 1Click 1 fail -> HMA rotate (call 2)
+            # Step 2: 1Click 2 fail -> HMA rotate (call 3)
+            # Step 3: Urban 1 fail -> HMA rotate (call 4)
+            # Step 4: Urban 2 fail -> HMA rotate and work (call 5)
+            self.assertEqual(result["ip"], "5.5.5.5")
+            self.assertEqual(result["country"], "Canada")
+            self.assertEqual(hma_mock.call_count, 5)
 
 
 if __name__ == "__main__":
