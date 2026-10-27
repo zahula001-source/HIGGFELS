@@ -277,6 +277,194 @@ def click_use_password(page) -> bool:
     return False
 
 
+def fill_and_submit_otp(page, otp_code: str, first_visible_func=None) -> bool:
+    """Điền mã OTP vào trang Microsoft (hỗ trợ cả ô đơn lẻ và nhiều ô rời rạc Fluent UI: codeEntry-0..5)
+    và bấm nút xác nhận / Tiếp theo hoặc Enter.
+    """
+    code_digits = re.sub(r"\D", "", str(otp_code or "").strip())
+    if not code_digits:
+        return False
+
+    seg_selector = (
+        'input[id^="codeEntry-"], '
+        'div[data-testid="codeEntry"] input, '
+        'div[data-testid="codeInputWrapper"] input, '
+        'input[aria-label*="Enter code digit" i], '
+        'input[id^="idTxtBx_SAOTCC_OTC_"]'
+    )
+    segmented_inputs = page.locator(seg_selector)
+    seg_count = 0
+    try:
+        seg_count = segmented_inputs.count()
+    except Exception:
+        seg_count = 0
+
+    if seg_count >= 4:
+        print(f"Watchdog: detected {seg_count} segmented OTP inputs (codeEntry / Fluent UI), filling code {code_digits}...")
+        # 1) Thử paste vào ô đầu tiên (Fluent UI component thường lắng nghe onPaste trên ô đầu tiên để tự chia đều)
+        try:
+            page.evaluate(r"""(code) => {
+                const first = document.getElementById('codeEntry-0') || 
+                              document.querySelector('[data-testid="codeEntry"] input') ||
+                              document.querySelector('input[id^="codeEntry-"]');
+                if (!first) return;
+                first.focus();
+                const dt = new DataTransfer();
+                dt.setData('text/plain', code);
+                const pasteEv = new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true });
+                first.dispatchEvent(pasteEv);
+            }""", code_digits)
+            page.wait_for_timeout(100)
+        except Exception:
+            pass
+
+        # 2) Dùng JS set giá trị theo prototype setter của HTMLInputElement và kích hoạt đầy đủ các sự kiện (input, change, keydown, keyup)
+        try:
+            page.evaluate(r"""(code) => {
+                const inputs = Array.from(document.querySelectorAll(
+                    'input[id^="codeEntry-"], div[data-testid="codeEntry"] input, div[data-testid="codeInputWrapper"] input, input[aria-label*="Enter code digit" i], input[id^="idTxtBx_SAOTCC_OTC_"]'
+                ));
+                const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+                for (let i = 0; i < code.length && i < inputs.length; i++) {
+                    const el = inputs[i];
+                    el.focus();
+                    if (setter) {
+                        setter.call(el, code[i]);
+                    } else {
+                        el.value = code[i];
+                    }
+                    el.dispatchEvent(new Event('input', { bubbles: true }));
+                    el.dispatchEvent(new Event('change', { bubbles: true }));
+                    el.dispatchEvent(new KeyboardEvent('keydown', { key: code[i], code: `Digit${code[i]}`, bubbles: true }));
+                    el.dispatchEvent(new KeyboardEvent('keypress', { key: code[i], code: `Digit${code[i]}`, bubbles: true }));
+                    el.dispatchEvent(new KeyboardEvent('keyup', { key: code[i], code: `Digit${code[i]}`, bubbles: true }));
+                }
+            }""", code_digits)
+            page.wait_for_timeout(150)
+        except Exception:
+            pass
+
+        # 3) Đảm bảo Playwright locator fill từng ô
+        for i, digit in enumerate(code_digits):
+            if i < seg_count:
+                try:
+                    inp = segmented_inputs.nth(i)
+                    val = ""
+                    if hasattr(inp, "input_value"):
+                        try:
+                            val = inp.input_value(timeout=100)
+                        except Exception:
+                            val = ""
+                    if val != digit:
+                        if hasattr(inp, "click"):
+                            try:
+                                inp.click(timeout=500)
+                            except Exception:
+                                pass
+                        inp.fill(digit, timeout=1000)
+                        page.wait_for_timeout(50)
+                except Exception:
+                    try:
+                        segmented_inputs.nth(i).fill(digit, timeout=1000)
+                    except Exception:
+                        pass
+    else:
+        single_input = None
+        if first_visible_func is not None:
+            single_input = first_visible_func(
+                '#iOttText, input[name="otc"], input[autocomplete="one-time-code"], '
+                'input[id^="idTxtBx_SAOTCC_OTC"], input[id*="otc" i], '
+                'input[inputmode="numeric"]:not([maxlength="1"]), input[type="text"]:not([maxlength="1"])'
+            )
+        if single_input is None:
+            try:
+                loc = page.locator(
+                    '#iOttText, input[name="otc"], input[autocomplete="one-time-code"], '
+                    'input[id^="idTxtBx_SAOTCC_OTC"], input[id*="otc" i]'
+                )
+                if loc.count() > 0:
+                    single_input = loc.first
+            except Exception:
+                pass
+
+        if single_input is not None:
+            try:
+                single_input.click(timeout=1000)
+            except Exception:
+                pass
+            single_input.fill(code_digits, timeout=3000)
+            try:
+                page.evaluate(r"""(val) => {
+                    const el = document.getElementById('iOttText') || 
+                               document.querySelector('input[name="otc"]') || 
+                               document.querySelector('input[autocomplete="one-time-code"]') ||
+                               document.querySelector('input[inputmode="numeric"]:not([maxlength="1"])');
+                    if (!el) return;
+                    el.focus();
+                    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+                    if (setter) setter.call(el, val);
+                    el.dispatchEvent(new Event('input', { bubbles: true }));
+                    el.dispatchEvent(new Event('change', { bubbles: true }));
+                }""", code_digits)
+            except Exception:
+                pass
+            print(f"Watchdog: filled OTP {code_digits} in single input")
+
+    # Bấm nút xác nhận / tiếp theo
+    page.wait_for_timeout(300)
+    submit_selectors = (
+        '#iVerifyCodeAction, #idSubmit_SAOTCC_Continue, #idSIButton9, '
+        'button[data-testid="primaryButton"], '
+        'button[type="submit"], input[type="submit"], '
+        'button:has-text("Next"), button:has-text("Verify"), '
+        'button:has-text("Tiếp theo"), button:has-text("Xác nhận"), '
+        'button:has-text("Tiếp tục")'
+    )
+    submit_button = None
+    if first_visible_func is not None:
+        submit_button = first_visible_func(submit_selectors)
+    if submit_button is None:
+        try:
+            btn_loc = page.locator(submit_selectors)
+            for idx in range(btn_loc.count()):
+                btn = btn_loc.nth(idx)
+                if btn.is_visible(timeout=200):
+                    submit_button = btn
+                    break
+        except Exception:
+            pass
+
+    submitted = False
+    if submit_button is not None:
+        try:
+            is_en = True
+            if hasattr(submit_button, "is_enabled"):
+                try:
+                    is_en = submit_button.is_enabled()
+                except Exception:
+                    is_en = True
+            if is_en:
+                submit_button.click(timeout=3000)
+                submitted = True
+                print("Watchdog: clicked submit button for OTP")
+        except Exception as e:
+            print(f"Watchdog: error clicking OTP submit button: {e}")
+
+    if not submitted:
+        try:
+            if seg_count >= 4:
+                segmented_inputs.last.press("Enter")
+            elif single_input is not None:
+                single_input.press("Enter")
+            else:
+                page.keyboard.press("Enter")
+            print("Watchdog: pressed Enter to submit OTP")
+        except Exception as e:
+            print(f"Watchdog: error pressing Enter: {e}")
+
+    return True
+
+
 @dataclass(frozen=True)
 class MicrosoftAccount:
     email: str

@@ -714,5 +714,120 @@ class ImmediateFreeGenReadTests(unittest.TestCase):
         page.wait_for_timeout.assert_not_called()
 
 
+    def test_fill_and_submit_otp_segmented_inputs(self):
+        from app.services.microsoft_recovery import fill_and_submit_otp
+
+        filled_digits = []
+        input_elements = []
+        for i in range(6):
+            inp = Mock()
+            inp.input_value.return_value = ""
+            def make_fill(idx):
+                def _fill(val, **kwargs):
+                    filled_digits.append((idx, val))
+                return _fill
+            inp.fill = make_fill(i)
+            inp.click = Mock()
+            input_elements.append(inp)
+
+        submit_btn = Mock()
+        submit_btn.is_visible.return_value = True
+        submit_btn.is_enabled.return_value = True
+        submit_btn.click = Mock()
+
+        class MockSegmentedLocator:
+            def count(self):
+                return len(input_elements)
+
+            def nth(self, idx):
+                return input_elements[idx]
+
+            @property
+            def last(self):
+                return input_elements[-1]
+
+        class MockButtonLocator:
+            def count(self):
+                return 1
+
+            def nth(self, idx):
+                return submit_btn
+
+            @property
+            def first(self):
+                return submit_btn
+
+        page = Mock()
+        def mock_locator(sel):
+            if "codeEntry" in sel or "codeInputWrapper" in sel:
+                return MockSegmentedLocator()
+            return MockButtonLocator()
+
+        page.locator = mock_locator
+        page.evaluate = Mock()
+        page.wait_for_timeout = Mock()
+
+        success = fill_and_submit_otp(page, "892073")
+        self.assertTrue(success)
+        # Verify all 6 digits were filled
+        self.assertEqual(len(filled_digits), 6)
+        self.assertEqual(filled_digits, [(0, "8"), (1, "9"), (2, "2"), (3, "0"), (4, "7"), (5, "3")])
+        # Verify submit button was clicked
+        submit_btn.click.assert_called_once()
+
+    def test_fill_and_submit_otp_single_input(self):
+        from app.services.microsoft_recovery import fill_and_submit_otp
+
+        single_inp = Mock()
+        single_inp.fill = Mock()
+        single_inp.click = Mock()
+        single_inp.is_visible.return_value = True
+
+        submit_btn = Mock()
+        submit_btn.is_visible.return_value = True
+        submit_btn.is_enabled.return_value = True
+        submit_btn.click = Mock()
+
+        class MockEmptyLocator:
+            def count(self):
+                return 0
+
+        class MockSingleLocator:
+            def count(self):
+                return 1
+
+            @property
+            def first(self):
+                return single_inp
+
+        class MockButtonLocator:
+            def count(self):
+                return 1
+
+            def nth(self, idx):
+                return submit_btn
+
+            @property
+            def first(self):
+                return submit_btn
+
+        page = Mock()
+        def mock_locator(sel):
+            if "codeEntry" in sel:
+                return MockEmptyLocator()
+            if "iOttText" in sel:
+                return MockSingleLocator()
+            return MockButtonLocator()
+
+        page.locator = mock_locator
+        page.evaluate = Mock()
+        page.wait_for_timeout = Mock()
+
+        success = fill_and_submit_otp(page, "123456")
+        self.assertTrue(success)
+        single_inp.fill.assert_called_once_with("123456", timeout=3000)
+        submit_btn.click.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()

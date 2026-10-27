@@ -30,6 +30,7 @@ from app.services.microsoft_recovery import (
     read_code_in_smail_tab,
     read_code_in_fviainboxes_tab,
     parse_microsoft_account,
+    fill_and_submit_otp,
 )
 from app.services.higgsfield_login import (
     video_login_state,
@@ -1950,10 +1951,31 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                                 'input#iProofEmail, #iProofEmail:not([type="radio"]):not([type="checkbox"]), input[name="ProofConfirmation"]:not([type="radio"]), input[name="iProofEmail"]:not([type="radio"])'
                             )
                             exact_otp_input = first_visible(
-                                '#iOttText, input[name="otc"], input[autocomplete="one-time-code"]'
+                                '#codeEntry-0, input[id^="codeEntry-"], div[data-testid="codeEntry"] input, '
+                                'div[data-testid="codeInputWrapper"] input, input[aria-label*="Enter code digit" i], '
+                                '#iOttText, input[name="otc"], input[autocomplete="one-time-code"], '
+                                'input[id^="idTxtBx_SAOTCC_OTC"], input[id*="otc" i]'
                             )
+                            if exact_otp_input is None:
+                                try:
+                                    _seg = page.locator('input[id^="codeEntry-"], div[data-testid="codeEntry"] input')
+                                    if _seg.count() > 0 and _seg.first.is_visible(timeout=200):
+                                        exact_otp_input = _seg.first
+                                except Exception:
+                                    pass
+
+                            is_otp_stage = (
+                                exact_otp_input is not None
+                                or "enter the code" in body_lower
+                                or "enter code" in body_lower
+                                or "nhập mã" in body_lower
+                            )
+                            if is_otp_stage and not recovery_code_requested:
+                                recovery_code_requested = True
+                                print("Watchdog: detected Microsoft OTP screen (codeEntry / Enter the code)")
+
                             proof_radios = page.locator('input[type="radio"][name="proof"]')
-                            if exact_recovery_input is None and exact_otp_input is None:
+                            if exact_recovery_input is None and exact_otp_input is None and not is_otp_stage:
                                 for proof_index in range(proof_radios.count()):
                                     proof_radio = proof_radios.nth(proof_index)
                                     proof_value = (proof_radio.get_attribute("value") or "").lower()
@@ -1973,6 +1995,13 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                                 const matches = nodes.filter(el => {
                                     if (!visible(el)) return false;
                                     const text = (el.innerText || '').replace(/\s+/g, ' ').trim().toLowerCase();
+                                    if (
+                                        text.includes('matches the email') ||
+                                        text.includes('send you a code') ||
+                                        text.includes('gửi mã cho bạn') ||
+                                        text.includes('enter the code') ||
+                                        text.includes('nhập mã')
+                                    ) return false;
                                     return text.length < 180 && text.includes(domain) &&
                                         (text.includes('email') || text.includes(prefix));
                                 });
@@ -1983,6 +2012,7 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                                 choice_element is not None
                                 and exact_recovery_input is None
                                 and exact_otp_input is None
+                                and not is_otp_stage
                                 and "send code" not in body_lower
                             ):
                                 try:
@@ -2047,7 +2077,7 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                                 or "send code" in body_lower
                                 or "gửi mã" in body_lower
                                 or "alternate email" in body_lower
-                            ) and exact_otp_input is None:
+                            ) and exact_otp_input is None and not is_otp_stage:
                                 recovery_input = first_visible(
                                     'input[type="text"]:not([type="hidden"]), input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="radio"]):not([type="checkbox"])'
                                 )
@@ -2118,21 +2148,33 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                             otp_input = (
                                 exact_otp_input
                                 if exact_otp_input is not None
-                                else first_visible('input[inputmode="numeric"], input[name="otc"], #iOttText, input[autocomplete="one-time-code"]')
+                                else first_visible(
+                                    '#codeEntry-0, input[id^="codeEntry-"], div[data-testid="codeEntry"] input, '
+                                    'div[data-testid="codeInputWrapper"] input, input[aria-label*="Enter code digit" i], '
+                                    'input[inputmode="numeric"], input[name="otc"], #iOttText, input[autocomplete="one-time-code"]'
+                                )
                             )
                             if otp_input is not None:
+                                if not recovery_code_requested:
+                                    recovery_code_requested = True
                                 try:
                                     verify_error = first_visible(
-                                        '#iVerifyCodeError, .alert-error, [role="alert"]'
+                                        '#iVerifyCodeError, .alert-error, [role="alert"], .fui-Field__validationMessage, [id$="__validationMessage"]'
                                     )
                                     if verify_error is not None:
                                         error_text = verify_error.inner_text(timeout=500).lower()
-                                        if "didn't work" in error_text or "did not work" in error_text:
+                                        if (
+                                            "didn't work" in error_text
+                                            or "did not work" in error_text
+                                            or "không hoạt động" in error_text
+                                            or "hết hạn" in error_text
+                                            or "không đúng" in error_text
+                                        ):
                                             recovery_code_requested = True
                                             print("Watchdog: Microsoft rejected OTP; refreshing mailbox")
                                 except Exception:
                                     pass
-                            if otp_input is not None and recovery_code_requested:
+                            if (otp_input is not None or is_otp_stage) and recovery_code_requested:
                                 if recovery_email.lower().endswith("@fviainboxes.com"):
                                     keep_open = True
                                     set_watchdog_note("📧 Đang lấy mã OTP từ fviainboxes.com...")
@@ -2145,16 +2187,7 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                                         print(f"fviainboxes tab: {web_mail_error}")
                                         return False
                                     if web_code:
-                                        otp_input.fill(web_code, timeout=3000)
-                                        manual_next = first_visible(
-                                            '#iVerifyCodeAction, #idSubmit_SAOTCC_Continue, '
-                                            '#idSIButton9, button[data-testid="primaryButton"], '
-                                            'button:has-text("Next"), button:has-text("Verify"), button:has-text("Xác nhận"), button:has-text("Tiếp theo"), input[type="submit"]'
-                                        )
-                                        if manual_next is not None and manual_next.is_enabled():
-                                            manual_next.click(timeout=3000)
-                                        else:
-                                            otp_input.press("Enter")
+                                        fill_and_submit_otp(page, web_code, first_visible)
                                         recovery_last_web_code = web_code
                                         recovery_code_requested = False
                                         print(f"Watchdog: submitted OTP {web_code} from fviainboxes tab")
@@ -2174,16 +2207,7 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                                         print(f"Mailbox tab: {web_mail_error}")
                                         return False
                                     if web_code:
-                                        otp_input.fill(web_code, timeout=3000)
-                                        manual_next = first_visible(
-                                            '#iVerifyCodeAction, #idSubmit_SAOTCC_Continue, '
-                                            '#idSIButton9, button[data-testid="primaryButton"], '
-                                            'button:has-text("Next"), input[type="submit"]'
-                                        )
-                                        if manual_next is not None and manual_next.is_enabled():
-                                            manual_next.click(timeout=3000)
-                                        else:
-                                            otp_input.press("Enter")
+                                        fill_and_submit_otp(page, web_code, first_visible)
                                         recovery_last_web_code = web_code
                                         recovery_code_requested = False
                                         print("Watchdog: submitted OTP from smail1s tab")
@@ -2200,16 +2224,7 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                                     has_new_message = bool(current_uids - recovery_known_uids)
                                     recovery_known_uids.update(current_uids)
                                     if otp_code and (has_new_message or not recovery_baseline_ready):
-                                        otp_input.fill(otp_code, timeout=3000)
-                                        next_button = first_visible(
-                                            '#iVerifyCodeAction, #idSubmit_SAOTCC_Continue, #idSIButton9, '
-                                            'button[data-testid="primaryButton"], '
-                                            'button:has-text("Next"), input[type="submit"]'
-                                        )
-                                        if next_button is not None and next_button.is_enabled():
-                                            next_button.click(timeout=3000)
-                                        else:
-                                            otp_input.press("Enter")
+                                        fill_and_submit_otp(page, otp_code, first_visible)
                                         recovery_code_requested = False
                                         print("Watchdog: filled V2 recovery code and clicked Next")
                                         return True
@@ -2227,6 +2242,7 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                             or "xác minh email" in body_lower
                             or "send code" in body_lower
                             or "gửi mã" in body_lower
+                            or "enter the code" in body_lower
                             or "enter code" in body_lower
                             or "nhập mã" in body_lower
                             or "alternate email" in body_lower
@@ -2839,25 +2855,8 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                                 if otp_code:
                                     # Điền mã OTP vào trang "Nhập mã của bạn"
                                     try:
-                                        otp_inputs = page.locator('input[id^="codeEntry-"], input[id^="idTxtBx_SAOTCC_OTC_"], input[maxlength="1"]')
-                                        if otp_inputs.count() >= 6:
-                                            for i, digit in enumerate(otp_code):
-                                                if i < otp_inputs.count():
-                                                    otp_inputs.nth(i).fill(digit)
-                                                    page.wait_for_timeout(100)
-                                            print(f"Filled OTP in 6 separate inputs: {otp_code}")
-                                        else:
-                                            single_input = page.locator('input[type="text"], input[type="tel"], input[type="number"]').first
-                                            single_input.fill(otp_code)
-                                            print(f"Filled OTP in single input: {otp_code}")
-                                        
-                                        page.wait_for_timeout(500)
-                                        confirm_btn = page.locator('input[type="submit"], button[type="submit"], button:has-text("Tiếp theo"), button:has-text("Verify"), button:has-text("Next")')
-                                        if confirm_btn.count() > 0:
-                                            confirm_btn.first.click()
-                                        else:
-                                            page.keyboard.press("Enter")
-                                        print("Submitted OTP code!")
+                                        fill_and_submit_otp(page, otp_code)
+                                        print(f"Submitted OTP code: {otp_code}")
                                         page.wait_for_timeout(3000)
                                     except Exception as e:
                                         print(f"Error filling OTP: {e}")
