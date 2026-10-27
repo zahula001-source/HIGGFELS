@@ -94,6 +94,33 @@ def read_code_in_smail_tab(
     raise TimeoutError("Không thấy mã Microsoft trên tab smail1s")
 
 
+def _extract_microsoft_code(text: str) -> Optional[str]:
+    """Trích xuất mã OTP Microsoft (single-use code, security code, mã dùng một lần, v.v.)."""
+    if not text:
+        return None
+    normalized = text.replace("\xa0", " ").replace("&nbsp;", " ")
+    patterns = [
+        # Dạng single-use code: "Your single-use code is: 899030" hoặc "single-use code is: 899030"
+        r"single[- ]use\s+code(?:\s+is)?\s*[:：]?\s*(?:<[^>]+>)*\s*(\d{6})\b",
+        # Tiếng Việt: "Mã dùng một lần của bạn là: 899030"
+        r"mã\s+dùng\s+một\s+lần(?:\s+của\s+bạn)?(?:\s+là)?\s*[:：]?\s*(?:<[^>]+>)*\s*(\d{6})\b",
+        # Dạng truyền thống: "Security code: 825827" hoặc "Security code is: 825827"
+        r"security\s+code(?:\s+is)?\s*[:：]?\s*(?:<[^>]+>)*\s*(\d{6,8})\b",
+        # Tiếng Việt: "Mã bảo mật: 825827"
+        r"mã\s+bảo\s+mật(?:\s+là)?\s*[:：]?\s*(?:<[^>]+>)*\s*(\d{6,8})\b",
+        # Các dạng khác: "Verification code: 899030" / "Your code is: 899030"
+        r"(?:verification|account|confirmation)\s+code(?:\s+is)?\s*[:：]?\s*(?:<[^>]+>)*\s*(\d{6})\b",
+        r"your\s+code\s+is\s*[:：]?\s*(?:<[^>]+>)*\s*(\d{6})\b",
+        # Fallback: "code: 899030"
+        r"\bcode\s*[:：]\s*(?:<[^>]+>)*\s*(\d{6})\b",
+    ]
+    for pat in patterns:
+        m = re.search(pat, normalized, re.IGNORECASE)
+        if m:
+            return m.group(1).strip()
+    return None
+
+
 def read_code_in_fviainboxes_tab(
     context, email: str, timeout_ms: int = 60000, *, refresh: bool = False,
     exclude_codes: Optional[Set[str]] = None,
@@ -158,33 +185,80 @@ def read_code_in_fviainboxes_tab(
                 if not get_mail.is_enabled():
                     continue
                 if not opened:
-                    rows = page.locator("div.overflow-y-auto li").filter(
+                    rows = page.locator("div.overflow-y-auto li, ul li").filter(
                         has_text="account-security-noreply"
                     )
                     if rows.count() == 0:
+                        rows = page.locator("li, tr, [role='listitem']").filter(
+                            has_text="account-security-noreply"
+                        )
+                    if rows.count() == 0:
                         continue
-                    # The list is newest-first. Prefer the newest security-code
-                    # email when a newer notification sits above it.
-                    code_rows = rows.filter(has_text=re.compile("Microsoft account security code", re.I))
+                    # Ưu tiên các thư có tiêu đề liên quan đến mã xác minh/mã dùng một lần
+                    code_rows = rows.filter(
+                        has_text=re.compile(
+                            r"(Microsoft account security code|Your single[- ]use code|single[- ]use code|security code|mã dùng một lần|mã bảo mật)",
+                            re.I,
+                        )
+                    )
                     row = code_rows.first if code_rows.count() else rows.first
                     row.evaluate(click_dom)
                     opened = True
-                # Only read the email iframe, never sponsored frames or arbitrary
-                # six-digit numbers in notifications/advertisements.
+
+                # 1. Kiểm tra iframe chứa nội dung email
                 frames = page.locator('iframe[title="Email content"]')
                 for index in range(frames.count()):
                     iframe = frames.nth(index).element_handle()
                     frame = iframe.content_frame() if iframe else None
                     if frame is None:
                         continue
-                    cell = frame.locator("td#i4")
-                    if cell.count() == 0:
-                        continue
-                    text = cell.first.text_content(timeout=1000) or ""
-                    match = re.search(r"Security\s+code\s*:\s*(\d{6})\b", text, re.I)
-                    if match and match.group(1) not in excluded:
-                        print("fviainboxes: read security code from email iframe")
-                        return match.group(1)
+                    # A) Kiểm tra ô td#i4 nếu có (dạng email Microsoft cũ)
+                    try:
+                        cell = frame.locator("td#i4")
+                        if cell.count() > 0:
+                            text = cell.first.text_content(timeout=500) or ""
+                            code = _extract_microsoft_code(text)
+                            if code and code not in excluded:
+                                print(f"fviainboxes: read security code {code} from iframe td#i4")
+                                return code
+                    except Exception:
+                        pass
+                    # B) Kiểm tra toàn bộ body của iframe (dạng Your single-use code)
+                    try:
+                        body_loc = frame.locator("body")
+                        if body_loc.count() > 0:
+                            text = body_loc.first.inner_text(timeout=500) or ""
+                            code = _extract_microsoft_code(text)
+                            if code and code not in excluded:
+                                print(f"fviainboxes: read security code {code} from iframe body")
+                                return code
+                            # Thử raw html content nếu có thẻ span/b ngăn cách
+                            raw_html = frame.content()
+                            code = _extract_microsoft_code(raw_html)
+                            if code and code not in excluded:
+                                print(f"fviainboxes: read security code {code} from iframe html")
+                                return code
+                    except Exception:
+                        pass
+
+                # 2. Kiểm tra vùng đọc email trực tiếp trên trang chính (nếu không dùng iframe)
+                if opened:
+                    try:
+                        reading_pane = page.locator(
+                            '#message, div.email-content, div.message-content, [data-testid="email-body"], '
+                            'div:has-text("Your single-use code"):not(:has(li)), '
+                            'div:has-text("single-use code"):not(:has(li))'
+                        )
+                        for p_idx in range(min(reading_pane.count(), 5)):
+                            p_elem = reading_pane.nth(p_idx)
+                            p_text = p_elem.inner_text(timeout=300) or ""
+                            if "single-use code" in p_text.lower() or "security code" in p_text.lower():
+                                code = _extract_microsoft_code(p_text)
+                                if code and code not in excluded:
+                                    print(f"fviainboxes: read security code {code} from main reading pane")
+                                    return code
+                    except Exception:
+                        pass
             if attempt < 3 and time.monotonic() < deadline:
                 print("fviainboxes: no usable security code; retrying Get Email")
                 page.wait_for_timeout(min(3000, max(0, (deadline - time.monotonic()) * 1000)))
@@ -515,9 +589,13 @@ def _extract_code(message: dict) -> str:
         str(message.get(field) or "")
         for field in ("subject", "message", "body", "text")
     )
+    extracted = _extract_microsoft_code(text)
+    if extracted:
+        return extracted
     patterns = (
+        r"(?:single[- ]use\s+code(?:\s+is)?)\D{0,20}(\d{4,8})",
         r"(?:security|verification|confirmation)\s+code\D{0,30}(\d{4,8})",
-        r"(?:m[aã]\s+(?:b[aả]o\s+m[aậ]t|x[aá]c\s+(?:minh|nh[aậ]n)))\D{0,30}(\d{4,8})",
+        r"(?:m[aã]\s+(?:b[aả]o\s+m[aậ]t|x[aá]c\s+(?:minh|nh[aậ]n)|d[uù]ng\s+m[oộ]t\s+l[aầ]n))\D{0,30}(\d{4,8})",
         r"\b(\d{6})\b",
     )
     for pattern in patterns:
