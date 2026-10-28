@@ -107,34 +107,105 @@ def _public_ip(context) -> str:
             pass
 
 
+def _ensure_extension_enabled(context, ext_id: str) -> bool:
+    """Bật lại extension qua chrome://extensions nếu đang bị tắt."""
+    if not context or not hasattr(context, "new_page"):
+        return False
+    page = None
+    try:
+        page = context.new_page()
+        page.goto("chrome://extensions/", wait_until="domcontentloaded", timeout=4000)
+        page.wait_for_timeout(600)
+        toggled_on = page.evaluate("""(extId) => {
+            function shadowQuery(root, selector) {
+                const el = root.querySelector(selector);
+                if (el) return el;
+                for (const child of root.querySelectorAll('*')) {
+                    if (child.shadowRoot) {
+                        const found = shadowQuery(child.shadowRoot, selector);
+                        if (found) return found;
+                    }
+                }
+                return null;
+            }
+            function shadowQueryAll(root, selector) {
+                let results = Array.from(root.querySelectorAll(selector));
+                for (const child of root.querySelectorAll('*')) {
+                    if (child.shadowRoot) {
+                        results = results.concat(shadowQueryAll(child.shadowRoot, selector));
+                    }
+                }
+                return results;
+            }
+
+            const items = shadowQueryAll(document, 'extensions-item');
+            for (const item of items) {
+                const itemId = item.getAttribute('id') || item.id || '';
+                if (itemId.toLowerCase() === (extId || '').toLowerCase()) {
+                    const toggle = shadowQuery(item.shadowRoot || item, 'cr-toggle');
+                    if (toggle && !toggle.checked) {
+                        toggle.click();
+                        return true;
+                    }
+                    return false;
+                }
+            }
+            return false;
+        }""", ext_id)
+        if toggled_on:
+            print(f"  [VPN] Da tu dong bat lai extension ({ext_id})", flush=True)
+            page.wait_for_timeout(1000)
+            return True
+        return False
+    except Exception as e:
+        print(f"  [VPN] Khong the kiem tra/bat extension {ext_id}: {e}", flush=True)
+        return False
+    finally:
+        if page:
+            try:
+                page.close()
+            except Exception:
+                pass
+
+
 def _wait_for_popup_ready(page) -> None:
-    for attempt in range(15):
+    for attempt in range(3):
         try:
-            page.goto(ONECLICK_POPUP_URL, wait_until="domcontentloaded", timeout=10000)
+            page.goto(ONECLICK_POPUP_URL, wait_until="domcontentloaded", timeout=3500)
             break
-        except Exception:
-            if attempt == 14:
+        except Exception as e:
+            err_str = str(e).lower()
+            if "blocked" in err_str or "aborted" in err_str or "bị chặn" in err_str:
+                _ensure_extension_enabled(getattr(page, "context", None), ONECLICK_EXTENSION_ID)
+            if attempt == 2:
                 raise
             page.wait_for_timeout(1000)
     page.bring_to_front()
     reset_attempted = False
 
-    deadline = time.time() + 60
+    deadline = time.time() + 25
     registration_retries = 0
-    max_registration_retries = 4
+    max_registration_retries = 3
     blocked_retries = 0
-    max_blocked_retries = 4
+    max_blocked_retries = 2
     while time.time() < deadline:
-        body = page.locator("body").inner_text(timeout=3000)
+        if callable(getattr(page, "is_closed", None)) and page.is_closed() is True:
+            raise RuntimeError("Trang 1ClickVPN bi dong")
+        try:
+            body = page.locator("body").inner_text(timeout=2000)
+        except Exception:
+            page.wait_for_timeout(500)
+            continue
         body_lower = body.casefold()
 
         if "err_blocked_by_client" in body_lower or "bị chặn" in body_lower:
             if blocked_retries < max_blocked_retries:
                 blocked_retries += 1
-                print(f"  [VPN] 1ClickVPN báo bị chặn tạm thời, đợi 2s rồi tải lại popup ({blocked_retries}/{max_blocked_retries})...", flush=True)
-                page.wait_for_timeout(2000)
+                print(f"  [VPN] 1ClickVPN báo bị chặn tạm thời, tự động bật lại extension ({blocked_retries}/{max_blocked_retries})...", flush=True)
+                _ensure_extension_enabled(getattr(page, "context", None), ONECLICK_EXTENSION_ID)
+                page.wait_for_timeout(1000)
                 try:
-                    page.goto(ONECLICK_POPUP_URL, wait_until="domcontentloaded", timeout=10000)
+                    page.goto(ONECLICK_POPUP_URL, wait_until="domcontentloaded", timeout=3500)
                 except Exception:
                     pass
                 continue
@@ -377,21 +448,24 @@ URBAN_CANDIDATE_COUNTRIES = [
 
 
 def _wait_for_urban_ready(page) -> None:
-    for attempt in range(15):
+    for attempt in range(3):
         try:
-            page.goto(URBAN_POPUP_URL, wait_until="domcontentloaded", timeout=10000)
+            page.goto(URBAN_POPUP_URL, wait_until="domcontentloaded", timeout=3500)
             break
-        except Exception:
-            if attempt == 14:
+        except Exception as e:
+            err_str = str(e).lower()
+            if "blocked" in err_str or "aborted" in err_str or "bị chặn" in err_str:
+                _ensure_extension_enabled(getattr(page, "context", None), URBAN_EXTENSION_ID)
+            if attempt == 2:
                 raise
             page.wait_for_timeout(1000)
     page.bring_to_front()
 
-    deadline = time.time() + 30
+    deadline = time.time() + 20
     blocked_retries = 0
-    max_blocked_retries = 4
+    max_blocked_retries = 2
     while time.time() < deadline:
-        if page.is_closed():
+        if callable(getattr(page, "is_closed", None)) and page.is_closed() is True:
             raise RuntimeError("Trang Urban VPN bi dong")
 
         try:
@@ -400,10 +474,11 @@ def _wait_for_urban_ready(page) -> None:
             if "err_blocked_by_client" in body_lower or "bị chặn" in body_lower:
                 if blocked_retries < max_blocked_retries:
                     blocked_retries += 1
-                    print(f"  [VPN] Urban VPN báo bị chặn tạm thời, đợi 2s rồi tải lại popup ({blocked_retries}/{max_blocked_retries})...", flush=True)
-                    page.wait_for_timeout(2000)
+                    print(f"  [VPN] Urban VPN báo bị chặn tạm thời, tự động bật lại extension ({blocked_retries}/{max_blocked_retries})...", flush=True)
+                    _ensure_extension_enabled(getattr(page, "context", None), URBAN_EXTENSION_ID)
+                    page.wait_for_timeout(1000)
                     try:
-                        page.goto(URBAN_POPUP_URL, wait_until="domcontentloaded", timeout=10000)
+                        page.goto(URBAN_POPUP_URL, wait_until="domcontentloaded", timeout=3500)
                     except Exception:
                         pass
                     continue
@@ -550,6 +625,7 @@ def _wait_urban_connected(page) -> None:
 
 def _connect_urban_vpn(context, profile_id: str, max_attempts: int = 4) -> dict[str, str]:
     """Kết nối Urban VPN và trả về IP mới độc nhất."""
+    _ensure_extension_enabled(context, URBAN_EXTENSION_ID)
     popup = context.new_page()
     attempted: set[str] = set()
     try:
@@ -719,6 +795,7 @@ def _disconnect_urban_vpn(context) -> None:
 
 def _connect_1clickvpn(context, profile_id: str, max_attempts: int = 8) -> dict[str, str]:
     """Kết nối 1ClickVPN và trả về IP mới độc nhất."""
+    _ensure_extension_enabled(context, ONECLICK_EXTENSION_ID)
     popup = context.new_page()
     attempted: set[str] = set()
     try:
@@ -833,6 +910,10 @@ def connect_unique_vpn_ip(context, profile_id: str, max_attempts: int = 1, rotat
     # ── BUOC 1: Thu 1ClickVPN Lan 1 ──
     print("  [VPN] [BUOC 1] Bat dau thu sinh IP bang 1ClickVPN (Lan 1)...", flush=True)
     try:
+        _ensure_extension_enabled(context, ONECLICK_EXTENSION_ID)
+    except Exception:
+        pass
+    try:
         result = _connect_1clickvpn(context, profile_id, max_attempts=attempts)
         try:
             set_active_vpn("1clickvpn")
@@ -845,6 +926,10 @@ def connect_unique_vpn_ip(context, profile_id: str, max_attempts: int = 1, rotat
     # ── BUOC 2: Kich hoat HMA xong thu lai 1ClickVPN Lan 2 ──
     _trigger_hma("1ClickVPN Lan 1 loi")
     print("  [VPN] [BUOC 2] Thu sinh lai IP bang 1ClickVPN (Lan 2)...", flush=True)
+    try:
+        _ensure_extension_enabled(context, ONECLICK_EXTENSION_ID)
+    except Exception:
+        pass
     try:
         result = _connect_1clickvpn(context, profile_id, max_attempts=attempts)
         try:
@@ -867,8 +952,13 @@ def connect_unique_vpn_ip(context, profile_id: str, max_attempts: int = 1, rotat
     except Exception as e:
         print(f"  [VPN] Bo qua buoc tat extension 1ClickVPN: {e}", flush=True)
 
+    try:
+        _ensure_extension_enabled(context, URBAN_EXTENSION_ID)
+    except Exception:
+        pass
+
     import time as _time
-    _time.sleep(2)
+    _time.sleep(1)
 
     try:
         result = _connect_urban_vpn(context, profile_id, max_attempts=attempts)
@@ -883,6 +973,10 @@ def connect_unique_vpn_ip(context, profile_id: str, max_attempts: int = 1, rotat
     # ── BUOC 4: Kich hoat HMA xong thu lai UrbanVPN Lan 2 ──
     _trigger_hma("UrbanVPN Lan 1 loi")
     print("  [VPN] [BUOC 4] Thu sinh lai IP bang UrbanVPN (Lan 2)...", flush=True)
+    try:
+        _ensure_extension_enabled(context, URBAN_EXTENSION_ID)
+    except Exception:
+        pass
     try:
         result = _connect_urban_vpn(context, profile_id, max_attempts=attempts)
         try:
@@ -912,7 +1006,13 @@ def connect_unique_vpn_ip(context, profile_id: str, max_attempts: int = 1, rotat
             final_ip = _public_ip(context)
         except Exception:
             final_ip = ""
+    if not final_ip:
+        raise RuntimeError("Khong the lay IP hop le sau khi thu tat ca cac phuong thuc VPN")
     print(f"  [VPN] Tiep tuc cong viec voi IP HMA: {final_ip} ({final_country})", flush=True)
+    try:
+        set_active_vpn("hma")
+    except Exception:
+        pass
     return {"ip": final_ip, "country": final_country}
 
 

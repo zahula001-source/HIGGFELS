@@ -215,6 +215,27 @@ class VpnIpTests(unittest.TestCase):
             self.assertEqual(result["country"], "Canada")
             self.assertEqual(hma_mock.call_count, 5)
 
+    def test_ensure_extension_enabled_re_enables_disabled_extension(self):
+        context = Mock()
+        page = Mock()
+        context.new_page.return_value = page
+        page.evaluate.return_value = True
+        result = vpn_ip._ensure_extension_enabled(context, vpn_ip.URBAN_EXTENSION_ID)
+        self.assertTrue(result)
+        page.goto.assert_called_once_with("chrome://extensions/", wait_until="domcontentloaded", timeout=4000)
+        page.close.assert_called_once()
+
+    def test_wait_for_urban_ready_re_enables_on_blocked_by_client(self):
+        page = Mock()
+        page.is_closed.return_value = False
+        page.goto.side_effect = [Exception("net::ERR_BLOCKED_BY_CLIENT"), None]
+        page.locator.return_value.count.return_value = 0
+        page.locator.return_value.inner_text.return_value = "Normal page"
+        page.evaluate.return_value = True  # has main
+        with patch.object(vpn_ip, "_ensure_extension_enabled") as ensure_mock:
+            vpn_ip._wait_for_urban_ready(page)
+            ensure_mock.assert_called()
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

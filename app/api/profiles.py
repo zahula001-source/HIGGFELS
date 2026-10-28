@@ -1347,6 +1347,8 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                             vpn_info = connect_unique_vpn_ip(context, profile_id, rotate_hma_first=True)
                         else:
                             vpn_info = connect_unique_vpn_ip(context, profile_id)
+                        if not vpn_info or not vpn_info.get("ip"):
+                            raise RuntimeError("Không lấy được IP hợp lệ từ VPN")
                         print(f"Sinh IP thanh cong: {vpn_info['ip']} ({vpn_info['country']})")
                     except Exception as vpn_error:
                         print(f"Sinh IP that bai, dung tao acc de tranh trung IP: {vpn_error}")
@@ -1358,11 +1360,28 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                                 manager.update_notes(profile_id, vpn_note)
                             p_obj.notes = vpn_note
                             manager._save()
+                        with _signup_lock:
+                            signup_options["keep_open"] = False
+                            signup_options["manual_open"] = False
+                        try:
+                            context.close()
+                        except Exception:
+                            pass
+                        try:
+                            p.stop()
+                        except Exception:
+                            pass
+                        try:
+                            close_profile(profile_id)
+                        except Exception:
+                            pass
                         return
                 elif generate_hma:
                     try:
                         from app.services.hma_vpn import rotate_hma_random_country
                         hma_info = rotate_hma_random_country()
+                        if not hma_info or not hma_info.get("ip"):
+                            raise RuntimeError("Không lấy được IP hợp lệ từ HMA")
                         print(f"Sinh IP HMA thanh cong: {hma_info.get('ip')} ({hma_info.get('country')})")
                     except Exception as hma_error:
                         print(f"Sinh IP HMA that bai: {hma_error}")
@@ -1372,6 +1391,21 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                                 manager.update_notes(profile_id, "Lỗi HMA VPN")
                             p_obj.notes = "Lỗi HMA VPN"
                             manager._save()
+                        with _signup_lock:
+                            signup_options["keep_open"] = False
+                            signup_options["manual_open"] = False
+                        try:
+                            context.close()
+                        except Exception:
+                            pass
+                        try:
+                            p.stop()
+                        except Exception:
+                            pass
+                        try:
+                            close_profile(profile_id)
+                        except Exception:
+                            pass
                         return
                     
                 # Tìm tab đang ở trang higgsfield, nếu không có thì mở mới
