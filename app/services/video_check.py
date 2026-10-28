@@ -75,7 +75,7 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                 if engine == "cloakbrowser":
                     args.append("--fingerprint=" + str(profile.fingerprint.get("random_id", 123456)))
                 
-                ignore_args = ["--disable-extensions"]
+                ignore_args = ["--disable-extensions", "--enable-automation", "--enable-unsafe-swiftshader"]
                 extension_dirs = []
                 
                 # Tao extension badge ten tai khoan (ACC) o goc tren ben trai
@@ -160,6 +160,8 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                     install_account_badge(context, profile.name)
                 except Exception as e:
                     print(f"Err installing account badge: {e}")
+                from app.services.stealth import install_stealth_guard
+                install_stealth_guard(context)
                 
                 try:
                     import json

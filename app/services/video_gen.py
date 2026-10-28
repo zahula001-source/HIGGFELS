@@ -55,8 +55,8 @@ def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False
     ]
     if engine == "cloakbrowser":
         args.append("--fingerprint=" + str(profile.fingerprint.get("random_id", 123456)))
-    # Bỏ tải extension mặc định của Playwright bằng cách đưa vào ignore_args
-    ignore_args = ["--disable-extensions"]
+    # Bỏ tải extension và cờ automation mặc định của Playwright để tránh lộ bot
+    ignore_args = ["--disable-extensions", "--enable-automation", "--enable-unsafe-swiftshader"]
     extension_dirs = []
     
     # Tao extension badge ten tai khoan (ACC) o goc tren ben trai
@@ -191,6 +191,8 @@ def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False
 
     install_vpn_welcome_guard(context)
     install_upgrade_plan_guard(context)
+    from app.services.stealth import install_stealth_guard
+    install_stealth_guard(context)
     try:
         from app.extensions import install_account_badge
         install_account_badge(context, profile.name)

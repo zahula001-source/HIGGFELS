@@ -293,7 +293,7 @@ def get_chromium_runner_simple(profile_id, profile_name, user_data_dir, proxy_di
         launch_args.setdefault("args", []).extend(["--disable-extensions-except=" + ",".join(exts), "--load-extension=" + ",".join(exts)])
 
     if engine == "chrome":
-        launch_args["ignore_default_args"] = ["--disable-extensions", "--enable-automation"]
+        launch_args["ignore_default_args"] = ["--disable-extensions", "--enable-automation", "--enable-unsafe-swiftshader"]
         chrome_136 = Path(project_root) / "data" / "browser_bins" / "chrome-136" / "chrome-win64" / "chrome.exe"
         if not chrome_136.is_file():
             raise RuntimeError(f"Chrome co extension khong ton tai: {chrome_136}")
@@ -345,6 +345,8 @@ def get_chromium_runner_simple(profile_id, profile_name, user_data_dir, proxy_di
     install_vpn_welcome_guard(context, log)
     from app.services.higgsfield_popups import install_upgrade_plan_guard
     install_upgrade_plan_guard(context)
+    from app.services.stealth import install_stealth_guard
+    install_stealth_guard(context)
     try:
         from app.extensions import install_account_badge
         install_account_badge(context, profile_name)

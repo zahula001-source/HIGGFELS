@@ -2451,6 +2451,21 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                         or has_turnstile_frame
                     )
                     if captcha_detected:
+                        # Tự động di chuyển chuột và click Turnstile chuẩn người thật
+                        try:
+                            from app.services.stealth import solve_cloudflare_turnstile
+                            if solve_cloudflare_turnstile(page, timeout_sec=10):
+                                captcha_active = False
+                                keep_open = keep_open_before_captcha
+                                restore_watchdog_note()
+                                watchdog_state = ""
+                                watchdog_state_since = time.monotonic()
+                                print("Watchdog: Cloudflare Turnstile đã tự động xác minh thành công như người thật!")
+                                page.wait_for_timeout(1500)
+                                continue
+                        except Exception as cf_solve_err:
+                            print(f"Watchdog Turnstile solver: {cf_solve_err}")
+
                         if not captcha_active:
                             captcha_active = True
                             if signup_options.get("manual_open"):
@@ -2460,7 +2475,7 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                                 page.bring_to_front()
                             except Exception:
                                 pass
-                            print("Watchdog: phát hiện Verify you are human; chờ người dùng xác minh...")
+                            print("Watchdog: phát hiện Verify you are human; đã thử click tự động nhưng chưa xong, chờ người dùng xác minh...")
                         continue
                     elif captcha_active:
                         captcha_active = False
@@ -2499,19 +2514,12 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                             watchdog_state_since = time.monotonic()
                             cf_clicked = True
                             
-                        # 2. Cloudflare Turnstile độc lập
+                        # 2. Cloudflare Turnstile độc lập (dùng hàm người thật)
                         if not cf_clicked:
-                            for frame in page.frames:
-                                if "challenges.cloudflare.com" in frame.url or "turnstile" in frame.url:
-                                    print(f"Watchdog: Phát hiện Cloudflare Frame, click giả lập...")
-                                    try:
-                                        # Click vào giữa thẻ body của frame
-                                        frame.locator("body").click(force=True, position={"x": 35, "y": 35})
-                                        page.wait_for_timeout(3000)
-                                        watchdog_state_since = time.monotonic()
-                                        cf_clicked = True
-                                        break
-                                    except: pass
+                            from app.services.stealth import solve_cloudflare_turnstile
+                            if solve_cloudflare_turnstile(page, timeout_sec=8):
+                                watchdog_state_since = time.monotonic()
+                                cf_clicked = True
                                     
                         # 3. Label dự phòng
                         if not cf_clicked:

@@ -152,6 +152,12 @@ def read_code_in_fviainboxes_tab(
         page.bring_to_front()
         if host(page) != "fviainboxes.com":
             page.goto("https://fviainboxes.com/", wait_until="domcontentloaded", timeout=20000)
+        # Tự động phát hiện và giải Cloudflare Turnstile như người thật nếu fviainboxes bắt xác minh
+        try:
+            from app.services.stealth import solve_cloudflare_turnstile
+            solve_cloudflare_turnstile(page, timeout_sec=10)
+        except Exception as e_cf:
+            print(f"fviainboxes turnstile check: {e_cf}")
         user_input = page.locator("#username, input[name='username']").first
         user_input.wait_for(state="visible", timeout=15000)
         user_input.fill(email.split("@", 1)[0])
@@ -171,6 +177,12 @@ def read_code_in_fviainboxes_tab(
         for attempt in range(4):
             if time.monotonic() >= deadline:
                 break
+            # Nếu fviainboxes kích hoạt captcha_required giữa chừng, tự động click giải Turnstile
+            try:
+                from app.services.stealth import solve_cloudflare_turnstile
+                solve_cloudflare_turnstile(page, timeout_sec=8)
+            except Exception:
+                pass
             # Wait for the previous request to finish instead of force-clicking
             # a disabled/loading button. Retry only when no usable code arrived.
             while not get_mail.evaluate(click_dom):
