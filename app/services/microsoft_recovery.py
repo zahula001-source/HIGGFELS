@@ -121,6 +121,152 @@ def _extract_microsoft_code(text: str) -> Optional[str]:
     return None
 
 
+def is_fviainboxes_notice_present(page) -> bool:
+    """Kiểm tra nhanh xem popup thông báo Notice có đang hiển thị không."""
+    if not page or getattr(page, "is_closed", lambda: True)():
+        return False
+    try:
+        return bool(page.evaluate("""() => {
+            const srSpan = Array.from(document.querySelectorAll('span.sr-only')).find(s => 
+                (s.innerText || '').toLowerCase().includes('close announcement')
+            );
+            if (srSpan) return true;
+            const dialog = document.querySelector('[id*="headlessui-dialog"], [data-headlessui-state="open"]');
+            if (dialog && (dialog.innerText || '').includes('Notice')) return true;
+            const h2 = Array.from(document.querySelectorAll('h2')).find(h => (h.innerText || '').trim() === 'Notice');
+            return !!h2;
+        }"""))
+    except Exception:
+        return False
+
+
+def dismiss_fviainboxes_notice(page) -> bool:
+    """Tự động phát hiện và đóng popup thông báo (Notice / Close announcement) trên fviainboxes.com.
+
+    Hỗ trợ các phương thức đóng tự nhiên:
+    1. Click trực tiếp vào nút 'Close announcement' (nút X có svg M6 18L18 6M6 6l12 12).
+    2. Focus vào popup và ấn phím Escape như người thật.
+    3. Click nút 'Close' ở chân popup.
+    4. Fallback dọn dẹp DOM nếu dialog hoặc backdrop bị kẹt.
+    """
+    if not page or getattr(page, "is_closed", lambda: True)():
+        return False
+    try:
+        if not is_fviainboxes_notice_present(page):
+            return False
+
+        print("fviainboxes: Phat hien popup thong bao Notice, dang dong...", flush=True)
+
+        # 1. Thử click trực tiếp vào nút 'Close announcement' (nút X)
+        x_btn = page.locator('button:has(span:has-text("Close announcement")), button:has(svg path[d*="M6 18L18 6M6 6l12 12"])').first
+        if x_btn.count() > 0:
+            try:
+                x_btn.focus(timeout=500)
+                page.wait_for_timeout(100)
+                x_btn.click(timeout=1000)
+                page.wait_for_timeout(200)
+            except Exception:
+                pass
+
+        if not is_fviainboxes_notice_present(page):
+            print("fviainboxes: Da dong popup thong bao Notice (qua nut X)!", flush=True)
+            return True
+
+        # 2. Thử focus và ấn phím Escape như người thật
+        try:
+            page.focus("body")
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(200)
+        except Exception:
+            pass
+
+        if not is_fviainboxes_notice_present(page):
+            print("fviainboxes: Da dong popup thong bao Notice (qua phim Escape)!", flush=True)
+            return True
+
+        # 3. Thử click nút 'Close' ở footer
+        close_btn = page.locator('[id*="headlessui-dialog-panel"] button:has-text("Close"), [data-headlessui-state="open"] button:has-text("Close")').first
+        if close_btn.count() > 0:
+            try:
+                close_btn.click(timeout=1000, force=True)
+                page.wait_for_timeout(200)
+            except Exception:
+                pass
+
+        if not is_fviainboxes_notice_present(page):
+            print("fviainboxes: Da dong popup thong bao Notice (qua nut Close)!", flush=True)
+            return True
+
+        # 4. Fallback DOM nếu vẫn còn sót
+        page.evaluate("""() => {
+            const allBtns = Array.from(document.querySelectorAll('button'));
+            for (const b of allBtns) {
+                const sr = b.querySelector('.sr-only');
+                const t = (b.innerText || '').trim();
+                const srText = (sr ? sr.innerText : '').trim();
+                if (srText.toLowerCase().includes('close announcement') || t === 'Close') {
+                    b.click();
+                }
+            }
+            document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true}));
+            const dialogs = document.querySelectorAll('[id*="headlessui-dialog"], [data-headlessui-state="open"]');
+            for (const d of dialogs) {
+                if ((d.innerText || '').includes('Notice') || (d.innerText || '').includes('server is under heavy load')) {
+                    d.remove();
+                }
+            }
+            const backdrops = document.querySelectorAll('div[class*="backdrop"], div.fixed.inset-0');
+            for (const bd of backdrops) {
+                if (bd.className.includes('bg-gray') || bd.className.includes('backdrop')) {
+                    bd.remove();
+                }
+            }
+        }""")
+        page.wait_for_timeout(100)
+        print("fviainboxes: Da dong popup thong bao Notice (qua fallback DOM)!", flush=True)
+        return True
+    except Exception as e:
+        print(f"fviainboxes notice check error: {e}", flush=True)
+        return False
+
+
+def install_fviainboxes_notice_guard(page) -> None:
+    """Cài đặt MutationObserver tự động phát hiện và đóng popup Notice ngay khi vừa gắn vào DOM."""
+    if not page or getattr(page, "is_closed", lambda: True)():
+        return
+    try:
+        page.evaluate("""() => {
+            if (window.__fvia_notice_guard_installed) return;
+            window.__fvia_notice_guard_installed = true;
+            const tryDismiss = () => {
+                const sr = Array.from(document.querySelectorAll('span.sr-only')).find(s => 
+                    (s.innerText || '').toLowerCase().includes('close announcement')
+                );
+                if (sr) {
+                    const btn = sr.closest('button');
+                    if (btn && btn.offsetParent !== null) {
+                        btn.click();
+                        return;
+                    }
+                }
+                const dialog = document.querySelector('[id*="headlessui-dialog"], [data-headlessui-state="open"]');
+                if (dialog && (dialog.innerText || '').includes('Notice')) {
+                    const closeBtn = Array.from(dialog.querySelectorAll('button')).find(b => (b.innerText || '').trim() === 'Close');
+                    if (closeBtn && closeBtn.offsetParent !== null) {
+                        closeBtn.click();
+                        return;
+                    }
+                    dialog.remove();
+                }
+            };
+            tryDismiss();
+            const observer = new MutationObserver(() => tryDismiss());
+            observer.observe(document.documentElement, {childList: true, subtree: true});
+        }""")
+    except Exception:
+        pass
+
+
 def read_code_in_fviainboxes_tab(
     context, email: str, timeout_ms: int = 60000, *, refresh: bool = False,
     exclude_codes: Optional[Set[str]] = None,
@@ -152,18 +298,28 @@ def read_code_in_fviainboxes_tab(
         page.bring_to_front()
         if host(page) != "fviainboxes.com":
             page.goto("https://fviainboxes.com/", wait_until="domcontentloaded", timeout=20000)
+        install_fviainboxes_notice_guard(page)
+        dismiss_fviainboxes_notice(page)
         # Tự động phát hiện và giải Cloudflare Turnstile như người thật nếu fviainboxes bắt xác minh
         try:
             from app.services.stealth import solve_cloudflare_turnstile
             solve_cloudflare_turnstile(page, timeout_sec=10)
         except Exception as e_cf:
             print(f"fviainboxes turnstile check: {e_cf}")
+        dismiss_fviainboxes_notice(page)
         user_input = page.locator("#username, input[name='username']").first
-        user_input.wait_for(state="visible", timeout=15000)
+        for _ in range(15):
+            dismiss_fviainboxes_notice(page)
+            if user_input.is_visible():
+                break
+            page.wait_for_timeout(1000)
+        user_input.wait_for(state="visible", timeout=5000)
+        dismiss_fviainboxes_notice(page)
         user_input.fill(email.split("@", 1)[0])
         # No generic submit fallback: the page also contains sponsored controls.
         # Match the span's text even while it is hidden by the loading spinner.
         get_mail = page.locator('button[type="submit"]:has(span:text-is("Get Email"))')
+        dismiss_fviainboxes_notice(page)
         get_mail.wait_for(state="visible", timeout=10000)
         excluded = {str(c).strip() for c in (exclude_codes or set()) if c}
         deadline = time.monotonic() + timeout_ms / 1000
@@ -177,23 +333,27 @@ def read_code_in_fviainboxes_tab(
         for attempt in range(4):
             if time.monotonic() >= deadline:
                 break
+            dismiss_fviainboxes_notice(page)
             # Nếu fviainboxes kích hoạt captcha_required giữa chừng, tự động click giải Turnstile
             try:
                 from app.services.stealth import solve_cloudflare_turnstile
                 solve_cloudflare_turnstile(page, timeout_sec=8)
             except Exception:
                 pass
+            dismiss_fviainboxes_notice(page)
             # Wait for the previous request to finish instead of force-clicking
             # a disabled/loading button. Retry only when no usable code arrived.
             while not get_mail.evaluate(click_dom):
                 if time.monotonic() >= deadline:
                     raise TimeoutError("Get Email vẫn đang tải")
+                dismiss_fviainboxes_notice(page)
                 page.wait_for_timeout(250)
             print(f"fviainboxes: requested inbox ({attempt + 1}/4)")
             opened = False
             read_deadline = min(deadline, time.monotonic() + 10)
             while time.monotonic() < read_deadline:
                 page.wait_for_timeout(250)
+                dismiss_fviainboxes_notice(page)
                 if not get_mail.is_enabled():
                     continue
                 if not opened:
@@ -272,6 +432,7 @@ def read_code_in_fviainboxes_tab(
                     except Exception:
                         pass
             if attempt < 3 and time.monotonic() < deadline:
+                dismiss_fviainboxes_notice(page)
                 print("fviainboxes: no usable security code; retrying Get Email")
                 page.wait_for_timeout(min(3000, max(0, (deadline - time.monotonic()) * 1000)))
         raise TimeoutError("Không thấy mã Microsoft trên tab fviainboxes")
