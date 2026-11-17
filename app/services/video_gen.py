@@ -1,4 +1,4 @@
-from app.services.video_history import confirm_generation, refresh_video_history
+from app.services.video_history import confirm_generation, refresh_video_history, set_status_zoom_80
 import asyncio
 import threading
 import time
@@ -17,7 +17,7 @@ from app.models import ProfileCreate, LaunchRequest
 from app.manager import manager
 from app.browser import launch_profile_with_fallback, close_profile, is_running, list_running
 from app.browser_settings import browser_launch_options
-from app.services.browser_navigation import install_vpn_welcome_guard
+from app.services.browser_navigation import install_higgsfield_pricing_guard, install_vpn_welcome_guard
 from app.services.higgsfield_popups import install_upgrade_plan_guard
 from app.services.higgsfield_quiz import handle_quiz_step
 from app.services.higgsfield_login import read_free_gens
@@ -41,6 +41,7 @@ def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False
             context = browser.contexts[0]
             install_vpn_welcome_guard(context)
             install_upgrade_plan_guard(context)
+            install_higgsfield_pricing_guard(context)
             return context, True
         except Exception as e:
             pass
@@ -191,6 +192,7 @@ def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False
 
     install_vpn_welcome_guard(context)
     install_upgrade_plan_guard(context)
+    install_higgsfield_pricing_guard(context)
     from app.services.stealth import install_stealth_guard
     install_stealth_guard(context)
     try:
@@ -466,15 +468,12 @@ def _get_new_video_url(page, target_prompt: str):
         pass
     return None
 
-def _send_video_to_telegram(video_path, token, chat_id):
-    if not token or not chat_id: return
+def _send_video_to_telegram(video_path, token=None, chat_id=None, caption=""):
     try:
-        import requests
-        url = f"https://api.telegram.org/bot{token}/sendVideo"
-        with open(video_path, 'rb') as f:
-            requests.post(url, data={"chat_id": chat_id}, files={"video": f}, timeout=30)
+        from app.services.telegram import send_video_to_telegram
+        send_video_to_telegram(video_path, token, chat_id, caption)
     except Exception as e:
-        print(f"Lỗi gửi Telegram: {e}")
+        print(f"[Telegram] Lỗi gọi module gửi Telegram: {e}")
 
 def _prepare_video_network(context, task_id, profile_id, generate_ip, generate_hma=False):
     if generate_ip:
@@ -557,7 +556,11 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
         ext_path = None
     global GLOBAL_MAX_RETRIES
 
-    video_tasks.setdefault(task_id, {}).update(status="running", message="Đang mở trình duyệt...")
+    video_tasks.setdefault(task_id, {}).update(
+        status="running",
+        message="Đang mở trình duyệt...",
+        generation_detected=False,
+    )
     video_tasks_chat[task_id] = {"messages": [], "queue": []}
     is_retrying = False
 
@@ -1430,80 +1433,126 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                         # Xử lý popup Media upload agreement lần nữa cho chắc
                         handle_media_upload_modal(pg)
                         
-                        # 4. Chọn các file vừa upload (Click như người thật)
-                        print(f"  -> Đang chọn {len(file_paths)} file vừa upload...")
-                
-                        # Cố gắng đợi thư viện load xong
-                        pg.wait_for_timeout(2500)
-                
-                        # Tìm thẻ video/ảnh vừa tải lên
+                        # 4. Chọn các file vừa upload — PHẢI CHỌN ĐỦ N file mới được sang bước sau
+                        # ⭐ FIX: trước đây list asset load chậm, đếm thấy mấy card là chọn
+                        #    bấy nhiêu (thường 1/3 ảnh) rồi vẫn bấm Select và chuyển sang bước video.
+                        needed = len(file_paths)
+                        print(f"  -> Đang chọn {needed} file vừa upload...")
+
+                        # 4.1 Đợi thư viện HIỂN THỊ ĐỦ số card vừa upload (tối đa ~30s)
                         items = pg.locator('div[data-assets-picker-selectable-card="true"]')
-                        try:
-                            items.first.wait_for(state="visible", timeout=15000)
-                        except:
-                            pass
-                        if items.count() == 0:
-                            # Thử locator khác nếu UI thay đổi
-                            items = pg.locator('button:has(img), div[role="button"]:has(img), div[role="button"]:has(video), img[alt="Asset"]').first
-                    
-                        count = items.count()
-                        print(f"  -> Tìm thấy {count} phần tử có thể chọn trong thư viện.")
-                
-                        # Click chọn N file đầu tiên tương ứng số file vừa up
-                        if count > 0:
-                            for i in range(min(len(file_paths), count)):
-                                try:
-                                    # 1. Thử dùng Playwright click siêu tốc
-                                    try:
-                                        items.nth(i).click(timeout=500, force=True)
-                                    except: pass
-                            
-                                    # 2. Thử dùng JS click (không chờ đợi Playwright)
-                                    try:
-                                        pg.evaluate(f"""() => {{
-                                            const els = document.querySelectorAll('div[data-assets-picker-selectable-card="true"]');
-                                            if (els[{i}]) els[{i}].click();
-                                            else {{
-                                                const altEls = document.querySelectorAll('button:has(img), div[role="button"]:has(img), div[role="button"]:has(video), img[alt="Asset"]');
-                                                if (altEls[{i}]) altEls[{i}].click();
-                                            }}
-                                        }}""")
-                                    except: pass
-                            
-                                    # 3. Rê chuột và click vật lý siêu tốc
-                                    try:
-                                        box = items.nth(i).bounding_box(timeout=500)
-                                        if box:
-                                            pg.mouse.move(box["x"] + box["width"]/2, box["y"] + box["height"]/2)
-                                            pg.mouse.down()
-                                            pg.wait_for_timeout(50)
-                                            pg.mouse.up()
-                                    except: pass
-                                
-                                    print(f"  -> Đã click chọn file thứ {i+1} (Bằng cả JS và Physical)")
-                                    pg.wait_for_timeout(300)
-                                except Exception as click_err: 
-                                    print(f"  -> Lỗi khi click chọn file: {click_err}")
-                        else:
-                            print("  -> Không tìm thấy phần tử bằng Locator, dùng JS fallback để click file vừa upload...")
+                        count = 0
+                        for _wait_round in range(20):
                             try:
-                                pg.evaluate("""() => {
-                                    // Lấy tất cả các button/div có khả năng là thẻ media
-                                    const els = Array.from(document.querySelectorAll('button, div[role="button"], div[tabindex="0"], div.cursor-pointer'));
-                                    for (let el of els) {
-                                        const text = (el.innerText || '').trim();
-                                        if (text.includes('Upload media') || text.includes('Sort by')) continue; // Bỏ qua nút upload
-                                        // Nếu thẻ có chứa thẻ img, video hoặc hình nền
-                                        if (el.querySelector('img') || el.querySelector('video') || el.style.backgroundImage || window.getComputedStyle(el).backgroundImage !== 'none') {
-                                            // Chắc chắn nó là thẻ media, tiến hành click
-                                            el.click();
-                                            return;
-                                        }
+                                items.first.wait_for(state="visible", timeout=3000)
+                            except Exception:
+                                pass
+                            try:
+                                count = items.count()
+                            except Exception:
+                                count = 0
+                            if count >= needed:
+                                break
+                            pg.wait_for_timeout(1200)
+                        if count == 0:
+                            # Thử locator khác nếu UI thay đổi
+                            items = pg.locator('button:has(img), div[role="button"]:has(img), div[role="button"]:has(video), img[alt="Asset"]')
+                            try:
+                                count = items.count()
+                            except Exception:
+                                count = 0
+                        print(f"  -> Tìm thấy {count} card trong thư viện (cần chọn đủ {needed}).")
+                        if count < needed:
+                            # CHƯA ĐỦ card → không chọn dối; raise cho master loop reload + làm lại
+                            raise Exception(f"ReloadRequired: Thư viện chỉ hiển thị {count}/{needed} file sau khi upload")
+                
+                        # 4.2 Kiểm tra trạng thái "đang được chọn" của card thứ i
+                        def _card_is_selected(i):
+                            try:
+                                return bool(pg.evaluate("""(idx) => {
+                                    const cards = document.querySelectorAll('div[data-assets-picker-selectable-card="true"]');
+                                    const el = cards[idx];
+                                    if (!el) return false;
+                                    const st = el.getAttribute('data-state');
+                                    if (st === 'selected' || st === 'checked') return true;
+                                    if (el.getAttribute('aria-pressed') === 'true') return true;
+                                    if (el.getAttribute('aria-selected') === 'true') return true;
+                                    if (el.getAttribute('data-selected') === 'true') return true;
+                                    if (el.querySelector('svg.lucide-check, svg[class*="check" i]')) return true;
+                                    return false;
+                                }""", i))
+                            except Exception:
+                                return False
+
+                        def _any_selection_marker():
+                            try:
+                                return bool(pg.evaluate("""() => {
+                                    const cards = document.querySelectorAll('div[data-assets-picker-selectable-card="true"]');
+                                    for (const el of cards) {
+                                        const st = el.getAttribute('data-state');
+                                        if (st === 'selected' || st === 'checked') return true;
+                                        if (el.getAttribute('aria-pressed') === 'true') return true;
+                                        if (el.getAttribute('aria-selected') === 'true') return true;
+                                        if (el.getAttribute('data-selected') === 'true') return true;
+                                        if (el.querySelector('svg.lucide-check, svg[class*="check" i]')) return true;
                                     }
-                                }""")
-                                pg.wait_for_timeout(2000)
-                            except Exception as e:
-                                print(f"  -> JS fallback click failed: {e}")
+                                    return false;
+                                }"""))
+                            except Exception:
+                                return False
+
+                        def _click_card(i):
+                            # 1. Playwright click
+                            try:
+                                items.nth(i).click(timeout=800, force=True)
+                            except Exception: pass
+                            # 2. JS click
+                            try:
+                                pg.evaluate(f"""() => {{
+                                    const els = document.querySelectorAll('div[data-assets-picker-selectable-card="true"]');
+                                    if (els[{i}]) els[{i}].click();
+                                }}""")
+                            except Exception: pass
+                            # 3. Rê chuột và click vật lý
+                            try:
+                                box = items.nth(i).bounding_box(timeout=500)
+                                if box:
+                                    pg.mouse.move(box["x"] + box["width"]/2, box["y"] + box["height"]/2)
+                                    pg.mouse.down()
+                                    pg.wait_for_timeout(50)
+                                    pg.mouse.up()
+                            except Exception: pass
+
+                        # 4.3 Click chọn từng card + XÁC NHẬN từng card được chọn thật sự
+                        marker_mode = _any_selection_marker()  # UI có phơi marker "đang chọn" không?
+                        selected_cnt = 0
+                        for _sel_round in range(4):
+                            round_selected = 0
+                            for i in range(min(needed, count)):
+                                if marker_mode and _card_is_selected(i):
+                                    round_selected += 1  # card này đã được chọn sẵn
+                                    continue
+                                _click_card(i)
+                                pg.wait_for_timeout(350)
+                                handle_media_upload_modal(pg)
+                                if not marker_mode:
+                                    marker_mode = _any_selection_marker()
+                                if (not marker_mode) or _card_is_selected(i):
+                                    round_selected += 1
+                                    print(f"  -> Đã chọn card {i+1}/{needed}")
+                            selected_cnt = round_selected
+                            print(f"  -> Vòng chọn {_sel_round+1}: {selected_cnt}/{needed} card đã được xác nhận chọn.")
+                            if selected_cnt >= needed:
+                                break
+                            if not marker_mode:
+                                # UI không có marker chọn: chỉ click 1 vòng, click lại có thể bị toggle bỏ chọn
+                                break
+                            pg.wait_for_timeout(1200)
+
+                        if marker_mode and selected_cnt < needed:
+                            # ⚠ CHƯA CHỌN ĐỦ → TUYỆT ĐỐI không bấm Select/Add, không sang bước video.
+                            # Raise để master loop reload trang và làm lại cả ảnh + video từ đầu.
+                            raise Exception(f"ReloadRequired: Chỉ chọn được {selected_cnt}/{needed} file trong thư viện")
                     
                         # Xử lý popup Media upload agreement có thể hiện ra sau khi click chọn file
                         handle_media_upload_modal(pg)
@@ -1528,7 +1577,30 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                         
                         # Xử lý popup Media upload agreement lần cuối trước khi sang bước sau
                         handle_media_upload_modal(pg)
-                
+
+                        # 4.6 XÁC NHẬN TRÊN FORM CHÍNH (chỉ bước ảnh): phải thấy ĐỦ N ảnh
+                        # reference đã được gắn (mỗi ảnh có nút Remove) mới coi như xong,
+                        # rồi mới được chuyển sang bước tải video.
+                        if not is_video:
+                            try:
+                                remove_cnt = pg.evaluate("""() => {
+                                    let n = 0;
+                                    document.querySelectorAll('button[aria-label]').forEach(b => {
+                                        const lb = (b.getAttribute('aria-label') || '').toLowerCase();
+                                        if (lb.includes('remove') && !lb.includes('video') && b.offsetParent !== null) n++;
+                                    });
+                                    return n;
+                                }""")
+                                print(f"  -> Form chính đang có {remove_cnt} ảnh reference đã gắn (kỳ vọng {needed}).")
+                                # Chỉ chặn khi UI có nút Remove mà thiếu ảnh (nếu UI không có nút
+                                # remove có nhãn thì bỏ qua để không chặn oan)
+                                if remove_cnt and remove_cnt < needed:
+                                    raise Exception(f"ReloadRequired: Form chỉ gắn được {remove_cnt}/{needed} ảnh sau khi chọn")
+                            except Exception as e:
+                                if "ReloadRequired" in str(e):
+                                    raise
+                                print(f"  -> Bỏ qua kiểm tra nút Remove trên form: {e}")
+
                     except Exception as e:
                         print(f"Lỗi upload {btn_aria_label}: {e}")
                         raise e
@@ -1769,6 +1841,7 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                                     page.evaluate("(btn) => btn.click()", generate_btn.element_handle())
                                 except:
                                     pass
+                            set_status_zoom_80(page)
                             page.wait_for_timeout(2000)
                     
                         # 4. Kiểm tra lỗi "Add one source video" sau khi nhấn Generate
@@ -2039,6 +2112,7 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                                 genBtn.click();
                             }
                         }""")
+                        set_status_zoom_80(page)
                         page.wait_for_timeout(4000)
                         
                         # Kiểm tra xem có Processing chưa
@@ -2155,6 +2229,7 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                     continue
                 if current_job_status == 'generating':
                     was_generating = True
+                    video_tasks[task_id]["generation_detected"] = True
             except:
                 current_job_status = ''
                 pass
@@ -2263,8 +2338,22 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                                 raise e
                                
                     # Phần này chạy chung cho cả 2 trường hợp tải thành công (blob hoặc http)
-                    if tg_enabled:
-                        _send_video_to_telegram(str(out_file), tg_token, tg_chat_id)
+                    try:
+                        from app.services.telegram import get_telegram_config, send_video_to_telegram_async
+                        cfg = get_telegram_config()
+                        should_send = tg_enabled or cfg.get("enabled", False)
+                        if should_send:
+                            used_token = tg_token or cfg.get("bot_token")
+                            used_chat = tg_chat_id or cfg.get("chat_id")
+                            prompt_short = prompt[:100] if prompt else "Video AI mới"
+                            send_video_to_telegram_async(
+                                str(out_file),
+                                used_token,
+                                used_chat,
+                                caption=f"🎬 Video AI đã tạo xong!\n📝 Prompt: {prompt_short}"
+                            )
+                    except Exception as _tg_err:
+                        print(f"[Telegram] Lỗi gửi video sau khi tạo: {_tg_err}")
                     all_urls = [f"/api/video/download/{task_id}?path={urllib.parse.quote(str(out_file))}"]
                     all_result_urls.extend(all_urls)
                 video_tasks[task_id]["result_urls"] = all_result_urls

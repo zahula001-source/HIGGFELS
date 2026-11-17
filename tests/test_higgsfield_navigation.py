@@ -3,7 +3,7 @@ import unittest
 from unittest.mock import Mock
 
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
-from app.services.browser_navigation import navigate_higgsfield
+from app.services.browser_navigation import install_higgsfield_pricing_guard, navigate_higgsfield
 
 
 URL = 'https://higgsfield.ai/ai/video?model=genjutsu'
@@ -65,6 +65,33 @@ class NavigationTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             self.navigate()
         self.page.goto.assert_called_once()
+
+
+class PricingNavigationGuardTests(unittest.TestCase):
+    def setUp(self):
+        self.playwright = sync_playwright().start()
+        self.browser = self.playwright.chromium.launch(headless=True)
+        self.context = self.browser.new_context()
+        self.context.route("**/*", lambda route: route.fulfill(
+            content_type="text/html",
+            body="<a href='/pricing?from=ad'>View offer</a><button id='upload'>Upload</button>",
+        ))
+        self.page = self.context.new_page()
+        self.page.goto(URL)
+        install_higgsfield_pricing_guard(self.context)
+
+    def tearDown(self):
+        self.browser.close()
+        self.playwright.stop()
+
+    def test_pricing_link_is_blocked_and_upload_page_stays_usable(self):
+        self.page.get_by_role("link", name="View offer").click()
+        self.assertEqual(self.page.url, URL)
+        self.assertTrue(self.page.get_by_role("button", name="Upload").is_visible())
+
+    def test_client_side_pricing_navigation_is_blocked(self):
+        self.page.evaluate("history.pushState({}, '', '/pricing?from=ad')")
+        self.assertEqual(self.page.url, URL)
 
 
 if __name__ == '__main__':

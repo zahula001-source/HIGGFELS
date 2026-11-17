@@ -43,6 +43,72 @@ def navigate_higgsfield(page, url, log=print, attempts=3, timeout_ms=30000):
 VPN_WELCOME_URL = re.compile(
     r"^https?://[^/]+/(?:.*welcome.*|.*thank-you.*|.*installed.*|.*success.*)(?:[/?#]|$)", re.I
 )
+HIGGSFIELD_PRICING_URL = re.compile(
+    r"^https?://(?:www\.)?higgsfield\.ai/pricing(?:/|[?#]|$)", re.I
+)
+
+PRICING_NAVIGATION_GUARD = r"""(() => {
+    if (!['higgsfield.ai', 'www.higgsfield.ai'].includes(location.hostname.toLowerCase())) return;
+    if (window.__higgsfieldPricingGuard) return;
+    window.__higgsfieldPricingGuard = true;
+
+    const isPricing = value => {
+        try {
+            const url = new URL(value, location.href);
+            return ['higgsfield.ai', 'www.higgsfield.ai'].includes(url.hostname.toLowerCase()) &&
+                /^\/pricing(?:\/|$)/i.test(url.pathname);
+        } catch {
+            return false;
+        }
+    };
+
+    document.addEventListener('click', event => {
+        const link = event.composedPath().find(
+            element => element instanceof HTMLAnchorElement && isPricing(element.href)
+        );
+        if (link) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+        }
+    }, true);
+
+    for (const method of ['pushState', 'replaceState']) {
+        const original = history[method];
+        history[method] = function(state, title, url) {
+            if (url && isPricing(url)) {
+                queueMicrotask(() => window.dispatchEvent(
+                    new PopStateEvent('popstate', {state: history.state})
+                ));
+                return;
+            }
+            return original.apply(this, arguments);
+        };
+    }
+})();"""
+
+
+def install_higgsfield_pricing_guard(context, log=None):
+    """Prevent ad clicks from navigating video automation to the pricing page."""
+    if getattr(context, "_higgsfield_pricing_guard_installed", False):
+        return
+    context.route(HIGGSFIELD_PRICING_URL, lambda route: _handle_pricing_route(route, log))
+    context.add_init_script(PRICING_NAVIGATION_GUARD)
+    context._higgsfield_pricing_guard_installed = True
+    for page in list(context.pages):
+        try:
+            if not page.is_closed():
+                page.evaluate(PRICING_NAVIGATION_GUARD)
+        except Exception:
+            pass
+
+
+def _handle_pricing_route(route, log):
+    if route.request.is_navigation_request():
+        if log:
+            log(f"Chặn điều hướng quảng cáo đến pricing: {route.request.url}")
+        route.abort()
+    else:
+        route.continue_()
 
 
 def is_vpn_welcome_url(url):

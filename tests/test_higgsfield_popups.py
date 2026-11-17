@@ -14,7 +14,7 @@ HTML = """
 </button>
 <div id="root"></div>
 <script>
-window.closedPopups=0;window.wrongClicks=0;window.purchases=0;
+window.closedPopups=0;window.closedAds=0;window.wrongClicks=0;window.purchases=0;
 window.mountPopup = (hidden=false, lateButton=false, fullscreen=false) => {
     const popup=document.createElement('div');
     popup.id='upgrade';
@@ -32,6 +32,17 @@ window.mountPopup = (hidden=false, lateButton=false, fullscreen=false) => {
         popup.appendChild(close);
     };
     if (lateButton) setTimeout(addButton,100); else addButton();
+};
+window.mountAdPopup = () => {
+    const popup=document.createElement('div');
+    popup.id='ad-popup';
+    const close=document.createElement('button');
+    close.type='button';
+    close.setAttribute('aria-label','Close');
+    close.className='q-close q-close-md absolute top-4 right-4';
+    close.onclick=() => {window.closedAds++;popup.remove();};
+    popup.appendChild(close);
+    document.getElementById('root').appendChild(popup);
 };
 </script>
 """
@@ -81,6 +92,12 @@ class UpgradePlanGuardTests(unittest.TestCase):
         other.evaluate("mountPopup()")
         other.wait_for_timeout(600)
         self.assertEqual(other.evaluate("window.closedPopups"), 0)
+
+    def test_closes_ad_popup_without_known_heading(self):
+        install_upgrade_plan_guard(self.context)
+        self.page.evaluate("mountAdPopup()")
+        self.page.wait_for_function("window.closedAds === 1")
+        self.assertEqual(self.page.evaluate("window.closedPopups"), 0)
 
 
 if __name__ == "__main__":

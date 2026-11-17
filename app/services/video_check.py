@@ -1,4 +1,4 @@
-from app.services.video_history import confirm_generation, refresh_video_history
+from app.services.video_history import confirm_generation, refresh_video_history, set_status_zoom_80
 import asyncio
 import threading
 import time
@@ -606,6 +606,7 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                                         );
                                     if (genBtn) HTMLElement.prototype.click.call(genBtn);
                                 }""")
+                                set_status_zoom_80(page)
                                 page.wait_for_timeout(4000)
                             
                                 # Kiểm tra xem có Processing chưa
@@ -824,6 +825,22 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                                 
                         all_urls = [f"/api/video/download/{task_id}?path={urllib.parse.quote(str(out_file))}"]
                         all_result_urls.extend(all_urls)
+                        
+                        # Tự động gửi video về Telegram khi kiểm tra & tải thành công
+                        try:
+                            from app.services.telegram import get_telegram_config, send_video_to_telegram_async
+                            cfg = get_telegram_config()
+                            if cfg.get("enabled", False):
+                                p_title = manager.get_profile(profile_id)
+                                p_name = p_title.name if p_title else profile_id
+                                send_video_to_telegram_async(
+                                    str(out_file),
+                                    cfg.get("bot_token"),
+                                    cfg.get("chat_id"),
+                                    caption=f"🎬 Video AI kiểm tra hoàn tất!\n📁 Profile: {p_name}"
+                                )
+                        except Exception as _tg_err:
+                            print(f"[Telegram] Lỗi gửi video sau khi check: {_tg_err}")
                         
                     video_tasks[task_id]["result_urls"] = all_result_urls
                     video_tasks[task_id]["status"] = "success"

@@ -15,9 +15,19 @@ def refresh_video_history(page):
         page.wait_for_timeout(800)
 
 
+def set_status_zoom_80(page):
+    page.keyboard.press("Control+0")
+    page.keyboard.press("Control+-")
+    page.keyboard.press("Control+-")
+
+
 def confirm_generation(page):
     try:
         wait_for_generation(page)
     except Exception:
         refresh_video_history(page)
-        wait_for_generation(page)
+        try:
+            wait_for_generation(page)
+        except Exception:
+            set_status_zoom_80(page)
+            wait_for_generation(page)

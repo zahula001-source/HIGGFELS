@@ -532,6 +532,14 @@ def close_profile_endpoint(profile_id: str):
             _manual_open_sessions.pop(profile_id, None)
     return result
 
+@router.post("/api/profiles/{profile_id}/close-for-video-timer")
+def close_profile_for_video_timer_endpoint(profile_id: str):
+    result = close_profile(profile_id, stop_video_tasks=False)
+    if result.get("status") in ("closed", "not_running"):
+        with _signup_lock:
+            _manual_open_sessions.pop(profile_id, None)
+    return result
+
 @router.put("/api/profiles/{profile_id}/name")
 def update_profile_name_endpoint(profile_id: str, payload: dict = Body(...)):
     new_name = payload.get("name")
@@ -3301,3 +3309,140 @@ def reload_profile_tab(profile_id: str):
     import threading
     threading.Thread(target=_do_reload, daemon=True).start()
     return {'ok': True}
+
+
+@router.post('/api/profiles/{profile_id}/create-acc-br')
+def create_acc_br_endpoint(
+    profile_id: str,
+    engine: str = "cloakbrowser",
+    generate_ip: bool = False,
+    generate_hma: bool = False,
+    headless: bool = False,
+):
+    profile = manager.get_profile(profile_id)
+    if not profile:
+        raise HTTPException(404, "Profile not found")
+
+    import time
+    from pathlib import Path
+    from app.browser import is_running, launch_profile_with_fallback, prepare_chrome_136_profile
+    from app.models import LaunchRequest
+
+    # 1. Khởi động Chrome nếu chưa chạy
+    if not is_running(profile_id):
+        req = LaunchRequest(
+            headless=headless,
+            manual_open=True,
+            keep_open_after_check=True,
+            enable_ext=True,
+            engine=engine,
+            generate_ip=generate_ip,
+            generate_hma=generate_hma,
+        )
+        res = launch_profile_with_fallback(profile, req)
+        if res.get("status") not in ("launched", "already_running"):
+            raise HTTPException(500, f"Không thể mở Chrome: {res.get('message')}")
+        time.sleep(2.0)
+
+    # 2. Lấy CDP port
+    runtime_dir = profile.user_data_dir if engine == "cloakbrowser" else prepare_chrome_136_profile(profile.user_data_dir)
+    target_dirs = [Path(runtime_dir), Path(profile.user_data_dir)]
+
+    port = None
+    for attempt in range(30):
+        for pdir in target_dirs:
+            for fname in ("cdp_port.txt", "DevToolsActivePort"):
+                fpath = pdir / fname
+                if fpath.exists():
+                    try:
+                        lines = fpath.read_text(encoding="utf-8").strip().splitlines()
+                        if lines and lines[0].strip().isdigit():
+                            port = int(lines[0].strip())
+                            break
+                    except Exception:
+                        pass
+            if port:
+                break
+        if port:
+            break
+        time.sleep(0.5)
+
+    if not port:
+        raise HTTPException(400, "Không tìm thấy CDP port của Chrome profile này. Hãy thử mở Chrome trước!")
+
+    # 3. Kết nối Playwright CDP, mở trang Browserling và chờ hiện chữ remaining
+    TARGET_URL = "https://www.browserling.com/browse/win10/chrome156/https://higgsfield.ai/genjutsu-create"
+
+    from playwright.sync_api import sync_playwright
+    with pw_lock:
+        pw = sync_playwright().start()
+
+    try:
+        browser = pw.chromium.connect_over_cdp(f"http://localhost:{port}")
+        context = browser.contexts[0]
+
+        # Tìm tab đang ở Browserling hoặc dùng tab có sẵn
+        page = None
+        for pg in context.pages:
+            if not pg.is_closed() and "browserling.com" in pg.url:
+                page = pg
+                break
+
+        if not page:
+            for pg in context.pages:
+                if not pg.is_closed() and pg.url in ("about:blank", "chrome://newtab/"):
+                    page = pg
+                    break
+
+        if not page:
+            page = context.new_page()
+
+        if "browserling.com/browse" not in page.url:
+            print(f"[{profile_id}] Đang mở trang: {TARGET_URL}")
+            page.goto(TARGET_URL, timeout=60000)
+
+        try:
+            page.bring_to_front()
+        except Exception:
+            pass
+
+        # Đợi xíu thấy nó hiện chữ remaining (<span class="notice-title">remaining</span>)
+        print(f"[{profile_id}] Đang đợi chữ 'remaining' xuất hiện...")
+        try:
+            page.wait_for_selector("span.notice-title", timeout=45000)
+        except Exception:
+            page.wait_for_selector("text=remaining", timeout=20000)
+
+        found_text = ""
+        for _ in range(30):
+            el = page.locator("span.notice-title").first
+            if el.count() > 0:
+                txt = el.inner_text().strip()
+                if "remaining" in txt.lower():
+                    found_text = txt
+                    break
+            if page.locator("text=remaining").count() > 0:
+                found_text = page.locator("text=remaining").first.inner_text().strip()
+                break
+            time.sleep(1)
+
+        if not found_text:
+            found_text = "remaining"
+
+        print(f"[{profile_id}] ✅ TẠO ACC BR: Đã thấy chữ remaining ({found_text}) tại {page.url}!")
+        return {
+            "ok": True,
+            "message": f"Đã mở Browserling & thấy '{found_text}'",
+            "text": found_text,
+            "url": page.url
+        }
+    except Exception as e:
+        print(f"[{profile_id}] ❌ Lỗi TẠO ACC BR: {e}")
+        raise HTTPException(500, f"Lỗi TẠO ACC BR: {str(e)}")
+    finally:
+        # Ngắt kết nối Playwright client, giữ nguyên Chrome và các tab mở
+        try:
+            pw.stop()
+        except Exception:
+            pass
+

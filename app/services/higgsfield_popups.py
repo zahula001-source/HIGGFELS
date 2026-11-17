@@ -15,6 +15,16 @@ UPGRADE_PLAN_GUARD = r"""(() => {
 
     function dismiss() {
         queued = false;
+        const closeButtons = [...document.querySelectorAll('button.q-close[aria-label="Close"]')];
+        for (const button of closeButtons) {
+            if (!visible(button) || button.disabled) continue;
+            const now = performance.now();
+            if (now - (lastClicks.get(button) ?? -Infinity) >= 500) {
+                lastClicks.set(button, now);
+                button.click();
+            }
+        }
+
         const headings = [...document.querySelectorAll('h1, h2')].filter(el => {
             if (!visible(el) || el.classList.contains('sr-only')) return false;
             const title = (el.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();

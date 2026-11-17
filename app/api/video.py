@@ -54,6 +54,18 @@ async def create_video(request: Request):
     telegram_enabled = form.get("telegram_enabled", "false")
     telegram_token = form.get("telegram_token", "")
     telegram_chat_id = form.get("telegram_chat_id", "")
+    # Tự động nạp cấu hình Telegram lưu trên máy nếu form chưa truyền
+    try:
+        from app.services.telegram import get_telegram_config
+        _saved_tg = get_telegram_config()
+        if str(telegram_enabled).lower() != "true" and _saved_tg.get("enabled"):
+            telegram_enabled = "true"
+        if not telegram_token and _saved_tg.get("bot_token"):
+            telegram_token = _saved_tg.get("bot_token")
+        if not telegram_chat_id and _saved_tg.get("chat_id"):
+            telegram_chat_id = _saved_tg.get("chat_id")
+    except Exception as _tge:
+        pass
     gen_mode = form.get("gen_mode", "motion_transfer")
     browser_engine = form.get("browser_engine", "chrome")
     generate_ip = str(form.get("generate_ip", "true")).strip().lower() == "true"
@@ -376,4 +388,27 @@ def clear_stuck_tasks(payload: dict = Body(default=None)):
     save_video_tasks_cache()
     return {"ok": True, "cleared_count": len(cleared)}
 
+class SendToTelegramReq(BaseModel):
+    video_url: str = ""
+    video_path: str = ""
 
+@router.post("/api/video/send_to_telegram")
+def api_send_video_to_telegram_endpoint(req: SendToTelegramReq):
+    import urllib.parse
+    target_path = req.video_path
+    if not target_path and req.video_url:
+        parsed = urllib.parse.urlparse(req.video_url)
+        qs = urllib.parse.parse_qs(parsed.query)
+        if "path" in qs:
+            target_path = qs["path"][0]
+    
+    if not target_path or not Path(target_path).exists():
+        return JSONResponse(status_code=400, content={"ok": False, "message": "Không tìm thấy file video trên máy!"})
+    
+    from app.services.telegram import send_video_to_telegram_async, get_telegram_config
+    cfg = get_telegram_config()
+    if not cfg.get("bot_token") or not cfg.get("chat_id"):
+        return JSONResponse(status_code=400, content={"ok": False, "message": "Chưa cấu hình Telegram Bot Token hoặc Chat ID!"})
+    
+    send_video_to_telegram_async(target_path, cfg.get("bot_token"), cfg.get("chat_id"), caption="🎬 [Higgsfield AI] Gửi thủ công từ giao diện Tool")
+    return {"ok": True, "message": "Đang gửi video vào Telegram trong nền!"}

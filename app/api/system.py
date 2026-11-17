@@ -135,4 +135,30 @@ async def rotate_hma_endpoint():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+class TelegramConfigReq(BaseModel):
+    enabled: bool = False
+    bot_token: str = ""
+    chat_id: str = ""
 
+@router.get("/api/telegram/config")
+def api_get_telegram_config():
+    from app.services.telegram import get_telegram_config
+    return get_telegram_config()
+
+@router.post("/api/telegram/config")
+def api_save_telegram_config(req: TelegramConfigReq):
+    from app.services.telegram import save_telegram_config
+    cfg = save_telegram_config(req.enabled, req.bot_token, req.chat_id)
+    return {"ok": True, "config": cfg}
+
+@router.post("/api/telegram/clear")
+def api_clear_telegram_config():
+    from app.services.telegram import clear_telegram_config
+    cfg = clear_telegram_config()
+    return {"ok": True, "config": cfg}
+
+@router.post("/api/telegram/test")
+def api_test_telegram_config(req: TelegramConfigReq):
+    from app.services.telegram import test_telegram_connection
+    success, msg = test_telegram_connection(req.bot_token, req.chat_id)
+    return {"ok": success, "message": msg}

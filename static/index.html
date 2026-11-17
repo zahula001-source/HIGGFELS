@@ -143,7 +143,7 @@ body{background:#0b0e14;color:#e5e7eb;min-height:100vh;}
     </div>
     
     <div style="display:inline-flex; align-items:center; gap: 6px;">
-      <button class="btn btn-ghost" style="padding:4px 8px; font-size:12px; height:auto; border-radius:6px; border-color:#334155; background:#1e293b;" onclick="openTelegramModal()">📲 Telegram</button>
+      <button id="headerTelegramBtn" class="btn btn-ghost" style="padding:4px 8px; font-size:12px; height:auto; border-radius:6px; border-color:#334155; background:#1e293b; transition:0.2s;" onclick="openTelegramModal()">📲 Telegram</button>
       <button class="btn btn-ghost" style="padding:4px 8px; font-size:12px; height:auto; border-radius:6px; border-color:#334155; background:#1e293b;" onclick="openStartupModal()">⚙️ Tabs Mặc Định</button>
       
       <div style="display:flex; align-items:center; gap:6px; border:1px solid #334155; padding: 4px 8px; border-radius: 6px; background: #1e293b;">
@@ -403,29 +403,54 @@ body{background:#0b0e14;color:#e5e7eb;min-height:100vh;}
 </div>
 
 <div id="telegramModal" class="modal-overlay" onclick="if(event.target==this) closeTelegramModal()">
-  <div class="modal">
-    <h2>📲 Cấu hình gửi video tự động qua Telegram</h2>
-    <p style="font-size:12px;color:#94a3b8;margin-bottom:12px;">
-      Video tải về thành công sẽ tự động được gửi qua Bot Telegram.
+  <div class="modal" style="max-width:480px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+      <h2 style="margin:0;color:#38bdf8;font-size:15px;display:flex;align-items:center;gap:6px;">
+        <span>📲 Cấu hình gửi video tự động qua Telegram</span>
+      </h2>
+      <button class="btn btn-ghost" style="padding:2px 8px;height:auto;" onclick="closeTelegramModal()">✕</button>
+    </div>
+
+    <p style="font-size:12px;color:#94a3b8;margin-bottom:12px;line-height:1.4;">
+      Khi bật, mọi video tạo xong hoặc check video tải về thành công sẽ <b>tự động gửi ngay vào Telegram</b> của bạn! Cấu hình được lưu vĩnh viễn trên máy tính.
     </p>
-    <div class="form-group" style="margin-bottom:12px;">
-      <label style="display:flex; align-items:center; gap:8px; cursor:pointer; color:#10b981; font-weight:bold;">
-        <input type="checkbox" id="tgEnable" style="width:16px;height:16px;"> Bật tính năng gửi qua Telegram
+
+    <div style="background:#0f172a;border:1px solid #1e293b;border-radius:8px;padding:10px 14px;margin-bottom:12px;">
+      <label style="display:flex; align-items:center; gap:10px; cursor:pointer; color:#10b981; font-weight:bold; font-size:13px; user-select:none;">
+        <input type="checkbox" id="tgEnable" style="width:18px;height:18px;cursor:pointer;accent-color:#10b981;">
+        <span>BẬT TÍNH NĂNG GỬI QUA TELEGRAM</span>
       </label>
     </div>
-    <div class="form-group">
-      <label>Bot Token</label>
-      <input id="tgToken" class="input" placeholder="VD: 123456789:ABCDefgh...">
+
+    <div class="form-group" style="margin-bottom:10px;">
+      <label style="font-weight:600;font-size:12px;color:#cbd5e1;">Bot Token (tạo từ @BotFather):</label>
+      <input id="tgToken" class="input" placeholder="VD: 8097124349:AAHaAZDbrGevCRPKDH1CsXX0Spe47i01UFA" style="font-family:monospace;font-size:12px;">
     </div>
-    <div class="form-group">
-      <label>Chat ID</label>
-      <input id="tgChatId" class="input" placeholder="VD: 987654321 hoặc -100123456">
-      <div class="hint">Nhập ID của tài khoản hoặc Group nhận video.</div>
+
+    <div class="form-group" style="margin-bottom:12px;">
+      <label style="font-weight:600;font-size:12px;color:#cbd5e1;">Chat ID người nhận hoặc Group ID:</label>
+      <input id="tgChatId" class="input" placeholder="VD: 8441111668 hoặc -100xxxxxxxx" style="font-family:monospace;font-size:12px;">
+      <div style="font-size:11px;color:#eab308;margin-top:3px;">
+        ⚠️ <b>Quan trọng:</b> Bạn hãy mở Telegram, tìm bot của bạn và bấm <b>/start</b> trước thì bot mới có quyền gửi video cho bạn!
+      </div>
     </div>
+
+    <div id="tgStatusMessage" style="display:none;padding:8px 12px;border-radius:6px;font-size:12px;margin-bottom:12px;"></div>
     
-    <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;">
-      <button class="btn btn-ghost" onclick="closeTelegramModal()">Hủy</button>
-      <button class="btn btn-primary" onclick="saveTelegramConfig()">Lưu Cấu Hình</button>
+    <div style="display:flex;gap:8px;align-items:center;justify-content:space-between;margin-top:16px;padding-top:12px;border-top:1px solid #334155;">
+      <button type="button" class="btn btn-sm" onclick="clearTelegramConfig()" style="padding:6px 10px;font-size:11px;background:#7f1d1d;color:#fca5a5;border:1px solid #dc2626;" title="Xóa cấu hình nếu không muốn gửi vào Telegram nữa">
+        🗑️ Xóa Cấu Hình
+      </button>
+
+      <div style="display:flex;gap:6px;">
+        <button type="button" class="btn btn-sm" onclick="testTelegramConnection()" style="background:#0284c7;color:#fff;border:none;padding:6px 10px;font-size:11px;font-weight:bold;" title="Gửi tin nhắn test kiểm tra bot có hoạt động không">
+          🔔 Gửi Thử (Test)
+        </button>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="closeTelegramModal()">Hủy</button>
+        <button type="button" class="btn btn-primary btn-sm" onclick="saveTelegramConfig()" style="background:#059669;padding:6px 14px;font-weight:bold;">
+          💾 Lưu Cấu Hình
+        </button>
+      </div>
     </div>
   </div>
 </div>
@@ -869,6 +894,7 @@ function renderProfiles(profiles){
         }
         <button class="btn btn-sm btn-purple" onclick="randomFingerprint('${p.id}')" title="Doi thanh may moi hoan toan nhu BitBrowser Random Fingerprint">🎲 Random FP</button>
         <button id="btnAutoSignup_${p.id}" class="btn btn-sm btn-success" onclick="handleAutoSignupClick('${p.id}', this)" title="Tự động mở Chrome và tạo tài khoản + đăng nhập">🤖 Tạo acc + login</button>
+        <button id="btnCreateAccBr_${p.id}" class="btn btn-sm" style="background:#2563eb;color:#fff;font-weight:600;" onclick="handleCreateAccBrClick('${p.id}', this)" title="Mở Browserling tạo tài khoản">🌐 TẠO ACC BR</button>
         <button class="btn btn-sm" style="background:#059669;color:#fff;" onclick="checkFreeGenProfile('${p.id}', this)" title="Chỉ kiểm tra Use free gens và chất lượng, không tạo account mới">🔍 Check Free Gen</button>
         <button class="btn btn-sm" style="background:#0369a1;color:#fff;" onclick="openPasteMailModal('${p.id}')">📧 Dán mail</button>
         <button class="btn btn-sm btn-ghost" onclick="duplicateProfile('${p.id}')">📋 Clone</button>
@@ -1170,6 +1196,65 @@ async function checkFreeGenProfile(id, button) {
       button.dataset.checking = "false";
       button.disabled = false;
       button.textContent = originalText;
+    }
+  }
+}
+
+async function handleCreateAccBrClick(profileId, btn) {
+  if (btn && btn.dataset.busy === "true") return;
+  const originalText = btn ? btn.innerHTML : "🌐 TẠO ACC BR";
+  if (btn) {
+    btn.dataset.busy = "true";
+    btn.disabled = true;
+    btn.innerHTML = "⏳ Đang mở BR...";
+  }
+
+  showToast(`⏳ Đang mở Browserling cho Profile #${profileId}...`);
+
+  try {
+    const engine = document.getElementById("globalBrowserEngine")?.value || "cloakbrowser";
+    const generateIp = document.getElementById("globalGenerateIp")?.checked || false;
+    const generateHma = document.getElementById("globalGenerateHma")?.checked || false;
+    const isHeadless = document.getElementById("globalHeadless")?.checked || false;
+
+    const params = new URLSearchParams({
+      engine: engine,
+      generate_ip: String(generateIp),
+      generate_hma: String(generateHma),
+      headless: String(isHeadless)
+    });
+
+    const res = await fetch(`/api/profiles/${profileId}/create-acc-br?${params}`, {
+      method: "POST"
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      throw new Error(data.detail || data.message || "Lỗi khi mở Browserling");
+    }
+
+    if (btn) {
+      btn.innerHTML = "✅ Đã thấy remaining";
+      btn.style.background = "#10b981";
+    }
+    showToast(`✅ [Profile #${profileId}] Đã mở Browserling & thấy: ${data.text || 'remaining'}`);
+    setTimeout(loadProfiles, 1000);
+  } catch (err) {
+    showToast(`❌ Lỗi TẠO ACC BR: ${err.message}`);
+    alert(`Lỗi TẠO ACC BR: ${err.message}`);
+    if (btn) {
+      btn.innerHTML = originalText;
+      btn.style.background = "#2563eb";
+    }
+  } finally {
+    if (btn) {
+      btn.dataset.busy = "false";
+      btn.disabled = false;
+      setTimeout(() => {
+        if (btn) {
+          btn.innerHTML = originalText;
+          btn.style.background = "#2563eb";
+        }
+      }, 4000);
     }
   }
 }
@@ -2580,8 +2665,8 @@ function switchTab(tab) {
 }
 
 async function resetToSingleEmptyCard() {
-  if (typeof videoTimers === 'object') {
-    Object.keys(videoTimers).forEach(fId => {
+  if (typeof window._videoTimers === 'object') {
+    Object.keys(window._videoTimers).forEach(fId => {
       try { cancelVideoTimer(fId, false); } catch(e){}
     });
   }
@@ -3384,6 +3469,7 @@ function dataURLtoBlob(dataurl) {
 // ===== VIDEO: ĐA LUỒNG (nhiều task song song) =====
 const videoTaskPolls = {};  // fId -> intervalId
 const fIdToTaskId = {}; // map fId to actual task_id
+window._videoAutoTimerTasks = window._videoAutoTimerTasks || new Set();
 const fIdToVideoTaskId = {}; // task video riêng, không dùng chung với task check/account
 
 async function startCancelAndGen(fId) {
@@ -3654,6 +3740,21 @@ async function pollTaskStatusDynamic(fId, taskId) {
     bar.style.display = "flex";
     bar.innerHTML = `${icon} <div style="font-size:11px;flex:1;word-break:break-word;max-height:80px;overflow-y:auto;white-space:pre-wrap;">${data.message || ""}</div>`;
 
+    if (data.generation_detected && !window._videoAutoTimerTasks.has(taskId)) {
+      const profileSelect = document.getElementById(`videoProfileId_${fId}`);
+      if (profileSelect && profileSelect.value) {
+        window._videoAutoTimerTasks.add(taskId);
+        startTimerForFid(fId, 10, false).catch(e => {
+          console.error("Không thể tự hẹn giờ kiểm tra video:", e);
+          window._videoAutoTimerTasks.delete(taskId);
+          if (!videoTaskPolls[fId]) {
+            videoTaskPolls[fId] = setInterval(() => pollTaskStatusDynamic(fId, taskId), 5000);
+          }
+          showToast(`❌ Không thể đóng Chrome để hẹn giờ: ${e.message}`);
+        });
+      }
+    }
+
     const vform = document.getElementById(`vform_${fId}`);
     if (vform) {
         if (data.status === "running" || data.status === "pending") {
@@ -3705,6 +3806,7 @@ async function pollTaskStatusDynamic(fId, taskId) {
                 <div style="display:flex;flex-direction:row;gap:6px;flex-shrink:0;align-items:center;">
                     <a href="${url}" download><button class="btn btn-success btn-sm" style="width:85px;justify-content:center;height:24px;font-size:11px;">⬇️ Tải Video</button></a>
                     <button class="btn btn-primary btn-sm" onclick="openVideoModal('${url}')" style="width:85px;justify-content:center;height:24px;font-size:11px;">▶️ Xem Video</button>
+                    <button class="btn btn-sm" onclick="sendVideoUrlToTelegram('${url}', this)" style="background:#0284c7;color:#fff;border:none;width:80px;justify-content:center;height:24px;font-size:11px;font-weight:bold;" title="Gửi video này vào Telegram ngay">📲 Gửi Tele</button>
                 </div>
             </div>
             `;
@@ -4121,20 +4223,184 @@ function loadUnfinishedUIState() {
   }
 }
 
-function openTelegramModal() {
-    document.getElementById('tgEnable').checked = localStorage.getItem("tgEnable") === "true";
-    document.getElementById('tgToken').value = localStorage.getItem("tgToken") || "";
-    document.getElementById('tgChatId').value = localStorage.getItem("tgChatId") || "";
-    document.getElementById('telegramModal').style.display = 'flex';
+async function loadTelegramConfig() {
+  try {
+    const res = await fetch('/api/telegram/config');
+    const data = await res.json();
+    if (data) {
+      const enabled = !!data.enabled;
+      const token = data.bot_token || "";
+      const chatId = data.chat_id || "";
+      
+      localStorage.setItem("tgEnable", enabled ? "true" : "false");
+      localStorage.setItem("tgToken", token);
+      localStorage.setItem("tgChatId", chatId);
+      
+      updateTelegramBadge(enabled);
+      return { enabled, token, chatId };
+    }
+  } catch(e) {
+    console.warn("Lỗi tải config Telegram từ server:", e);
+  }
+  const localEnabled = localStorage.getItem("tgEnable") === "true";
+  updateTelegramBadge(localEnabled);
+  return {
+    enabled: localEnabled,
+    token: localStorage.getItem("tgToken") || "",
+    chatId: localStorage.getItem("tgChatId") || ""
+  };
 }
+
+function updateTelegramBadge(enabled) {
+  const btn = document.getElementById("headerTelegramBtn");
+  if (!btn) return;
+  if (enabled) {
+    btn.innerHTML = `📲 Telegram <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#10b981;margin-left:4px;" title="Đang Bật"></span>`;
+    btn.style.borderColor = "#059669";
+    btn.style.color = "#34d399";
+    btn.style.background = "#064e3b";
+    btn.title = "Telegram: Đang BẬT tự động gửi video";
+  } else {
+    btn.innerHTML = "📲 Telegram";
+    btn.style.borderColor = "#334155";
+    btn.style.color = "#94a3b8";
+    btn.style.background = "#1e293b";
+    btn.title = "Telegram: Đang TẮT";
+  }
+}
+
+async function openTelegramModal() {
+  const cfg = await loadTelegramConfig();
+  const enableEl = document.getElementById('tgEnable');
+  const tokenEl = document.getElementById('tgToken');
+  const chatIdEl = document.getElementById('tgChatId');
+  const statusMsg = document.getElementById('tgStatusMessage');
+  if (statusMsg) statusMsg.style.display = 'none';
+
+  if (enableEl) enableEl.checked = cfg.enabled;
+  if (tokenEl) tokenEl.value = cfg.token;
+  if (chatIdEl) chatIdEl.value = cfg.chatId;
+
+  const modal = document.getElementById('telegramModal');
+  if (modal) modal.style.display = 'flex';
+}
+
 function closeTelegramModal() {
-    document.getElementById('telegramModal').style.display = 'none';
+  const modal = document.getElementById('telegramModal');
+  if (modal) modal.style.display = 'none';
 }
-function saveTelegramConfig() {
-    localStorage.setItem("tgEnable", document.getElementById('tgEnable').checked);
-    localStorage.setItem("tgToken", document.getElementById('tgToken').value.trim());
-    localStorage.setItem("tgChatId", document.getElementById('tgChatId').value.trim());
+
+async function saveTelegramConfig() {
+  const enabled = document.getElementById('tgEnable')?.checked || false;
+  const token = (document.getElementById('tgToken')?.value || "").trim();
+  const chatId = (document.getElementById('tgChatId')?.value || "").trim();
+
+  if (enabled && (!token || !chatId)) {
+    alert("⚠️ Bạn đang BẬT tính năng gửi qua Telegram nhưng chưa điền đủ Bot Token hoặc Chat ID!\nVui lòng điền đủ thông tin hoặc bỏ tích Bật.");
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/telegram/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        enabled: enabled,
+        bot_token: token,
+        chat_id: chatId
+      })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      localStorage.setItem("tgEnable", enabled ? "true" : "false");
+      localStorage.setItem("tgToken", token);
+      localStorage.setItem("tgChatId", chatId);
+      updateTelegramBadge(enabled);
+      closeTelegramModal();
+      showToast(enabled ? "✅ Đã lưu cấu hình và BẬT gửi video qua Telegram!" : "ℹ️ Đã lưu cấu hình (Đang TẮT gửi Telegram).");
+    } else {
+      alert("Lỗi lưu cấu hình: " + (data.error || "Không rõ"));
+    }
+  } catch(e) {
+    alert("Lỗi kết nối tới server khi lưu: " + e.message);
+  }
+}
+
+async function clearTelegramConfig() {
+  if (!confirm("Bạn có chắc chắn muốn XÓA cấu hình Telegram không?\nSau khi xóa, tool sẽ không gửi video vào Telegram nữa và thông tin token sẽ bị xóa.")) {
+    return;
+  }
+  try {
+    await fetch('/api/telegram/clear', { method: 'POST' });
+    localStorage.removeItem("tgEnable");
+    localStorage.removeItem("tgToken");
+    localStorage.removeItem("tgChatId");
+    
+    const enableEl = document.getElementById('tgEnable');
+    const tokenEl = document.getElementById('tgToken');
+    const chatIdEl = document.getElementById('tgChatId');
+    if (enableEl) enableEl.checked = false;
+    if (tokenEl) tokenEl.value = "";
+    if (chatIdEl) chatIdEl.value = "";
+    
+    updateTelegramBadge(false);
     closeTelegramModal();
+    showToast("🗑️ Đã xóa cấu hình Telegram thành công!");
+  } catch(e) {
+    alert("Lỗi khi xóa cấu hình: " + e.message);
+  }
+}
+
+async function testTelegramConnection() {
+  const token = (document.getElementById('tgToken')?.value || "").trim();
+  const chatId = (document.getElementById('tgChatId')?.value || "").trim();
+  const statusMsg = document.getElementById('tgStatusMessage');
+  
+  if (!token || !chatId) {
+    alert("Vui lòng nhập Bot Token và Chat ID trước khi test!");
+    return;
+  }
+  
+  if (statusMsg) {
+    statusMsg.style.display = 'block';
+    statusMsg.style.background = '#1e293b';
+    statusMsg.style.color = '#38bdf8';
+    statusMsg.style.border = '1px solid #0284c7';
+    statusMsg.innerHTML = '⏳ Đang gửi tin nhắn test tới Telegram...';
+  }
+  
+  try {
+    const res = await fetch('/api/telegram/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        enabled: true,
+        bot_token: token,
+        chat_id: chatId
+      })
+    });
+    const data = await res.json();
+    if (statusMsg) {
+      if (data.ok) {
+        statusMsg.style.background = '#064e3b';
+        statusMsg.style.color = '#34d399';
+        statusMsg.style.border = '1px solid #059669';
+        statusMsg.innerHTML = `✅ ${data.message}`;
+      } else {
+        statusMsg.style.background = '#450a0a';
+        statusMsg.style.color = '#f87171';
+        statusMsg.style.border = '1px solid #dc2626';
+        statusMsg.innerHTML = `❌ ${data.message}`;
+      }
+    }
+  } catch(e) {
+    if (statusMsg) {
+      statusMsg.style.background = '#450a0a';
+      statusMsg.style.color = '#f87171';
+      statusMsg.style.border = '1px solid #dc2626';
+      statusMsg.innerHTML = `❌ Lỗi mạng: ${e.message}`;
+    }
+  }
 }
 
 async function selectFolder() {
@@ -4314,6 +4580,7 @@ document.addEventListener('DOMContentLoaded', () => {
       generateHmaEl.checked = savedGenerateHma === 'true';
   }
   restoreOneClickVpnToggle();
+  loadTelegramConfig();
 });
 
 // Tự động dừng phát video khi thoát chế độ toàn màn hình
@@ -4731,14 +4998,149 @@ async function stopAllCheckVideo() {
   }, 1500);
 }
 
-// ===== HẸN GIỜ CHECK VIDEO (TIMER) =====
+// ===== HẸN GIỜ CHECK VIDEO (TIMER - CHUẨN XÁC KHI CHUYỂN TAB / ĐỔI APP) =====
 window._videoTimers = window._videoTimers || {};
+let _videoTimerWorker = null;
+let _videoTimerInterval = null;
+let _originalDocTitle = document.title || "Antidetect Unlimited V11";
 
 function formatTimerTime(sec) {
   const m = Math.floor(sec / 60);
   const s = sec % 60;
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
+
+// Khởi tạo Web Worker chạy nền độc lập: Trình duyệt (Chrome/Edge) KHÔNG THỂ throttle Web Worker xuống 1 phút
+function initVideoTimerWorker() {
+  if (_videoTimerWorker) return _videoTimerWorker;
+  try {
+    const code = `
+      let intervalId = null;
+      self.onmessage = function(e) {
+        if (e.data === 'start') {
+          if (!intervalId) {
+            intervalId = setInterval(function() {
+              self.postMessage('tick');
+            }, 1000);
+          }
+        } else if (e.data === 'stop') {
+          if (intervalId) {
+            clearInterval(intervalId);
+            intervalId = null;
+          }
+        }
+      };
+    `;
+    const blob = new Blob([code], { type: 'application/javascript' });
+    _videoTimerWorker = new Worker(URL.createObjectURL(blob));
+    _videoTimerWorker.onmessage = function(e) {
+      if (e.data === 'tick') {
+        tickAllVideoTimers();
+      }
+    };
+  } catch(e) {
+    console.warn("Không thể tạo Web Worker cho timer, dùng interval fallback:", e);
+    _videoTimerWorker = null;
+  }
+  return _videoTimerWorker;
+}
+
+function startVideoTimerLoop() {
+  if (!_originalDocTitle) {
+    _originalDocTitle = document.title;
+  }
+  const worker = initVideoTimerWorker();
+  if (worker) {
+    try { worker.postMessage('start'); } catch(e){}
+  }
+  // Giữ thêm fallback interval trên main thread
+  if (!_videoTimerInterval) {
+    _videoTimerInterval = setInterval(tickAllVideoTimers, 1000);
+  }
+}
+
+function stopVideoTimerLoopIfEmpty() {
+  const keys = Object.keys(window._videoTimers || {});
+  if (keys.length === 0) {
+    if (_videoTimerWorker) {
+      try { _videoTimerWorker.postMessage('stop'); } catch(e){}
+    }
+    if (_videoTimerInterval) {
+      clearInterval(_videoTimerInterval);
+      _videoTimerInterval = null;
+    }
+    if (_originalDocTitle) {
+      document.title = _originalDocTitle;
+    }
+  }
+}
+
+function tickAllVideoTimers() {
+  if (!window._videoTimers) return;
+  const now = Date.now();
+  const fIds = Object.keys(window._videoTimers);
+  if (fIds.length === 0) {
+    stopVideoTimerLoopIfEmpty();
+    return;
+  }
+
+  let minRemain = null;
+
+  for (const fId of fIds) {
+    const t = window._videoTimers[fId];
+    if (!t) continue;
+
+    // Tính thời gian còn lại chuẩn xác 100% theo đồng hồ thực của máy tính (wall-clock timestamp)
+    const remain = Math.max(0, Math.ceil((t.targetTime - now) / 1000));
+    t.remain = remain;
+
+    if (minRemain === null || remain < minRemain) {
+      minRemain = remain;
+    }
+
+    if (remain <= 0) {
+      if (!t.triggered) {
+        t.triggered = true;
+        const minutes = t.minutes;
+        const pId = t.pId;
+        delete window._videoTimers[fId];
+        resetTimerUI(fId);
+        showToast(`⏰ Đã hết ${minutes} phút! Thẻ #${fId} đang tự động mở Chrome check video...`);
+        if ("Notification" in window && Notification.permission === "granted") {
+          try {
+            new Notification("⏰ Đã đến giờ kiểm tra Video!", {
+              body: `Thẻ #${fId} (${pId || ''}) đã hoàn thành hẹn giờ ${minutes} phút. Đang mở Chrome check video...`
+            });
+          } catch(e){}
+        }
+        submitCheckVideoForFid(fId);
+      }
+    } else {
+      updateTimerUI(fId, remain);
+    }
+  }
+
+  // Cập nhật tiêu đề tab trình duyệt để khi chuyển sang tab khác vẫn nhìn thấy số phút đếm ngược chuẩn xác!
+  const remainingKeys = Object.keys(window._videoTimers || {});
+  if (remainingKeys.length > 0 && minRemain !== null && minRemain > 0) {
+    document.title = `(${formatTimerTime(minRemain)}) ${_originalDocTitle}`;
+  } else {
+    stopVideoTimerLoopIfEmpty();
+  }
+}
+
+// Khi người dùng chuyển tab quay lại hoặc active cửa sổ khác sang, lập tức tick cập nhật đồng bộ giờ chuẩn
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    tickAllVideoTimers();
+  }
+});
+window.addEventListener('focus', () => {
+  tickAllVideoTimers();
+});
+window.addEventListener('pageshow', () => {
+  tickAllVideoTimers();
+});
 
 function toggleTimerDropdown(fId, e) {
   if (e) e.stopPropagation();
@@ -4767,7 +5169,7 @@ document.addEventListener("click", e => {
   }
 });
 
-async function startTimerForFid(fId, minutes) {
+async function startTimerForFid(fId, minutes, cancelRunningTask = true) {
   const profileSelect = document.getElementById(`videoProfileId_${fId}`);
   if (!profileSelect || !profileSelect.value) {
     alert("Vui lòng chọn Profile cho thẻ này trước khi hẹn giờ!");
@@ -4782,7 +5184,12 @@ async function startTimerForFid(fId, minutes) {
 
   closeAllTimerDropdowns();
 
-  // 1. Tự động hủy task video đang chạy (nếu có) và đóng Chrome ngay lập tức
+  // Yêu cầu quyền Notification nếu chưa có để báo khi người dùng ở tab khác
+  if ("Notification" in window && Notification.permission === "default") {
+    Notification.requestPermission().catch(()=>{});
+  }
+
+  // 1. Hủy task theo yêu cầu hoặc chỉ đóng Chrome cho lịch kiểm tra tự động
   try {
     const curTaskId = (typeof fIdToTaskId !== 'undefined') ? fIdToTaskId[fId] : null;
     if (curTaskId) {
@@ -4790,45 +5197,51 @@ async function startTimerForFid(fId, minutes) {
         clearInterval(videoTaskPolls[fId]);
         delete videoTaskPolls[fId];
       }
-      fetch(`/api/video/cancel_gen/${curTaskId}`, { method: "POST" }).catch(()=>{});
+      if (cancelRunningTask) {
+        fetch(`/api/video/cancel_gen/${curTaskId}`, { method: "POST" }).catch(()=>{});
+      }
     }
-    // Dừng task theo profile phòng trường hợp UI mất task ID
-    fetch(`/api/video/cancel_gen_by_profile/${pId}`, { method: "POST" }).catch(()=>{});
+    if (cancelRunningTask) {
+      // Dừng task theo profile phòng trường hợp UI mất task ID
+      fetch(`/api/video/cancel_gen_by_profile/${pId}`, { method: "POST" }).catch(()=>{});
+    }
 
     // Buộc đóng Chrome của profile này
-    await fetch(`/api/profiles/${pId}/close`, { method: "POST" });
+    const closeEndpoint = cancelRunningTask
+      ? `/api/profiles/${pId}/close`
+      : `/api/profiles/${pId}/close-for-video-timer`;
+    const closeResponse = await fetch(closeEndpoint, { method: "POST" });
+    if (!closeResponse.ok) throw new Error(`Đóng Chrome thất bại (${closeResponse.status})`);
+    const closeResult = await closeResponse.json();
+    if (!["closed", "not_running"].includes(closeResult.status)) {
+      throw new Error(closeResult.message || "Profile chưa được đóng");
+    }
     if (typeof loadProfiles === 'function') setTimeout(loadProfiles, 400);
   } catch(e) {
     console.warn("Lỗi đóng profile:", e);
+    if (!cancelRunningTask) throw e;
   }
 
   // 2. Xóa timer cũ nếu đang chạy
   cancelVideoTimer(fId, false);
 
-  // 3. Khởi tạo timer mới
-  let remain = totalSeconds;
-  updateTimerUI(fId, remain);
-
-  const timerId = setInterval(() => {
-    remain--;
-    if (remain <= 0) {
-      clearInterval(timerId);
-      delete window._videoTimers[fId];
-      resetTimerUI(fId);
-      showToast(`⏰ Đã hết ${minutes} phút! Thẻ #${fId} đang tự động mở Chrome check video...`);
-      submitCheckVideoForFid(fId);
-    } else {
-      updateTimerUI(fId, remain);
-    }
-  }, 1000);
+  // 3. Khởi tạo timer mới chuẩn xác theo timestamp thực tế (Date.now())
+  const startTime = Date.now();
+  const targetTime = startTime + totalSeconds * 1000;
 
   window._videoTimers[fId] = {
-    timerId,
-    remain,
-    totalSeconds,
+    fId,
+    pId,
     minutes,
-    pId
+    totalSeconds,
+    startTime,
+    targetTime,
+    remain: totalSeconds,
+    triggered: false
   };
+
+  updateTimerUI(fId, totalSeconds);
+  startVideoTimerLoop();
 
   showToast(`⏱️ Đã đóng Chrome và hẹn giờ ${minutes} phút sau tự mở lại check video cho Thẻ #${fId}!`);
 }
@@ -4873,9 +5286,12 @@ function resetTimerUI(fId) {
 
 function cancelVideoTimer(fId, notify = true) {
   if (window._videoTimers && window._videoTimers[fId]) {
-    clearInterval(window._videoTimers[fId].timerId);
     delete window._videoTimers[fId];
     resetTimerUI(fId);
+    stopVideoTimerLoopIfEmpty();
+    if (Object.keys(window._videoTimers).length === 0 && _originalDocTitle) {
+      document.title = _originalDocTitle;
+    }
     if (notify) {
       showToast(`🛑 Đã hủy hẹn giờ cho Thẻ #${fId}`);
     }
@@ -4926,9 +5342,41 @@ function cancelTimerAll() {
       count++;
     }
   }
+  stopVideoTimerLoopIfEmpty();
   showToast(`🛑 Đã hủy hẹn giờ cho ${count} thẻ video!`);
 }
 
+async function sendVideoUrlToTelegram(url, btn) {
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "⏳ Đang gửi...";
+  }
+  try {
+    const res = await fetch('/api/video/send_to_telegram', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ video_url: url })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      showToast("✅ Đang gửi video vào Telegram! Sẽ tới trong vài giây.");
+      if (btn) btn.textContent = "✅ Đã gửi";
+    } else {
+      alert("Không thể gửi Telegram: " + (data.message || "Lỗi không xác định"));
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "📲 Gửi Tele";
+      }
+    }
+  } catch(e) {
+    alert("Lỗi kết nối khi gửi Telegram: " + e.message);
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "📲 Gửi Tele";
+    }
+  }
+}
+
 function openVideoModal(url) {
   const overlay = document.createElement('div');
   overlay.style.position = 'fixed';

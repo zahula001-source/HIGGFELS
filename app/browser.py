@@ -879,20 +879,21 @@ def kill_profile_processes(profile_id: str):
                 pass
 
 
-def close_profile(profile_id: str):
+def close_profile(profile_id: str, stop_video_tasks: bool = True):
     # 1. Hủy bất kỳ video tasks nào đang điều khiển profile này
-    try:
-        from app.core.state import video_tasks, check_video_task_ids
-        for tid, task in list(video_tasks.items()):
-            if isinstance(task, dict):
-                params = task.get("params", {})
-                if params.get("profile_id") == profile_id and task.get("status") in ("running", "pending"):
-                    task["force_stop"] = True
-                    task["status"] = "cancelled"
-                    task["message"] = "Đã dừng bởi lệnh đóng Chrome / Hẹn giờ"
-                    check_video_task_ids.discard(tid)
-    except Exception:
-        pass
+    if stop_video_tasks:
+        try:
+            from app.core.state import video_tasks, check_video_task_ids
+            for tid, task in list(video_tasks.items()):
+                if isinstance(task, dict):
+                    params = task.get("params", {})
+                    if params.get("profile_id") == profile_id and task.get("status") in ("running", "pending"):
+                        task["force_stop"] = True
+                        task["status"] = "cancelled"
+                        task["message"] = "Đã dừng bởi lệnh đóng Chrome / Hẹn giờ"
+                        check_video_task_ids.discard(tid)
+        except Exception:
+            pass
 
     with profile_lock(profile_id):
         with running_lock:
