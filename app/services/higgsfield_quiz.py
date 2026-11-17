@@ -81,7 +81,7 @@ _SNAPSHOT = r"""options => {
     const next = nextCandidates.find(el => {
         const text = norm(el.innerText || el.value || el.textContent);
         return visible(el) && enabled(el) && !el.closest('nav, header')
-            && /^(continue|next|submit|choose(?: an option)?|finish|get started)$/i.test(text);
+            && /^(continue|next|submit|choose(?: an option)?|finish|get started|claim|claim username|claim your username|start|done|let's go)$/i.test(text);
     });
     if (next) next.setAttribute('data-hf-quiz-next', 'true');
     const progress = [...document.querySelectorAll('span, p, div')].find(el => visible(el) && /^\d+\s+of\s+\d+$/i.test(norm(el.innerText)));

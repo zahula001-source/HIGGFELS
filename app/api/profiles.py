@@ -549,6 +549,13 @@ def update_profile_name_endpoint(profile_id: str, payload: dict = Body(...)):
         return {"ok": True}
     raise HTTPException(404, "Profile not found")
 
+@router.put("/api/profiles/{profile_id}/notes")
+def update_profile_notes_endpoint(profile_id: str, payload: dict = Body(...)):
+    new_notes = payload.get("notes", "")
+    if manager.update_notes(profile_id, new_notes):
+        return {"ok": True, "notes": new_notes}
+    raise HTTPException(404, "Profile not found")
+
 @router.post("/api/profiles/{profile_id}/random-fingerprint")
 def random_fingerprint(profile_id: str):
     """Nút Random Fingerprint như BitBrowser - đổi ngay lập tức mà vẫn giữ cookie"""
@@ -2362,6 +2369,7 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                     return False
 
                 login_restarts = 0
+                claim_username_clicked = False
                 for _ in range(720):
                     # Poll quickly so three concurrent browsers do not sit on a stale step.
                     try:
@@ -2600,18 +2608,30 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                         watchdog_state_since = time.monotonic()
                         continue
                     
-                    if any(s in cur_url for s in ["/ai/video", "/supercomputer", "/canvas", "/cinema", "/marketing", "/shorts", "/mcp"]) and "quiz" not in cur_url:
-                        # Nếu đang ở /ai/video thì KHÔNG GOTO nữa để tránh kẹt reload!
-                        if page.url == "https://higgsfield.ai/":
-                            page.goto(HIGGSFIELD_URL, wait_until="domcontentloaded", timeout=30000)
+                    # Nếu trang đang ở bất kỳ trang nào của Higgsfield (trang chủ, explore, home, feed...) ngoài quiz và auth:
+                    # Chuyển hướng ngay tới HIGGSFIELD_URL để kiểm tra đăng nhập và Free Gen
+                    is_higgs_main = (
+                        "higgsfield.ai" in cur_url
+                        and "quiz" not in cur_url
+                        and "/auth/" not in cur_url
+                        and not _is_microsoft_auth_url(cur_url)
+                    )
+                    if is_higgs_main:
+                        if page.url != HIGGSFIELD_URL and "genjutsu" not in page.url and "/ai/video" not in page.url:
+                            print(f"Phát hiện đang ở {page.url}; tự động chuyển đến {HIGGSFIELD_URL} để check Free Gen...")
+                            navigate_higgsfield(page, HIGGSFIELD_URL)
+                            page.wait_for_timeout(2000)
+                            cur_url = page.url
+
+                    if any(s in cur_url for s in ["/ai/video", "genjutsu", "/supercomputer", "/canvas", "/cinema", "/marketing", "/shorts", "/mcp"]) and "quiz" not in cur_url:
                         login_state = wait_video_login_state(page)
                         if login_state is True:
                             try:
-                                page.wait_for_url(lambda u: "quiz" in u, timeout=3000)
+                                page.wait_for_url(lambda u: "quiz" in u, timeout=2000)
                                 print("Đã đăng nhập nhưng bị đẩy sang trang Quiz, tiếp tục xử lý...")
                                 continue
                             except:
-                                print("Đã đăng nhập thành công vào Higgsfield!")
+                                print("Đã đăng nhập thành công vào Higgsfield! Tiến hành check Free Gen...")
                                 break
                         if login_state is None:
                             page.reload(wait_until="domcontentloaded", timeout=30000)
@@ -2626,8 +2646,6 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                             auth_button.click(timeout=3000, force=True)
                         else:
                             page.goto("https://higgsfield.ai/auth/sign-in", wait_until="domcontentloaded", timeout=30000)
-                        # Wait for the actual Microsoft button; never announce a
-                        # successful click when the modal has not rendered yet.
                         microsoft_button = page.locator('button:has-text("Continue with Microsoft"):visible').first
                         try:
                             microsoft_button.wait_for(state="visible", timeout=10000)
@@ -2637,13 +2655,10 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                         except Exception as restart_error:
                             print(f"Chưa mở được Microsoft: {restart_error}; tải lại trang video")
                             page.goto(HIGGSFIELD_URL, wait_until="domcontentloaded", timeout=30000)
-                        # Continue the same watchdog: email, password, V2 OTP and
-                        # post-login steps remain active throughout the retry.
                         continue
                         
                     # 0.5 Kiểm tra popup Congratulations (Upgrade promotion)
                     try:
-                        # Dùng JS để chắc chắn tìm đúng — tránh selector không match
                         has_congrats = page.evaluate("""() => {
                             const html = document.body ? document.body.innerText : '';
                             return html.includes('Congratulations!') || html.includes('55% OFF') || html.includes('promocode is applied');
@@ -2651,26 +2666,21 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                         if has_congrats:
                             print("Đã gặp popup Congratulations! Đăng ký hoàn tất.")
                             quiz_completed = True
-                            # Đóng popup bằng JS: tìm nút X trong dialog (thường là button con của dialog)
                             try:
                                 closed = page.evaluate("""() => {
-                                    // Tìm tất cả button trong dialog role
                                     const dialogs = document.querySelectorAll('[role="dialog"]');
                                     for (const d of dialogs) {
                                         const btns = d.querySelectorAll('button');
                                         for (const b of btns) {
                                             const txt = (b.innerText || b.textContent || '').trim();
-                                            // Nút X: không có text, hoặc text là × hay X
                                             if (txt === '' || txt === '×' || txt === 'X' || txt === '✕') {
                                                 b.click();
                                                 return true;
                                             }
                                         }
-                                        // Nếu không có nút X, tìm button đầu tiên nằm ngoài content
                                         const firstBtn = d.querySelector('button');
                                         if (firstBtn) { firstBtn.click(); return true; }
                                     }
-                                    // Fallback: Escape
                                     return false;
                                 }""")
                                 if closed:
@@ -2709,8 +2719,11 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                         except: pass
                         
                         # 1.5 Kiểm tra trang Claim Username (Bước cuối cùng)
+                        is_claim_username = False
                         try:
-                            if page.locator('text="Claim your username"').count() > 0:
+                            claim_loc = page.locator('text="Claim your username", text="Claim username"')
+                            if claim_loc.count() > 0 and claim_loc.first.is_visible(timeout=500):
+                                is_claim_username = True
                                 page.evaluate("""() => {
                                     const labels = document.querySelectorAll('label');
                                     for(let l of labels) {
@@ -2727,28 +2740,54 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                         except Exception as e:
                             pass
 
-                        handle_quiz_step(page, quiz_state)
-                        quiz_elapsed = time.monotonic() - quiz_state.get("step_since", time.monotonic())
-                        if quiz_elapsed >= 35 and not quiz_state.get("reloaded_once"):
-                            quiz_state["reloaded_once"] = True
-                            print("Quiz: câu hỏi chưa chuyển sau 35 giây; đang thử reload lại trang quiz...")
-                            try:
-                                page.reload(wait_until="domcontentloaded", timeout=20000)
-                                page.wait_for_timeout(2000)
-                            except Exception:
-                                pass
+                        quiz_advanced = handle_quiz_step(page, quiz_state)
+                        
+                        # Nếu vừa hoàn tất bước Claim Username (hoặc đã bấm trước đó) -> lập tức chuyển trang Video để check Free Gen
+                        if is_claim_username and (quiz_advanced or quiz_state.get("step_claimed")):
+                            claim_username_clicked = True
+                            quiz_state["step_claimed"] = True
+                            print("Quiz: Đã hoàn tất bước 'Claim your username'! Đang chuyển thẳng sang trang Video để check Free Gen...")
+                            page.wait_for_timeout(1500)
+                            navigate_higgsfield(page, HIGGSFIELD_URL)
+                            page.wait_for_timeout(2000)
                             continue
 
-                        if quiz_elapsed >= 90:
-                            if signup_options.get("manual_open"):
-                                print("Quiz: câu hỏi không chuyển sau 90 giây; giữ Chrome mở để kiểm tra và thử lại.")
-                            else:
-                                keep_open = False
-                                with _signup_lock:
-                                    signup_options["keep_open"] = False
-                                set_watchdog_note("⚠️ Treo Quiz quá 90s")
-                                print("Quiz: câu hỏi không chuyển sau 90 giây; đóng Chrome để tránh treo profile.")
-                            return
+                        if claim_username_clicked:
+                            print("Quiz: Đã xử lý Claim username, đang chuyển thẳng sang trang Video để check Free Gen...")
+                            page.wait_for_timeout(1000)
+                            navigate_higgsfield(page, HIGGSFIELD_URL)
+                            page.wait_for_timeout(2000)
+                            continue
+
+                        # Kiểm tra xem có popup chúc mừng hoặc màn hình hoàn tất không
+                        quiz_done_check = False
+                        try:
+                            quiz_done_check = page.evaluate("""() => {
+                                const txt = (document.body ? document.body.innerText : '').toLowerCase();
+                                return txt.includes('congratulations') || txt.includes('welcome to higgsfield') || txt.includes("you're all set") || txt.includes('get started');
+                            }""")
+                        except: pass
+
+                        if quiz_done_check:
+                            print("Quiz: Phát hiện thông báo hoàn tất Quiz! Chuyển ngay sang trang Video để check Free Gen...")
+                            page.wait_for_timeout(1000)
+                            navigate_higgsfield(page, HIGGSFIELD_URL)
+                            page.wait_for_timeout(2000)
+                            continue
+
+                        quiz_elapsed = time.monotonic() - quiz_state.get("step_since", time.monotonic())
+                        if quiz_elapsed >= 20 and not quiz_state.get("reloaded_once"):
+                            quiz_state["reloaded_once"] = True
+                            print(f"Quiz: câu hỏi chưa chuyển sau {int(quiz_elapsed)}s; tự động chuyển sang trang Video để kiểm tra Free Gen...")
+                            navigate_higgsfield(page, HIGGSFIELD_URL)
+                            page.wait_for_timeout(2000)
+                            continue
+
+                        if quiz_elapsed >= 45:
+                            print(f"Quiz: hết thời gian chờ ({int(quiz_elapsed)}s); chuyển thẳng sang trang Video để check Free Gen...")
+                            navigate_higgsfield(page, HIGGSFIELD_URL)
+                            page.wait_for_timeout(2000)
+                            continue
                         continue
 
                     # 0.3 Xử lý form Passkey/FIDO2 (Windows Security popup)

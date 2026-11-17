@@ -784,8 +784,8 @@ function profileMatchesTag(p, tag) {
   if (tag === 'done') return n.includes('đã ra video') || n.includes('da ra video');
   if (tag === 'free720') return isFree && /720\s*p?/.test(n);
   if (tag === 'free480') return isFree && /480\s*p?/.test(n);
-  if (tag === 'notfree') return n === 'không free' || n === 'khong free';
-  if (tag === 'other') return !(n.includes('đang tạo video') || n.includes('dang tao video') || n.includes('đã ra video') || n.includes('da ra video') || (isFree && (/720\s*p?/.test(n) || /480\s*p?/.test(n))) || n === 'không free' || n === 'khong free');
+  if (tag === 'notfree') return n.includes('không free') || n.includes('khong free');
+  if (tag === 'other') return !(n.includes('đang tạo video') || n.includes('dang tao video') || n.includes('đã ra video') || n.includes('da ra video') || (isFree && (/720\s*p?/.test(n) || /480\s*p?/.test(n))) || n.includes('không free') || n.includes('khong free'));
   return true;
 }
 function updateProfileTagCounts() {
@@ -817,24 +817,27 @@ function filterProfiles(){
 
 function renderProfileBadge(p){
   const raw = p && p.notes ? String(p.notes).trim() : '';
-  if(!raw) return '';
+  if(!raw) {
+    return `<div onclick="openTagModal('${p.id}', event)" style="position:absolute;top:0;right:0;background:rgba(30,41,59,0.7);border:1px dashed #475569;color:#94a3b8;font-size:10px;font-weight:600;padding:3px 8px;border-bottom-left-radius:8px;z-index:10;cursor:pointer;transition:0.2s;" onmouseover="this.style.background='#334155';this.style.color='#fff';" onmouseout="this.style.background='rgba(30,41,59,0.7)';this.style.color='#94a3b8';" title="Click để gắn Tag cho Profile">+ Tag</div>`;
+  }
   const n = raw.toLowerCase().replace(/\s+/g, ' ');
+  const clickAttr = `onclick="openTagModal('${p.id}', event)" title="Click để chỉnh sửa Tag" style="cursor:pointer;transition:0.15s;`;
   if(n.includes('đang tạo video') || n.includes('dang tao video')){
-    return `<div style="position:absolute;top:0;right:0;background:linear-gradient(135deg,#f59e0b,#ea580c);color:#fff;font-size:10px;font-weight:bold;padding:4px 10px;border-bottom-left-radius:8px;z-index:10;box-shadow:-2px 2px 8px rgba(245,158,11,0.5);animation:pulse 1.5s infinite;">⏳ ${esc(raw)}</div>`;
+    return `<div ${clickAttr}position:absolute;top:0;right:0;background:linear-gradient(135deg,#f59e0b,#ea580c);color:#fff;font-size:10px;font-weight:bold;padding:4px 10px;border-bottom-left-radius:8px;z-index:10;box-shadow:-2px 2px 8px rgba(245,158,11,0.5);animation:pulse 1.5s infinite;">⏳ ${esc(raw)}</div>`;
   }
   if(n.includes('đã ra video') || n.includes('da ra video')){
-    return `<div style="position:absolute;top:0;right:0;background:linear-gradient(135deg,#7c3aed,#2563eb);color:#fff;font-size:10px;font-weight:bold;padding:4px 10px;border-bottom-left-radius:8px;z-index:10;box-shadow:-2px 2px 8px rgba(124,58,237,0.5);">✅ ${esc(raw)}</div>`;
+    return `<div ${clickAttr}position:absolute;top:0;right:0;background:linear-gradient(135deg,#7c3aed,#2563eb);color:#fff;font-size:10px;font-weight:bold;padding:4px 10px;border-bottom-left-radius:8px;z-index:10;box-shadow:-2px 2px 8px rgba(124,58,237,0.5);">✅ ${esc(raw)}</div>`;
   }
   if(n.includes('free gen') && !n.includes('không free') && !n.includes('khong free')){
-    return `<div style="position:absolute;top:0;right:0;background:#10b981;color:#fff;font-size:10px;font-weight:bold;padding:4px 12px;border-bottom-left-radius:8px;z-index:10;box-shadow:-2px 2px 4px rgba(0,0,0,0.2);">${esc(raw)}</div>`;
+    return `<div ${clickAttr}position:absolute;top:0;right:0;background:#10b981;color:#fff;font-size:10px;font-weight:bold;padding:4px 12px;border-bottom-left-radius:8px;z-index:10;box-shadow:-2px 2px 4px rgba(0,0,0,0.2);">${esc(raw)}</div>`;
   }
-  if(n === 'không free' || n === 'khong free'){
-    return `<div style="position:absolute;top:0;right:0;background:#f59e0b;color:#fff;font-size:10px;font-weight:bold;padding:4px 12px;border-bottom-left-radius:8px;z-index:10;box-shadow:-2px 2px 4px rgba(0,0,0,0.2);">không free</div>`;
+  if(n === 'không free' || n === 'khong free' || n.includes('không free') || n.includes('khong free')){
+    return `<div ${clickAttr}position:absolute;top:0;right:0;background:#f59e0b;color:#fff;font-size:10px;font-weight:bold;padding:4px 12px;border-bottom-left-radius:8px;z-index:10;box-shadow:-2px 2px 4px rgba(0,0,0,0.2);">${esc(raw)}</div>`;
   }
   if(n.includes('lỗi') || n.includes('loi') || n.includes('xác minh') || n.includes('xac minh')){
-    return `<div style="position:absolute;top:0;right:0;background:#ef4444;color:#fff;font-size:10px;font-weight:bold;padding:4px 12px;border-bottom-left-radius:8px;z-index:10;box-shadow:-2px 2px 4px rgba(0,0,0,0.2);">${esc(raw)}</div>`;
+    return `<div ${clickAttr}position:absolute;top:0;right:0;background:#ef4444;color:#fff;font-size:10px;font-weight:bold;padding:4px 12px;border-bottom-left-radius:8px;z-index:10;box-shadow:-2px 2px 4px rgba(0,0,0,0.2);">${esc(raw)}</div>`;
   }
-  return `<div style="position:absolute;top:0;right:0;background:#334155;color:#94a3b8;font-size:10px;font-weight:bold;padding:4px 8px;border-bottom-left-radius:8px;z-index:10;">${esc(raw)}</div>`;
+  return `<div ${clickAttr}position:absolute;top:0;right:0;background:#334155;color:#94a3b8;font-size:10px;font-weight:bold;padding:4px 8px;border-bottom-left-radius:8px;z-index:10;">${esc(raw)}</div>`;
 }
 
 function renderProfiles(profiles){
@@ -4750,6 +4753,7 @@ async function sendChatMessage() {
     }
 }
 </script>
+
 <!-- Modal Check Video -->
 <div id="checkVideoModal" class="modal-overlay">
   <div class="modal-content" style="max-width: 500px;">
@@ -5580,8 +5584,96 @@ async function quickDeleteProfile(fId) {
     } catch (e) {
         alert("Lỗi: " + e.message);
     }
+let currentTagProfileId = null;
+
+function openTagModal(profileId, event) {
+  if (event) event.stopPropagation();
+  currentTagProfileId = profileId;
+  const p = (allProfiles || []).find(x => x.id === profileId);
+  const titleEl = document.getElementById("tagModalProfileName");
+  if (titleEl) {
+    titleEl.textContent = p ? `Profile: ${p.name} (Tag hiện tại: "${p.notes || 'chưa có'}")` : `Profile #${profileId}`;
+  }
+  const inputEl = document.getElementById("customTagInput");
+  if (inputEl) {
+    inputEl.value = p && p.notes ? p.notes : "";
+  }
+  const modal = document.getElementById("tagModal");
+  if (modal) modal.style.display = "flex";
+}
+
+function closeTagModal() {
+  const modal = document.getElementById("tagModal");
+  if (modal) modal.style.display = "none";
+  currentTagProfileId = null;
+}
+
+async function selectTagFromModal(tag) {
+  if (!currentTagProfileId) return;
+  await saveProfileTag(currentTagProfileId, tag);
+  closeTagModal();
+}
+
+async function saveCustomTagFromModal() {
+  if (!currentTagProfileId) return;
+  const tag = (document.getElementById("customTagInput")?.value || "").trim();
+  await saveProfileTag(currentTagProfileId, tag);
+  closeTagModal();
+}
+
+async function saveProfileTag(profileId, newTag) {
+  try {
+    const res = await fetch(`/api/profiles/${profileId}/notes`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ notes: newTag })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      throw new Error(data.detail || data.message || "Lỗi lưu tag");
+    }
+    const p = (allProfiles || []).find(x => x.id === profileId);
+    if (p) {
+      p.notes = newTag;
+    }
+    filterProfiles();
+    showToast(`✅ Đã cập nhật tag: ${newTag || '(đã xóa tag)'}`);
+  } catch (err) {
+    alert("Lỗi cập nhật tag: " + err.message);
+  }
 }
 </script>
+
+<!-- ===== MODAL CHỌN TAG CHO PROFILE ===== -->
+<div id="tagModal" class="modal-overlay" onclick="if(event.target==this) closeTagModal()">
+  <div class="modal" style="max-width:440px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <h2 style="margin:0;font-size:16px;color:#38bdf8;display:flex;align-items:center;gap:8px;">
+        <span>🏷️ Chỉnh Sửa Tag Cho Profile</span>
+      </h2>
+      <button class="btn btn-ghost" style="padding:2px 8px;height:auto;" onclick="closeTagModal()">✕</button>
+    </div>
+    <div id="tagModalProfileName" style="font-size:12px;color:#94a3b8;margin-bottom:14px;background:#0f172a;padding:6px 10px;border-radius:6px;border:1px solid #1e293b;"></div>
+    
+    <div style="font-size:12px;font-weight:bold;color:#cbd5e1;margin-bottom:8px;">Chọn nhanh Tag:</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
+      <button class="btn btn-sm" style="background:#10b981;color:#fff;font-weight:bold;" onclick="selectTagFromModal('free gen 2 720p lite')">🟢 free gen 2 720p lite</button>
+      <button class="btn btn-sm" style="background:#059669;color:#fff;font-weight:bold;" onclick="selectTagFromModal('free gen 720p')">🟢 free gen 720p</button>
+      <button class="btn btn-sm" style="background:#0284c7;color:#fff;font-weight:bold;" onclick="selectTagFromModal('free gen 480p')">🔵 free gen 480p</button>
+      <button class="btn btn-sm" style="background:#f59e0b;color:#fff;font-weight:bold;" onclick="selectTagFromModal('không free')">🟠 không free</button>
+      <button class="btn btn-sm" style="background:linear-gradient(135deg,#7c3aed,#2563eb);color:#fff;font-weight:bold;" onclick="selectTagFromModal('đã ra video')">✅ đã ra video</button>
+      <button class="btn btn-sm" style="background:linear-gradient(135deg,#f59e0b,#ea580c);color:#fff;font-weight:bold;" onclick="selectTagFromModal('đang tạo video')">⏳ đang tạo video</button>
+      <button class="btn btn-sm" style="background:#ef4444;color:#fff;font-weight:bold;" onclick="selectTagFromModal('lỗi login')">⚠️ lỗi login</button>
+      <button class="btn btn-sm" style="background:#334155;color:#cbd5e1;" onclick="selectTagFromModal('')">❌ Xóa tag (để trống)</button>
+    </div>
+
+    <div style="font-size:12px;font-weight:bold;color:#cbd5e1;margin-bottom:6px;">Hoặc tự nhập Tag tùy ý:</div>
+    <div style="display:flex;gap:8px;">
+      <input id="customTagInput" class="input" placeholder="Nhập tag bất kỳ (vd: acc vip, test...)" style="font-size:12px;flex:1;" onkeydown="if(event.key==='Enter') saveCustomTagFromModal()">
+      <button class="btn btn-primary" onclick="saveCustomTagFromModal()" style="font-size:12px;white-space:nowrap;">💾 Lưu Tag</button>
+    </div>
+  </div>
+</div>
 
 <!-- ===== MODAL DÁN MAIL ===== -->
 <div id="pasteMailModal" class="modal-overlay">
