@@ -493,6 +493,26 @@ def get_chromium_runner_simple(profile_id, profile_name, user_data_dir, proxy_di
         except:
             pass
 
+    # Dọn các about:blank phát sinh khi mở startup URL/extension. Chỉ chạy một lần
+    # trước khi báo sẵn sàng để không đóng nhầm tab mới mà automation đang điều hướng.
+    try:
+        live_pages = [pg for pg in context.pages if not pg.is_closed()]
+        useful_pages = [pg for pg in live_pages if pg.url.lower() not in ("about:blank", "chrome://newtab/")]
+        if useful_pages:
+            for blank_page in live_pages:
+                if blank_page.url.lower() in ("about:blank", "chrome://newtab/"):
+                    try: blank_page.close()
+                    except: pass
+        elif len(live_pages) > 1:
+            for blank_page in live_pages[1:]:
+                try: blank_page.close()
+                except: pass
+        elif len(live_pages) == 1:
+            try: live_pages[0].goto("https://higgsfield.ai/ai/video?model=genjutsu", wait_until="domcontentloaded", timeout=15000)
+            except: pass
+    except Exception as e:
+        log(f"Blank tab cleanup err {e}")
+
     # Giữ browser sống cho đến khi đóng HẾT SẠCH tab
     # Quan trọng: dùng biến 'page_item' thay vì 'p' để tránh shadow biến 'p' của playwright!
     # Pump events so closing Chrome also ends the runner and updates the UI.

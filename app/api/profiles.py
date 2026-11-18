@@ -503,6 +503,7 @@ def launch_profile_endpoint(profile_id: str, req: LaunchRequest = None):
                 profile_id, keep_open=keep_open_after,
                 generate_ip=req.generate_ip if req else False,
                 generate_hma=getattr(req, "generate_hma", False) if req else False,
+                hma_region=getattr(req, "hma_region", "europe") if req else "europe",
                 engine=req.engine if req else "chrome",
                 manual_open=manual_open,
             )
@@ -1265,7 +1266,7 @@ def check_free_gen_full_flow(page, profile_id: str, timeout_ms: int = 15000, fas
 
 
 @router.post("/api/profiles/{profile_id}/auto-signup")
-def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: bool = False, generate_hma: bool = False, engine: str = "chrome", manual_open: bool = False):
+def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: bool = False, generate_hma: bool = False, hma_region: str = "europe", engine: str = "chrome", manual_open: bool = False):
     import threading
     from pathlib import Path
 
@@ -1359,7 +1360,7 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                     try:
                         from app.services.vpn_ip import connect_unique_vpn_ip
                         if generate_hma:
-                            vpn_info = connect_unique_vpn_ip(context, profile_id, rotate_hma_first=True)
+                            vpn_info = connect_unique_vpn_ip(context, profile_id, rotate_hma_first=True, hma_region=hma_region)
                         else:
                             vpn_info = connect_unique_vpn_ip(context, profile_id)
                         if not vpn_info or not vpn_info.get("ip"):
@@ -1394,7 +1395,7 @@ def auto_signup_endpoint(profile_id: str, keep_open: bool = False, generate_ip: 
                 elif generate_hma:
                     try:
                         from app.services.hma_vpn import rotate_hma_random_country
-                        hma_info = rotate_hma_random_country()
+                        hma_info = rotate_hma_random_country(region=hma_region)
                         if not hma_info or not hma_info.get("ip"):
                             raise RuntimeError("Không lấy được IP hợp lệ từ HMA")
                         print(f"Sinh IP HMA thanh cong: {hma_info.get('ip')} ({hma_info.get('country')})")
@@ -3356,6 +3357,7 @@ def create_acc_br_endpoint(
     engine: str = "cloakbrowser",
     generate_ip: bool = False,
     generate_hma: bool = False,
+    hma_region: str = "europe",
     headless: bool = False,
 ):
     profile = manager.get_profile(profile_id)
@@ -3377,6 +3379,7 @@ def create_acc_br_endpoint(
             engine=engine,
             generate_ip=generate_ip,
             generate_hma=generate_hma,
+            hma_region=hma_region,
         )
         res = launch_profile_with_fallback(profile, req)
         if res.get("status") not in ("launched", "already_running"):

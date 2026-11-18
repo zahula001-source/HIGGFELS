@@ -29,6 +29,7 @@ class Profile(BaseModel):
     user_data_dir: str
     created_at: str
     auto_random_fp: bool = False
+    video_name_confirmed: bool = False
     last_used: Optional[str] = None
     status: str = "idle"  # idle, running
     extensions: str = ""
@@ -49,6 +50,7 @@ class LaunchRequest(BaseModel):
     engine: str = "cloakbrowser"
     generate_ip: bool = False
     generate_hma: bool = False
+    hma_region: str = "europe"
 
 
 class CheckVideoReq(BaseModel):
@@ -58,6 +60,7 @@ class CheckVideoReq(BaseModel):
     engine: str = "chrome"
     generate_ip: bool = False
     generate_hma: bool = False
+    hma_region: str = "europe"
     higgs_model: str = "vip"
 
 class CancelGenReq(BaseModel):

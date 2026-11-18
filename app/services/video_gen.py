@@ -22,6 +22,33 @@ from app.services.higgsfield_popups import install_upgrade_plan_guard
 from app.services.higgsfield_quiz import handle_quiz_step
 from app.services.higgsfield_login import read_free_gens
 
+def _close_blank_tabs(context, keep_page=None):
+    """Close stray about:blank/new-tab pages while preserving one useful browser tab."""
+    try:
+        pages = [page for page in context.pages if not page.is_closed()]
+        if not pages:
+            return
+        keep = keep_page if keep_page in pages else None
+        useful_pages = [
+            page for page in pages
+            if page.url and page.url not in ("about:blank", "chrome://newtab/")
+        ]
+        if keep is None and useful_pages:
+            keep = useful_pages[0]
+        if keep is None:
+            keep = pages[0]
+
+        for page in pages:
+            if page is keep:
+                continue
+            if page.url in ("about:blank", "chrome://newtab/"):
+                try:
+                    page.close()
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
 def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False, is_headless=False, engine="chrome", generate_ip=False, reuse_existing=True):
     """Mở trình duyệt với Random FP và kích hoạt extension
     only_navigator=True: chỉ bật nút 1 (Spoof Navigator) - dùng khi cần tải ảnh
@@ -42,6 +69,7 @@ def _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=False
             install_vpn_welcome_guard(context)
             install_upgrade_plan_guard(context)
             install_higgsfield_pricing_guard(context)
+            _close_blank_tabs(context)
             return context, True
         except Exception as e:
             pass
@@ -475,7 +503,7 @@ def _send_video_to_telegram(video_path, token=None, chat_id=None, caption=""):
     except Exception as e:
         print(f"[Telegram] Lỗi gọi module gửi Telegram: {e}")
 
-def _prepare_video_network(context, task_id, profile_id, generate_ip, generate_hma=False):
+def _prepare_video_network(context, task_id, profile_id, generate_ip, generate_hma=False, hma_region="europe"):
     if generate_ip:
         from app.services.vpn_ip import connect_unique_vpn_ip
         video_tasks[task_id].update(
@@ -484,7 +512,7 @@ def _prepare_video_network(context, task_id, profile_id, generate_ip, generate_h
         )
         print(f"Task {task_id}: Sinh IP EXTVPN ON - bat dau quy trinh 1Click -> HMA -> Urban -> HMA", flush=True)
         if generate_hma:
-            vpn_info = connect_unique_vpn_ip(context, profile_id, rotate_hma_first=True)
+            vpn_info = connect_unique_vpn_ip(context, profile_id, rotate_hma_first=True, hma_region=hma_region)
         else:
             vpn_info = connect_unique_vpn_ip(context, profile_id)
         video_tasks[task_id].update(
@@ -500,7 +528,7 @@ def _prepare_video_network(context, task_id, profile_id, generate_ip, generate_h
         )
         print(f"Task {task_id}: Sinh IP HMA ON - rotating country via HMA VPN", flush=True)
         from app.services.hma_vpn import rotate_hma_random_country
-        hma_info = rotate_hma_random_country()
+        hma_info = rotate_hma_random_country(region=hma_region)
         ip_str = hma_info.get("ip", "")
         country_str = hma_info.get("country", "HMA")
         video_tasks[task_id].update(
@@ -531,7 +559,7 @@ def _existing_generation_status(context):
     return None
 
 
-def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is_headless=False, enable_ext=False, enable_ext_btn2=False, tg_enabled=False, tg_token="", tg_chat_id="", gen_mode="motion_transfer", engine="chrome", generate_ip=False, generate_hma=False, higgs_model="vip"):
+def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is_headless=False, enable_ext=False, enable_ext_btn2=False, tg_enabled=False, tg_token="", tg_chat_id="", gen_mode="motion_transfer", engine="chrome", generate_ip=False, generate_hma=False, hma_region="europe", higgs_model="vip"):
     """Background thread: mở higgsfield.ai, đăng nhập Microsoft, upload ảnh, nhập prompt và tạo video."""
     from playwright.sync_api import sync_playwright
     import urllib.parse
@@ -628,6 +656,8 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                 p = sync_playwright().start()
             context, connected_via_cdp = _open_browser_with_fp(p, profile, ext_path, attempt=1, enable_ext_btn2=enable_ext_btn2, is_headless=is_headless, engine=engine, generate_ip=generate_ip)
 
+        video_tasks[task_id]["browser_opened_at_ts"] = time.time()
+
         existing_status = _existing_generation_status(context)
         if existing_status:
             video_tasks[task_id].update(
@@ -638,27 +668,40 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
             print(f"Task {task_id}: found existing {existing_status}; close Chrome without VPN", flush=True)
             return
         
-        # Tái sử dụng tab đầu tiên nếu có để tránh mở nhiều tab
+        # Ưu tiên tab Higgsfield/login đang mở; nếu không có thì dùng tab nội dung
+        # đầu tiên, cuối cùng mới dùng about:blank để tránh bỏ nhầm tab chính.
         page = None
         for _ in range(5):
-            if context.pages:
-                page = context.pages[0]
+            pages = [candidate for candidate in context.pages if not candidate.is_closed()]
+            page = next((candidate for candidate in pages if any(host in candidate.url for host in (
+                "higgsfield.ai", "login.microsoftonline.com", "login.live.com", "account.live.com"
+            ))), None)
+            if page is None:
+                page = next((candidate for candidate in pages if candidate.url not in (
+                    "about:blank", "chrome://newtab/"
+                )), None)
+            if page is None and pages:
+                page = pages[0]
+            if page is not None:
                 break
-            else:
-                try:
-                    page = context.new_page()
-                    break
-                except Exception as e:
-                    print(f"Lỗi lấy page, thử lại sau 1s: {e}")
-                    time.sleep(1)
+            try:
+                page = context.new_page()
+                break
+            except Exception as e:
+                print(f"Lỗi lấy page, thử lại sau 1s: {e}")
+                time.sleep(1)
         
         if not page:
             raise Exception("Không thể khởi tạo tab Chrome. Vui lòng tắt thủ công Chrome của profile này và thử lại!")
             
-        # Đóng các tab dư thừa
-        for i in range(1, len(context.pages)):
-            try: context.pages[i].close()
-            except: pass
+        # Đóng tab trắng và tab dư; giữ lại đúng tab sẽ dùng cho tác vụ.
+        _close_blank_tabs(context, keep_page=page)
+        for extra_page in list(context.pages):
+            if extra_page is not page:
+                try:
+                    extra_page.close()
+                except Exception:
+                    pass
 
         # (ĐÃ BỎ CẮT COOKIE HIGGSFIELD ĐỂ GIỮ TRẠNG THÁI LOGIN TỪ PROFILE)
         # video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "running", "message": "Đang giả lập máy tính hoàn toàn mới (Clear Cookies)..."}
@@ -686,6 +729,40 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
         video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "running", "message": f"Đang mở higgsfield.ai ({'LITE' if is_lite else 'VIP'})..."}
         page.goto(video_model_url, wait_until="domcontentloaded", timeout=30000)
         page.wait_for_timeout(2000)
+
+        # OAuth có thể mở Microsoft ở tab/popup mới. Luôn thao tác trên trang
+        # đăng nhập hiện hành thay vì mặc định giữ tab Higgsfield ban đầu.
+        higgsfield_page = page
+
+        def select_login_page():
+            try:
+                open_pages = [candidate for candidate in context.pages if not candidate.is_closed()]
+            except Exception:
+                return higgsfield_page
+            auth_page = next((candidate for candidate in reversed(open_pages) if any(
+                host in candidate.url for host in (
+                    "login.microsoftonline.com", "login.live.com", "account.live.com"
+                )
+            )), None)
+            if auth_page is not None:
+                return auth_page
+            app_page = next((candidate for candidate in reversed(open_pages) if "higgsfield.ai" in candidate.url), None)
+            return app_page or higgsfield_page
+
+        def has_higgsfield_login_button(pg):
+            try:
+                return bool(pg.evaluate("""() => {
+                    const visible = el => {
+                        const r = el.getBoundingClientRect();
+                        const s = getComputedStyle(el);
+                        return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none';
+                    };
+                    return Array.from(document.querySelectorAll('button, a, [role="button"]')).some(el =>
+                        visible(el) && /^(log in|login|sign in|đăng nhập)$/i.test((el.innerText || el.getAttribute('aria-label') || '').trim())
+                    );
+                }"""))
+            except Exception:
+                return False
         
         # Xử lý trang lỗi "This page is temporarily unavailable"
         try:
@@ -696,7 +773,83 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
         except:
             pass
 
+        def wait_for_manual_slider_challenge(pg, checkpoint=""):
+            """Pause and wait while a visual challenge is present in any page/frame."""
+            challenge_selectors = (
+                "#ddv1-captcha-container, #captcha__frame__bottom .sliderContainer, .sliderContainer"
+            )
+
+            def find_visible_challenge():
+                try:
+                    frames = list(pg.frames)
+                except Exception:
+                    frames = [pg.main_frame]
+                for frame in frames:
+                    try:
+                        loc = frame.locator(challenge_selectors)
+                        for index in range(loc.count()):
+                            candidate = loc.nth(index)
+                            if candidate.is_visible():
+                                return frame, candidate
+                    except Exception:
+                        continue
+                return None, None
+
+            frame, challenge = find_visible_challenge()
+            if challenge is None:
+                return False
+
+            if is_headless:
+                raise RuntimeError(
+                    "Trang đang yêu cầu CAPTCHA nhưng Chrome chạy ẩn nên không thể xác minh thủ công. "
+                    "Hãy tắt Chạy ẩn Chrome và chạy lại tác vụ."
+                )
+
+            message = (
+                "⚠️ Đang chờ xác minh CAPTCHA trên Chrome. "
+                "Hãy tự hoàn tất thử thách trong cửa sổ Chrome; tác vụ sẽ tiếp tục khi CAPTCHA đóng."
+            )
+            video_tasks[task_id] = {
+                **video_tasks.get(task_id, {}),
+                "status": "running",
+                "message": message,
+            }
+            print(
+                f"Task {task_id}: phát hiện CAPTCHA ({frame.url if frame else 'frame chưa rõ'})"
+                f"{f' tại {checkpoint}' if checkpoint else ''}; tạm dừng chờ xác minh thủ công.",
+                flush=True,
+            )
+
+            for waited in range(300):
+                task = video_tasks.get(task_id, {})
+                if task.get("force_stop"):
+                    raise RuntimeError("Đã dừng trong lúc chờ người dùng xác minh CAPTCHA.")
+                try:
+                    frame, challenge = find_visible_challenge()
+                    if challenge is None:
+                        video_tasks[task_id] = {
+                            **video_tasks.get(task_id, {}),
+                            "status": "running",
+                            "message": "✅ Đã xác minh xong CAPTCHA; tiếp tục tạo video...",
+                        }
+                        print(f"Task {task_id}: slider CAPTCHA đã đóng; tiếp tục automation.", flush=True)
+                        return True
+                except Exception:
+                    video_tasks[task_id] = {
+                        **video_tasks.get(task_id, {}),
+                        "status": "running",
+                        "message": "✅ Đã xác minh xong CAPTCHA; tiếp tục tạo video...",
+                    }
+                    print(f"Task {task_id}: không còn thấy slider CAPTCHA; tiếp tục automation.", flush=True)
+                    return True
+                if waited and waited % 15 == 0:
+                    print(f"Task {task_id}: vẫn đang chờ xác minh CAPTCHA thủ công...", flush=True)
+                pg.wait_for_timeout(1000)
+
+            raise RuntimeError("Hết 5 phút chờ xác minh CAPTCHA thủ công trên Chrome.")
+
         def check_popups(pg):
+            wait_for_manual_slider_challenge(pg, "check_popups")
             try:
                 pg.evaluate("""() => {
                     // Xóa popup Confirm Age
@@ -720,6 +873,41 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
             except:
                 pass
 
+        # Đăng ký handoff cho cả CAPTCHA nằm trong iframe (DataDome) lẫn DOM chính.
+        # Khi locator xuất hiện, Playwright dừng trước thao tác tiếp theo để người dùng xử lý.
+        captcha_handler_frames = set()
+
+        def install_captcha_locator_handler(frame):
+            frame_key = id(frame)
+            if frame_key in captcha_handler_frames or not hasattr(page, "add_locator_handler"):
+                return
+            try:
+                for selector in (
+                    "#ddv1-captcha-container:visible",
+                    "#captcha__frame__bottom .sliderContainer:visible",
+                    ".sliderContainer:visible",
+                ):
+                    page.add_locator_handler(
+                        frame.locator(selector).first,
+                        lambda _locator: wait_for_manual_slider_challenge(page, "locator handler"),
+                    )
+                captcha_handler_frames.add(frame_key)
+            except Exception as handler_error:
+                print(
+                    f"Task {task_id}: không cài được CAPTCHA handler cho frame {frame.url}: {handler_error}",
+                    flush=True,
+                )
+
+        try:
+            for frame in list(page.frames):
+                install_captcha_locator_handler(frame)
+            page.on("frameattached", install_captcha_locator_handler)
+            page.on("framenavigated", install_captcha_locator_handler)
+        except Exception as handler_error:
+            print(f"Task {task_id}: không cài được CAPTCHA handoff handler: {handler_error}", flush=True)
+
+        wait_for_manual_slider_challenge(page, "sau khi mở trang Higgsfield")
+
         # ── BƯỚC 2: Kiểm tra đã login chưa (Dựa vào sự tồn tại của nút Log In) ──
         video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "running", "message": "Kiểm tra trạng thái đăng nhập..."}
         already_logged_in = False
@@ -736,6 +924,13 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                 import re
                 # Vòng lặp chờ thông minh (tối đa 15 giây) để React load xong dữ liệu
                 for _ in range(30):
+                    # CTA đăng nhập là dấu hiệu dứt khoát: các nút menu chung
+                    # trên header không được xem nhầm là avatar tài khoản.
+                    if has_higgsfield_login_button(page):
+                        print("--- Trang vẫn hiện nút Login -> Chưa đăng nhập.")
+                        is_logged_in = False
+                        break
+
                     # 0. Quét xem có Modal Login mở sẵn không
                     try:
                         has_welcome = page.evaluate("""() => {
@@ -763,7 +958,7 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                     
                     # 2. Quét tìm nút Avatar đã đăng nhập
                     try:
-                        avatar_loc = page.locator('button[aria-label="Account menu"], button[aria-haspopup="menu"]').filter(has_not_text=re.compile(r"^(Đăng nhập|Log In|Sign In)$", re.IGNORECASE))
+                        avatar_loc = page.locator('button[aria-label="Account menu"]')
                         if avatar_loc.count() > 0 and avatar_loc.first.is_visible():
                             is_logged_in = True
                             print("--- Đã thấy nút Account menu (Avatar) -> Đã login!")
@@ -951,6 +1146,9 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                 
                 # Đã click thành công, chờ Microsoft Auth xử lý
                 page.wait_for_timeout(6000)
+                page = select_login_page()
+                if page is not higgsfield_page:
+                    print(f"--- OAuth mở trang đăng nhập riêng: {page.url}")
             except Exception as e:
                 print(f"\n====== LỖI BƯỚC 4 ======\n{str(e)}\n========================\n")
                 video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "error", "message": f"Lỗi ở bước đăng nhập Microsoft: {str(e)}"}
@@ -963,6 +1161,28 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                 
                 login_success = False
                 for _ in range(15): # Lặp tối đa ~30s
+                    # Theo dõi cả popup OAuth và tab Higgsfield. Microsoft có
+                    # thể đăng nhập ở popup rồi đóng/điều hướng popup về app.
+                    try:
+                        if not higgsfield_page.is_closed():
+                            if has_higgsfield_login_button(higgsfield_page):
+                                page = select_login_page()
+                            else:
+                                logged_marker = higgsfield_page.locator(
+                                    '[data-generation-free-gens="true"]:visible, '
+                                    '[role="switch"][aria-label="Use free gens"]:visible, '
+                                    '[role="switch"][aria-label="Use free generations"]:visible, '
+                                    'button[aria-label="Account menu"]:visible'
+                                ).first
+                                if logged_marker.is_visible(timeout=250):
+                                    page = higgsfield_page
+                                    login_success = True
+                                    print("--- Higgsfield xác nhận đã đăng nhập sau OAuth.")
+                                    break
+                    except Exception:
+                        pass
+                    page = select_login_page()
+
                     # 0. Quét xem có bị báo lỗi Limit từ server higgsfield không
                     try:
                         limit_msg = page.evaluate("""() => {
@@ -1083,7 +1303,7 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                     # 2. Bấm vào nút Avatar bằng Playwright (như người thật) thay vì JS
                     try:
                         # Nút button có aria-haspopup="menu" và chứa thẻ img.rounded-full
-                        avatar_loc = page.locator('button[aria-haspopup="menu"]:has(img.rounded-full)').first
+                        avatar_loc = page.locator('button[aria-label="Account menu"]:has(img.rounded-full)').first
                         if avatar_loc.count() > 0:
                             avatar_loc.click(timeout=2000)
                     except:
@@ -1111,7 +1331,17 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                 else:
                     if "quiz" in page.url:
                         raise Exception("Trình duyệt kẹt ở Quiz! Vui lòng hoàn thành Quiz bằng tay và thử lại.")
-                    raise Exception("Không tìm thấy menu Settings, đăng nhập có thể đã thất bại.")
+                    ms_acc_file = Path(profile.user_data_dir) / "ms_account.txt"
+                    if not ms_acc_file.exists():
+                        raise Exception(
+                            "Profile chưa lưu tài khoản Microsoft (ms_account.txt). "
+                            "Hãy thêm email|password cho Profile rồi thử lại."
+                        )
+                    raise Exception(
+                        "Chưa xác nhận được đăng nhập Higgsfield sau khi thử tự đăng nhập. "
+                        "Nếu Microsoft yêu cầu mã OTP, xác minh bảo mật hoặc CAPTCHA, "
+                        "hãy hoàn tất trên Chrome rồi chạy lại."
+                    )
                     
             except Exception as e:
                 video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "error", "message": f"Đăng nhập thất bại: {e}"}
@@ -1203,12 +1433,120 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                         print(f"  -> Lỗi khi check modal I agree: {e}")
                     return False
 
+                def clear_existing_composer_media(pg):
+                    """Remove old image/video references from the Create Video composer before upload."""
+                    remove_selector = (
+                        'button[aria-label="Remove media"], '
+                        'button[aria-label="Remove video"], '
+                        'button[aria-label="Remove reference"]'
+                    )
+                    removed = 0
+                    print("  -> Kiểm tra ảnh/video cũ đang gắn trên form Create Video...", flush=True)
+
+                    for _ in range(30):
+                        remove_buttons = pg.locator(remove_selector)
+                        target = None
+                        try:
+                            for index in range(remove_buttons.count()):
+                                candidate = remove_buttons.nth(index)
+                                if candidate.is_visible():
+                                    target = candidate
+                                    break
+                        except Exception:
+                            target = None
+
+                        if target is None:
+                            # Nút X của media chỉ hiện khi rê chuột lên thumbnail.
+                            # Preview là nút phủ thumbnail, không click nó; chỉ dùng hover
+                            # để làm lộ nút Remove nằm cạnh/trong cùng thẻ media.
+                            previews = pg.locator(
+                                'button[aria-label="Preview"][data-multiplier-field-action="true"]'
+                            )
+                            try:
+                                for index in range(previews.count()):
+                                    preview = previews.nth(index)
+                                    if not preview.is_visible():
+                                        continue
+                                    try:
+                                        preview.hover(timeout=1500)
+                                        pg.wait_for_timeout(180)
+                                    except Exception:
+                                        continue
+                                    for depth in range(1, 6):
+                                        try:
+                                            ancestor = preview.locator("xpath=" + "/".join([".."] * depth))
+                                            local_remove = ancestor.locator(
+                                                'button[aria-label*="remove" i], button[title*="remove" i]'
+                                            )
+                                            for remove_index in range(local_remove.count()):
+                                                candidate = local_remove.nth(remove_index)
+                                                if candidate.is_visible():
+                                                    target = candidate
+                                                    break
+                                            if target is not None:
+                                                break
+                                        except Exception:
+                                            continue
+                                    if target is not None:
+                                        break
+                            except Exception:
+                                pass
+
+                        if target is None:
+                            # Thử hover trực tiếp lên nút Remove (có thể bắt đầu opacity=0).
+                            try:
+                                candidate = pg.locator('button[aria-label*="remove" i]:visible').first
+                                if candidate.count() > 0:
+                                    target = candidate
+                            except Exception:
+                                pass
+
+                        if target is None:
+                            break
+
+                        try:
+                            target.hover(timeout=2000)
+                            pg.wait_for_timeout(150)
+                            target.click(timeout=3000, force=True)
+                            removed += 1
+                            print(f"  -> Đã xóa media cũ trên form ({removed}).", flush=True)
+                            pg.wait_for_timeout(350)
+                        except Exception as remove_error:
+                            print(f"  -> Không xóa được media cũ đang hover: {remove_error}", flush=True)
+                            break
+
+                    if removed:
+                        pg.wait_for_timeout(500)
+                        print(f"  -> Đã dọn {removed} ảnh/video cũ trước khi tải file mới.", flush=True)
+                    else:
+                        print("  -> Form không có nút xóa media cũ đang hiển thị.", flush=True)
+                    try:
+                        remaining = pg.locator(remove_selector)
+                        still_attached = any(
+                            remaining.nth(index).is_visible()
+                            for index in range(remaining.count())
+                        )
+                        if still_attached:
+                            raise RuntimeError(
+                                "Vẫn còn ảnh/video cũ trên form; không upload đè lên media cũ được."
+                            )
+                    except RuntimeError:
+                        raise
+                    except Exception:
+                        pass
+                    return removed
+
                 def upload_and_select(pg, btn_aria_label, file_paths):
                     print(f"--- B?t d?u upload cho {btn_aria_label}, s? lu?ng file: {len(file_paths)}")
                     if not file_paths: return
                     try:
                         # 1. Click vào thẻ mở bảng Upload media (Ảnh hoặc Video)
                         is_video = "video" in btn_aria_label.lower() or "edit" in btn_aria_label.lower() or "motion" in btn_aria_label.lower()
+                        if is_video:
+                            raise RuntimeError(
+                                "Không dùng luồng upload trực tiếp trong Create Video; "
+                                "hãy gọi upload_video_through_edit_mode."
+                            )
 
                         # Danh sách selector chuẩn xác 100% dựa trên cấu trúc DOM của cả Modal LITE và VIP
                         if is_video:
@@ -1605,6 +1943,205 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                         print(f"Lỗi upload {btn_aria_label}: {e}")
                         raise e
 
+                def upload_video_through_edit_mode(pg, file_path):
+                    """Upload video in Edit Video first, then attach that library asset in Create Video."""
+                    file_name = Path(file_path).name
+                    print(f"--- Upload video qua Edit Video: {file_name}", flush=True)
+
+                    def accept_media_upload_agreement():
+                        legal_input = pg.locator('input[name="confirm-legal-right"]').last
+                        try:
+                            legal_input.wait_for(state="attached", timeout=5000)
+                        except Exception:
+                            return False
+
+                        for name in ("confirm-legal-right", "acknowledge-screening"):
+                            checkbox = pg.locator(
+                                f'label:has(input[name="{name}"]) button[role="checkbox"]'
+                            ).last
+                            checkbox.wait_for(state="visible", timeout=5000)
+                            if checkbox.get_attribute("aria-checked") != "true":
+                                checkbox.click(timeout=3000, force=True)
+                            if checkbox.get_attribute("aria-checked") != "true":
+                                raise RuntimeError(f"Chưa xác nhận được điều khoản {name}")
+
+                        submit = pg.locator(
+                            'button[type="submit"]:has-text("I agree, continue")'
+                        ).last
+                        submit.click(timeout=5000, force=True)
+                        legal_input.wait_for(state="detached", timeout=15000)
+                        print("  -> Đã xác nhận hai mục trong Media upload agreement.", flush=True)
+                        return True
+
+                    # Chuyển sang tab Edit Video rồi mở đúng công cụ "Make targeted changes".
+                    edit_tab = pg.locator('div.border-b-2.whitespace-nowrap').filter(
+                        has_text="Edit Video"
+                    ).first
+                    edit_tab.wait_for(state="visible", timeout=15000)
+                    edit_tab.click(timeout=5000, force=True)
+                    pg.wait_for_timeout(1200)
+                    print("  -> Đã mở tab Edit Video.", flush=True)
+
+                    edit_tool = pg.locator("button").filter(has_text="Make targeted changes").first
+                    try:
+                        edit_tool.wait_for(state="visible", timeout=5000)
+                        edit_tool.click(timeout=5000, force=True)
+                    except Exception:
+                        pg.get_by_text("Make targeted changes", exact=True).last.click(
+                            timeout=5000, force=True
+                        )
+                    print("  -> Đã chọn Edit Video / Make targeted changes.", flush=True)
+
+                    add_video = pg.locator('button[aria-label="Add a video to edit"]').last
+                    add_video.wait_for(state="visible", timeout=15000)
+                    add_video.click(timeout=5000, force=True)
+                    print("  -> Đã mở ô Add a video to edit.", flush=True)
+
+                    upload_tile = pg.get_by_text("Upload file", exact=True).last
+                    upload_tile.wait_for(state="visible", timeout=15000)
+                    file_sent = False
+                    try:
+                        with pg.expect_file_chooser(timeout=8000) as chooser_info:
+                            upload_tile.click(timeout=5000, force=True)
+                        chooser_info.value.set_files(file_path)
+                        file_sent = True
+                    except Exception as chooser_error:
+                        print(f"  -> Upload file chooser không mở được, thử input file: {chooser_error}", flush=True)
+                        file_input = pg.locator('input[type="file"][accept*="video" i]').last
+                        if file_input.count() > 0:
+                            file_input.set_input_files(file_path)
+                            file_sent = True
+                    if not file_sent:
+                        raise RuntimeError("Không mở được nút Upload file trong Edit Video")
+                    print(f"  -> Đã gửi file {file_name} vào Upload file.", flush=True)
+
+                    # Popup này có thể xuất hiện theo từng profile. Chỉ tick khi nó thực sự hiện.
+                    agreement_accepted = accept_media_upload_agreement()
+                    if not agreement_accepted:
+                        print("  -> Không hiện Media upload agreement; tiếp tục chờ upload.", flush=True)
+
+                    uploading = pg.get_by_text("Uploading...", exact=True).last
+                    try:
+                        uploading.wait_for(state="visible", timeout=12000)
+                        print("  -> Video đang upload, chờ hoàn tất...", flush=True)
+                    except Exception:
+                        # Upload có thể hoàn tất nhanh trước khi trạng thái Uploading được render.
+                        uploading = None
+                    if uploading is not None:
+                        try:
+                            uploading.wait_for(state="hidden", timeout=180000)
+                        except Exception as e:
+                            raise RuntimeError(f"Upload video chưa hoàn tất: {e}")
+                        print("  -> Upload video hoàn tất; không upload lại trong Create Video.", flush=True)
+                    else:
+                        print("  -> Không thấy trạng thái Uploading; kiểm tra thư viện sau upload.", flush=True)
+                    pg.wait_for_timeout(1200)
+                    accept_media_upload_agreement()
+
+                    failed_upload = pg.get_by_text("Failed to upload media", exact=True).last
+                    if failed_upload.count() > 0 and failed_upload.is_visible():
+                        raise RuntimeError("Higgsfield báo Failed to upload media")
+
+                    # Đóng picker Edit Video sau khi upload xong.
+                    picker_close = pg.locator('button[aria-label="Close assets picker"]').last
+                    try:
+                        if picker_close.is_visible(timeout=2500):
+                            picker_close.click(timeout=5000, force=True)
+                            print("  -> Đã đóng picker Edit Video.", flush=True)
+                    except Exception:
+                        pg.keyboard.press("Escape")
+                    pg.wait_for_timeout(800)
+
+                    # Quay lại Create Video, mở ô reference video và dùng đúng asset video mới nhất.
+                    create_tab = pg.locator('div.border-b-2.whitespace-nowrap').filter(
+                        has_text="Create Video"
+                    ).first
+                    create_tab.wait_for(state="visible", timeout=15000)
+                    create_tab.click(timeout=5000, force=True)
+                    print("  -> Đã quay lại tab Create Video.", flush=True)
+
+                    reference_button = pg.locator(
+                        'button[aria-label*="Add a reference video" i]:visible'
+                    ).last
+                    reference_button.wait_for(state="visible", timeout=15000)
+                    reference_button.click(timeout=5000, force=True)
+                    print("  -> Đã mở Add a reference video trong Create Video.", flush=True)
+
+                    all_tab = pg.get_by_role("tab", name="All", exact=True).last
+                    all_tab.wait_for(state="visible", timeout=15000)
+                    all_tab.click(timeout=5000, force=True)
+                    print("  -> Đã mở tab All; tìm video vừa upload.", flush=True)
+
+                    # Tile Upload media không có data-assets-picker-selectable-card.
+                    # Card media trong thư viện có selector ổn định này; chọn card đầu tiên
+                    # (video vừa upload được đưa lên đầu danh sách All).
+                    asset_cards = pg.locator('div[data-assets-picker-selectable-card="true"]:visible')
+                    asset_count = 0
+                    for _ in range(30):
+                        asset_count = asset_cards.count()
+                        if asset_count > 0:
+                            break
+                        pg.wait_for_timeout(1000)
+                    if asset_count == 0:
+                        raise RuntimeError("Tab All chưa có card thư viện để chọn")
+                    print(f"  -> Tab All có {asset_count} card thư viện.", flush=True)
+
+                    # Preview <video> có thể chỉ được mount sau khi hover. Ưu tiên
+                    # card đầu tiên thực sự chứa video; nếu UI không gắn preview node,
+                    # dùng card đầu tiên vì All đang sắp asset vừa upload lên trước.
+                    newest_asset = None
+                    for card_index in range(asset_count):
+                        candidate = asset_cards.nth(card_index)
+                        try:
+                            candidate.scroll_into_view_if_needed(timeout=3000)
+                            candidate.hover(timeout=3000)
+                            candidate.locator("video").wait_for(state="attached", timeout=1200)
+                            newest_asset = candidate
+                            break
+                        except Exception:
+                            continue
+                    if newest_asset is None:
+                        newest_asset = asset_cards.first
+                        print(
+                            "  -> Preview video chưa mount trong DOM; sẽ chọn card đầu tiên của All.",
+                            flush=True,
+                        )
+                    newest_asset_id = newest_asset.get_attribute("aria-label") or "(không có ID)"
+                    print(f"  -> Đang chọn card đầu tiên trong All: {newest_asset_id}.", flush=True)
+                    newest_asset.scroll_into_view_if_needed(timeout=5000)
+                    newest_asset.click(timeout=5000, force=True)
+                    pg.wait_for_timeout(800)
+                    print("  -> Đã click card đầu tiên trong All.", flush=True)
+
+                    attached_video = pg.locator('button[aria-label="Remove video"]:visible').last
+                    try:
+                        attached_video.wait_for(state="visible", timeout=8000)
+                    except Exception:
+                        # Card này là role=button/aria-pressed; dùng Enter nếu click chuột
+                        # chỉ focus card mà phiên bản UI hiện tại chưa commit selection.
+                        try:
+                            if newest_asset.get_attribute("aria-pressed") != "true":
+                                newest_asset.press("Enter", timeout=3000)
+                                print("  -> Card chưa gắn video; gửi Enter để chọn card.", flush=True)
+                        except Exception:
+                            pass
+
+                    try:
+                        picker_close = pg.locator('button[aria-label="Close assets picker"]').last
+                        if picker_close.is_visible(timeout=1200):
+                            picker_close.click(timeout=5000, force=True)
+                            print("  -> Đã đóng picker sau khi chọn video.", flush=True)
+                    except Exception:
+                        pass
+
+                    try:
+                        attached_video.wait_for(state="visible", timeout=15000)
+                    except Exception as e:
+                        raise RuntimeError(
+                            f"Đã chọn video trong thư viện nhưng chưa thấy video gắn vào Create Video: {e}"
+                        )
+                    print(f"  -> Đã gắn video mới nhất ({file_name}) vào Create Video.", flush=True)
+
                 def replace_invalid_reference_video(pg):
                     """Xóa video đang chọn, rồi chọn lại video đã có trong thư viện Recent."""
                     try:
@@ -1665,6 +2202,9 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                             tab.click(timeout=3000)
                             page.wait_for_timeout(1000)
                 except: pass
+
+                if master_attempt == 0 and (images_to_upload or videos_to_upload):
+                    clear_existing_composer_media(page)
                 
                 # 2. Upload Ảnh (Có cơ chế Retry riêng)
                 if images_to_upload and not images_uploaded:
@@ -1696,14 +2236,11 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                 if videos_to_upload and not videos_uploaded:
                     for attempt in range(3):
                         try:
-                            if is_lite or gen_mode == "objects_swap":
-                                video_btn_label = "Add a reference video to edit"
-                            else:
-                                video_btn_label = "Add a reference video to extract motion"
-                        
                             print(f"=== BẮT ĐẦU UPLOAD VIDEO ({len(videos_to_upload)} file) (Lần {attempt+1}) ===")
                             video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "running", "message": f"Đang tải {len(videos_to_upload)} video lên..."}
-                            upload_and_select(page, video_btn_label, videos_to_upload)
+                            # Higgsfield cần video được đưa vào thư viện từ Edit Video trước,
+                            # rồi mới chọn lại trong Create Video > Add a reference video > All.
+                            upload_video_through_edit_mode(page, videos_to_upload[0])
                             videos_uploaded = True
                             break # Thành công thì thoát loop video
                         except Exception as e:
@@ -1775,7 +2312,7 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                 
                 if generate_hma or generate_ip:
                     print("  -> Bắt đầu đổi IP trước khi Generate...")
-                    _prepare_video_network(context, task_id, profile_id, generate_ip, generate_hma=generate_hma)
+                    _prepare_video_network(context, task_id, profile_id, generate_ip, generate_hma=generate_hma, hma_region=hma_region)
                     print("  -> Đổi IP thành công, tải lại trang để nhận IP mới...")
                     video_tasks[task_id] = {**video_tasks.get(task_id, {}), "status": "running", "message": "Đã kết nối IP mới, đang tải lại trang..."}
                     page.reload(timeout=30000)
@@ -2001,8 +2538,9 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                     video_tasks[task_id]["message"] = "Chrome đã mở, đang đổi IP mới..."
                     from app.services.vpn_ip import connect_unique_vpn_ip
                     task_gen_hma = bool(video_tasks.get(task_id, {}).get("params", {}).get("generate_hma", False))
+                    task_hma_region = video_tasks.get(task_id, {}).get("params", {}).get("hma_region", "europe")
                     if task_gen_hma:
-                        vpn_info = connect_unique_vpn_ip(context, profile_id, rotate_hma_first=True)
+                        vpn_info = connect_unique_vpn_ip(context, profile_id, rotate_hma_first=True, hma_region=task_hma_region)
                     else:
                         vpn_info = connect_unique_vpn_ip(context, profile_id)
                     print(f"Cancel + Gen đổi IP thành công: {vpn_info['ip']} ({vpn_info['country']})")

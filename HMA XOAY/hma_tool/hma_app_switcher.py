@@ -55,6 +55,22 @@ ALIASES = {
 
 _CACHE = {"dlg": None}   # cache cua so de khong phai quet process lien tuc
 COUNTRY_SET = set(COUNTRIES)
+REGION_COUNTRIES = {
+    "europe": {
+        "Albania", "Austria", "Azerbaijan", "Belgium", "Bosnia & Herzegovina",
+        "Bulgaria", "Croatia", "Cyprus", "Czech Republic", "Denmark", "Estonia",
+        "Finland", "France", "Germany", "Greece", "Hungary", "Iceland", "Ireland",
+        "Italy", "Latvia", "Lithuania", "Luxembourg", "Moldova", "Netherlands",
+        "Norway", "Poland", "Portugal", "Romania", "Serbia", "Slovakia", "Spain",
+        "Sweden", "Switzerland", "Türkiye", "Ukraine", "United Kingdom",
+    },
+    "asia": {
+        "Bangladesh", "Brunei", "Cambodia", "Hong Kong", "India", "Indonesia", "Israel",
+        "Japan", "Laos", "Malaysia", "Pakistan", "Philippines", "Qatar", "Saudi Arabia",
+        "Singapore", "South Korea", "Sri Lanka", "Taiwan", "Thailand", "United Arab Emirates",
+        "Uzbekistan", "Vietnam",
+    },
+}
 
 
 # ----------------- tien ich -----------------
@@ -622,20 +638,26 @@ def _current_country_name(dlg):
         return ""
 
 
-def _random_pick_country(dlg):
+def _random_pick_country(dlg, region="all"):
     """Chon mot nuoc NGAU NHIEN (khac nuoc hien tai), KHONG go o tim kiem.
     Thu: cuon UIA -> gui phim ao (DOWN/PGDN) vao app -> lay gi co do."""
     exclude = _current_country_name(dlg)
 
+    region_key = str(region or "europe").strip().lower()
+    allowed = REGION_COUNTRIES.get(region_key)
+
     def _pool():
         return [it for it in _collect_country_items(get_dialog())
-                if it[1] != exclude]
+                if it[1] != exclude and (allowed is None or it[1] in allowed)]
 
     # 1) thu cuon UIA (vai app ho tro)
-    for _ in range(random.randint(1, 10)):
+    for _ in range(45):
+        items = _pool()
+        if items:
+            return random.choice(items)
         if not _scroll_list(dlg):
             break
-        time.sleep(0.4)
+        time.sleep(0.25)
     items = _pool()
     if items:
         return random.choice(items)
@@ -726,7 +748,7 @@ def _find_location_item(dlg, keyword):
     return None, None
 
 
-def switch_country(keyword):
+def switch_country(keyword, region="all"):
     """Doi sang quoc gia khac. Ho tro keyword 'random'.
     UU TIEN: cuon danh sach A-Z roi bam truc tiep (khong go phim gi ca).
     O tim kiem chi la phuong an du phong cuoi cung."""
@@ -751,7 +773,7 @@ def switch_country(keyword):
         # ---- Chon KHONG can go vao o tim kiem ----
         el, name = None, None
         if is_random:
-            el, name = _random_pick_country(get_dialog())
+            el, name = _random_pick_country(get_dialog(), region=region)
             if name:
                 print("Quoc gia ngau nhien:", name)
                 country = name
@@ -856,11 +878,14 @@ if __name__ == "__main__":
                 time.sleep(2)
                 switch_country(sys.argv[2])
     elif cmd == "randomcountry":
-        res = switch_country("random")
+        region = sys.argv[2].lower() if len(sys.argv) > 2 else "europe"
+        if region not in ("europe", "asia", "all"):
+            raise SystemExit("Region must be europe, asia, or all")
+        res = switch_country("random", region=region)
         if not res:
             print("\n>>> Lan 1 doi IP khong thanh cong, dang thu lai phat nua (Lan 2)...", flush=True)
             time.sleep(2)
-            switch_country("random")
+            switch_country("random", region=region)
     elif cmd == "switch":
         res = switch_ip()
         if not res:

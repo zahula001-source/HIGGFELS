@@ -153,6 +153,7 @@ class ProfileManager:
         p = self.get_profile(profile_id)
         if p:
             p.name = new_name
+            p.video_name_confirmed = True
             self._save()
             return True
         return False

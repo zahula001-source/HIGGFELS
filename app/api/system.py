@@ -127,10 +127,10 @@ def get_hma_status():
 
 
 @router.post("/api/hma/rotate")
-async def rotate_hma_endpoint():
+async def rotate_hma_endpoint(region: str = "europe"):
     from app.services.hma_vpn import rotate_hma_random_country
     try:
-        result = await asyncio.to_thread(rotate_hma_random_country)
+        result = await asyncio.to_thread(rotate_hma_random_country, region=region)
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

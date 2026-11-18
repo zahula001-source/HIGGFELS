@@ -70,6 +70,9 @@ async def create_video(request: Request):
     browser_engine = form.get("browser_engine", "chrome")
     generate_ip = str(form.get("generate_ip", "true")).strip().lower() == "true"
     generate_hma = str(form.get("generate_hma", "false")).strip().lower() == "true"
+    hma_region = str(form.get("hma_region", "europe")).strip().lower()
+    if hma_region not in ("europe", "asia", "all"):
+        hma_region = "europe"
     processing_timeout = int(form.get("processing_timeout", 120))
     higgs_model = str(form.get("higgs_model", "vip")).strip().lower()
 
@@ -166,6 +169,7 @@ async def create_video(request: Request):
             "browser_engine": browser_engine,
             "generate_ip": generate_ip,
             "generate_hma": generate_hma,
+            "hma_region": hma_region,
             "media_paths": saved_paths,
             "processing_timeout": processing_timeout,
             "higgs_model": higgs_model,
@@ -191,7 +195,7 @@ async def create_video(request: Request):
     t = threading.Thread(
         target=run_video_automation,
         args=(task_id, prompt, saved_paths, profile_id, save_path, headless_bool, (enable_ext.lower() == "true"), (enable_ext_btn2.lower() == "true"), (telegram_enabled.lower() == "true"), telegram_token, telegram_chat_id, gen_mode, browser_engine, generate_ip),
-        kwargs={"generate_hma": generate_hma, "higgs_model": higgs_model},
+        kwargs={"generate_hma": generate_hma, "hma_region": hma_region, "higgs_model": higgs_model},
         daemon=True,
     )
     t.start()
@@ -299,7 +303,7 @@ def retry_video(task_id: str):
     t = threading.Thread(
         target=run_video_automation,
         args=(task_id, p["prompt"], media_paths, p.get("profile_id"), p.get("save_path"), p.get("is_headless", False), p.get("enable_ext", False), p.get("enable_ext_btn2", False), p.get("tg_enabled", False), p.get("tg_token", ""), p.get("tg_chat_id", ""), p.get("gen_mode", "motion_transfer"), p.get("browser_engine", "chrome"), p.get("generate_ip", False)),
-        kwargs={"generate_hma": p.get("generate_hma", False), "higgs_model": p.get("higgs_model", "vip")},
+        kwargs={"generate_hma": p.get("generate_hma", False), "hma_region": p.get("hma_region", "europe"), "higgs_model": p.get("higgs_model", "vip")},
         daemon=True
     )
     t.start()
@@ -313,7 +317,63 @@ def stop_video(task_id: str):
 
 @router.get("/api/video/status/{task_id}")
 def video_status(task_id: str):
-    return video_tasks.get(task_id, {"status": "not_found"})
+    task = video_tasks.get(task_id)
+    if not isinstance(task, dict):
+        return {"status": "not_found"}
+
+    # Nếu Chrome biến mất trong khi tác vụ còn pending/running, không để
+    # giao diện giữ spinner vô thời hạn ở bất kỳ bước nào (mở trang/upload/check).
+    if task.get("status") in ("pending", "running"):
+        now_ts = time.time()
+        started_at = float(task.get("created_at_ts") or 0)
+        browser_opened_at = float(task.get("browser_opened_at_ts") or 0)
+        should_probe_browser = bool(browser_opened_at) or (started_at and now_ts - started_at >= 60)
+        if should_probe_browser:
+            profile_id = (task.get("params") or {}).get("profile_id")
+            profile = manager.get_profile(profile_id) if profile_id else None
+            runtime_dirs = []
+            if profile and profile.user_data_dir:
+                runtime_dirs.append(Path(profile.user_data_dir))
+            if profile_id:
+                runtime_dirs.append(Path(BASE_DIR) / "data" / "browsers" / f"chrome136_{profile_id}")
+
+            cdp_alive = False
+            for runtime_dir in runtime_dirs:
+                try:
+                    port_file = runtime_dir / "cdp_port.txt"
+                    if not port_file.exists():
+                        port_file = runtime_dir / "DevToolsActivePort"
+                    if not port_file.exists():
+                        continue
+                    port = port_file.read_text(encoding="utf-8").splitlines()[0].strip()
+                    if not port.isdigit():
+                        continue
+                    from urllib.request import urlopen
+                    with urlopen(f"http://127.0.0.1:{port}/json/version", timeout=1) as response:
+                        cdp_alive = response.status == 200
+                    if cdp_alive:
+                        task["browser_last_seen_ts"] = now_ts
+                        break
+                except Exception:
+                    continue
+
+            if not cdp_alive:
+                last_seen_at = float(task.get("browser_last_seen_ts") or 0)
+                offline_since = last_seen_at or browser_opened_at or started_at
+                offline_grace = 15 if (last_seen_at or browser_opened_at) else 60
+            else:
+                offline_since = 0
+                offline_grace = 0
+
+            if not cdp_alive and offline_since and now_ts - offline_since >= offline_grace:
+                task["status"] = "error"
+                task["message"] = "Chrome tự đóng giữa chừng; tác vụ kết thúc. Bấm Tạo Video để thử lại."
+                task["force_stop"] = True
+                task["finished_at_ts"] = now_ts
+                if profile and str(profile.notes or "").lower().startswith("đang tạo video"):
+                    manager.update_notes(profile_id, "")
+                save_video_tasks_cache()
+    return task
 
 @router.get("/api/video/download/{task_id}")
 def download_video(task_id: str, request: Request):

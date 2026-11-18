@@ -871,7 +871,7 @@ def _connect_1clickvpn(context, profile_id: str, max_attempts: int = 8) -> dict[
             pass
 
 
-def connect_unique_vpn_ip(context, profile_id: str, max_attempts: int = 1, rotate_hma_first: bool = False) -> dict[str, str]:
+def connect_unique_vpn_ip(context, profile_id: str, max_attempts: int = 1, rotate_hma_first: bool = False, hma_region: str = "europe") -> dict[str, str]:
     """Ket noi VPN voi IP doc nhat theo logic:
     - Neu bat ca 2 (rotate_hma_first=True): Kich hoat Sinh IP HMA truoc.
     1. Thu sinh IP bang 1ClickVPN lan 1.
@@ -894,7 +894,7 @@ def connect_unique_vpn_ip(context, profile_id: str, max_attempts: int = 1, rotat
         hma_info = {}
         try:
             from app.services.hma_vpn import rotate_hma_random_country
-            hma_info = rotate_hma_random_country()
+            hma_info = rotate_hma_random_country(region=hma_region)
             print(f"  [VPN] Sinh IP HMA thanh cong: {hma_info.get('ip')} ({hma_info.get('country')})", flush=True)
         except Exception as hma_error:
             print(f"  [VPN] Kich hoat Sinh IP HMA that bai hoac khong kha dung: {hma_error}", flush=True)

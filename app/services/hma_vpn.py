@@ -19,10 +19,10 @@ def is_hma_available() -> bool:
     return HMA_SCRIPT_PATH.is_file()
 
 
-def _run_hma_process_once(timeout: int = 90) -> dict[str, str]:
-    """Thực thi 1 lần đổi IP qua HMA script hma_app_switcher.py (randomcountry)."""
+def _run_hma_process_once(timeout: int = 90, region: str = "europe") -> dict[str, str]:
+    """Thực thi 1 lần đổi IP HMA trong khu vực được chọn."""
     proc = subprocess.run(
-        [sys.executable, str(HMA_SCRIPT_PATH), "randomcountry"],
+        [sys.executable, str(HMA_SCRIPT_PATH), "randomcountry", region],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -69,10 +69,13 @@ def _run_hma_process_once(timeout: int = 90) -> dict[str, str]:
     }
 
 
-def rotate_hma_random_country(timeout: int = 90, max_attempts: int = 2) -> dict[str, str]:
+def rotate_hma_random_country(timeout: int = 90, max_attempts: int = 2, region: str = "europe") -> dict[str, str]:
     """Kích hoạt đổi sang một quốc gia ngẫu nhiên trên app HMA VPN (Logic nút 6).
     Nếu đổi lần 1 không được thì tự động thử lại phát nữa (tối đa max_attempts lần).
     """
+    region = str(region or "europe").strip().lower()
+    if region not in ("europe", "asia", "all"):
+        raise ValueError("Khu vực HMA không hợp lệ: chọn europe, asia hoặc all")
     if not HMA_SCRIPT_PATH.is_file():
         raise FileNotFoundError(f"Khong tim thay script HMA tai: {HMA_SCRIPT_PATH}")
 
@@ -83,12 +86,12 @@ def rotate_hma_random_country(timeout: int = 90, max_attempts: int = 2) -> dict[
     with _hma_lock:
         for attempt in range(1, attempts + 1):
             if attempt == 1:
-                print(f"  [HMA] Kich hoat doi quoc gia ngau nhien qua HMA VPN (Lan {attempt}/{attempts})...", flush=True)
+                print(f"  [HMA] Chon ngau nhien khu vuc {region} qua HMA VPN (Lan {attempt}/{attempts})...", flush=True)
             else:
                 print(f"  [HMA] Thu lai doi quoc gia ngau nhien qua HMA VPN (Lan {attempt}/{attempts})...", flush=True)
 
             try:
-                result = _run_hma_process_once(timeout=timeout)
+                result = _run_hma_process_once(timeout=timeout, region=region)
                 new_ip = result.get("ip", "")
                 country = result.get("country", "")
                 print(f"  [HMA] Doi IP thanh cong qua HMA (Lan {attempt}): IP {new_ip or 'da doi'} ({country or 'ngau nhien'})", flush=True)
