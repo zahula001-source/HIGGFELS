@@ -84,7 +84,7 @@ async def create_video(request: Request):
             pid = task.get("params", {}).get("profile_id")
             created_ts = task.get("created_at_ts", 0)
             # Nếu task tạo > 15s mà Chrome không chạy -> task đã chết
-            if pid and (now_ts - created_ts > 15) and (pid not in running_pids or not is_running(pid)):
+            if pid and not task.get("recheck_after_minutes") and (now_ts - created_ts > 15) and (pid not in running_pids or not is_running(pid)):
                 task["status"] = "error"
                 task["message"] = "Đã dừng (Chrome không còn mở)"
                 save_video_tasks_cache()
@@ -98,7 +98,7 @@ async def create_video(request: Request):
     for task in video_tasks.values():
         if task.get("status") in ["running", "pending"]:
             pid = task.get("params", {}).get("profile_id")
-            if pid and (pid in running_pids or is_running(pid)):
+            if pid and (task.get("recheck_after_minutes") or pid in running_pids or is_running(pid)):
                 used_profiles.add(pid)
     used_profiles.update(running_pids)
 
@@ -207,26 +207,47 @@ async def create_video(request: Request):
 def api_check_video(req: CheckVideoReq):
     import uuid
     import threading
+    params = {"profile_id": req.profile_id, "check_task": True, "higgs_model": req.higgs_model}
+    engine, is_headless = req.engine, req.is_headless
+    if req.recheck_task_id:
+        source = video_tasks.get(req.recheck_task_id, {})
+        source_params = source.get("params", {})
+        if (source.get("status") != "awaiting_recheck"
+                or source_params.get("profile_id") != req.profile_id
+                or not source.get("video_recheck")):
+            raise HTTPException(409, "Không tìm thấy lịch kiểm tra video của profile này.")
+        engine = source_params.get("browser_engine", engine)
+        is_headless = source_params.get("is_headless", is_headless)
+        params.update(
+            higgs_model=source_params.get("higgs_model", req.higgs_model),
+            browser_engine=engine,
+            is_headless=is_headless,
+            save_path=source_params.get("save_path", ""),
+            recheck_task_id=req.recheck_task_id,
+            recheck_again=source["recheck_after_minutes"] == 10,
+        )
     task_id = str(uuid.uuid4())
     video_tasks[task_id] = {
         "status": "pending",
         "message": "Chuẩn bị kiểm tra video...",
         "created_at_ts": time.time(),
-        "params": {"profile_id": req.profile_id, "check_task": True, "higgs_model": getattr(req, "higgs_model", "vip")},
+        "params": params,
     }
+    if req.recheck_task_id:
+        video_tasks[task_id]["video_recheck"] = source["video_recheck"]
     check_video_task_ids.add(task_id)
     def _run_and_cleanup(*args):
         try:
             run_check_video_automation(
                 *args,
-                cancel_first=req.cancel_first,
-                engine=req.engine,
-                generate_ip=req.generate_ip,
-                higgs_model=getattr(req, "higgs_model", "vip"),
+                cancel_first=req.cancel_first and not req.recheck_task_id,
+                engine=engine,
+                generate_ip=req.generate_ip and not req.recheck_task_id,
+                higgs_model=params["higgs_model"],
             )
         finally:
             check_video_task_ids.discard(task_id)
-    t = threading.Thread(target=_run_and_cleanup, args=(task_id, req.profile_id, req.is_headless), daemon=True)
+    t = threading.Thread(target=_run_and_cleanup, args=(task_id, req.profile_id, is_headless), daemon=True)
     t.start()
     return {"ok": True, "task_id": task_id}
 
@@ -323,7 +344,7 @@ def video_status(task_id: str):
 
     # Nếu Chrome biến mất trong khi tác vụ còn pending/running, không để
     # giao diện giữ spinner vô thời hạn ở bất kỳ bước nào (mở trang/upload/check).
-    if task.get("status") in ("pending", "running"):
+    if task.get("status") in ("pending", "running") and not task.get("recheck_after_minutes"):
         now_ts = time.time()
         started_at = float(task.get("created_at_ts") or 0)
         browser_opened_at = float(task.get("browser_opened_at_ts") or 0)

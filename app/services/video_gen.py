@@ -1,4 +1,4 @@
-from app.services.video_history import confirm_generation, refresh_video_history, set_status_zoom_80
+from app.services.video_history import confirm_generation, refresh_video_history, schedule_video_recheck, set_status_zoom_80
 import asyncio
 import threading
 import time
@@ -587,7 +587,8 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
     video_tasks.setdefault(task_id, {}).update(
         status="running",
         message="Đang mở trình duyệt...",
-        generation_detected=False,
+        recheck_after_minutes=None,
+        video_recheck=None,
     )
     video_tasks_chat[task_id] = {"messages": [], "queue": []}
     is_retrying = False
@@ -2301,11 +2302,10 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                     except Exception as e:
                         print(f"Lỗi nhập prompt: {e}")
 
-                # Lấy ID của video cũ (trước khi tạo) để tránh nhận diện nhầm
-                last_asset_id = page.evaluate("""() => {
-                    const firstItem = document.querySelector('#assets-grid > div:first-child');
-                    return firstItem ? firstItem.getAttribute('data-asset-id') : "none";
-                }""")
+                # Ghi lại các video đã có trước khi gửi yêu cầu mới.
+                previous_asset_ids = page.locator('#assets-grid [data-asset-id]').evaluate_all(
+                    "cards => cards.map(card => card.getAttribute('data-asset-id'))"
+                )
 
                 # ── BƯỚC 10: Đổi IP, Kiểm tra Prompt, bật Use free gens và nhấn Generate ──────────────
                 print("=== ĐỔI IP, BẬT FREE GENS VÀ NHẤN GENERATE ===")
@@ -2467,8 +2467,6 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
         import random
         # Random thời gian reload lần tiếp theo (từ 4 đến 7 phút -> 240 đến 420 giây)
         next_reload_target = random.randint(240, 420)
-        was_generating = False
-        generation_recovery_reload_used = False
         processing_wait_time = 0
         
         for i in range(1800):
@@ -2673,7 +2671,6 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                 
                 # Reset i (bộ đếm thời gian) về 0 để chờ thêm 10 phút nữa
                 i = 0
-                was_generating = False
                 processing_wait_time = 0
                 continue
             
@@ -2720,59 +2717,58 @@ def run_video_automation(task_id, prompt, media_paths, profile_id, save_path, is
                 pass
 
             try:
-                eval_res = page.evaluate(f"""() => {{
-                    const result = {{ urls: [], status: '' }};
+                eval_res = page.evaluate("""(previousAssetIds) => {
+                    const result = { urls: [], status: '', assetId: null };
                     // CHỈ lấy video đầu tiên trong danh sách assets-grid (thẻ div chứa video vừa gen xong)
                     const firstItem = document.querySelector('#assets-grid > div:first-child');
                     
-                    if (firstItem && firstItem.getAttribute('data-asset-id') !== '{last_asset_id}') {{
+                    const assetId = firstItem?.getAttribute('data-asset-id');
+                    if (assetId && !previousAssetIds.includes(assetId)) {
+                        result.assetId = assetId;
                         result.status = firstItem.getAttribute('data-job-status') || '';
                         // Kiểm tra trạng thái completed và đảm bảo không lấy nhầm video cũ
-                        if (result.status === 'completed') {{
+                        if (result.status === 'completed') {
                             const video = firstItem.querySelector('video');
-                            if (video) {{
-                                if (video.src && (video.src.startsWith('http') || video.src.startsWith('blob'))) {{
+                            if (video) {
+                                if (video.src && (video.src.startsWith('http') || video.src.startsWith('blob'))) {
                                     result.urls.push(video.src);
-                                }} else {{
+                                } else {
                                     const s = video.querySelector('source');
-                                    if (s && s.src && (s.src.startsWith('http') || s.src.startsWith('blob'))) {{
+                                    if (s && s.src && (s.src.startsWith('http') || s.src.startsWith('blob'))) {
                                         result.urls.push(s.src);
-                                    }}
-                                }}
-                            }}
-                        }}
-                    }}
+                                    }
+                                }
+                            }
+                        }
+                    }
                     
-                    if (result.status !== 'completed') {{
+                    if (result.status !== 'completed') {
                         const spans = Array.from(document.querySelectorAll('span, div'));
-                        if (spans.some(el => el.innerText && el.innerText.trim() === 'Generating')) {{
+                        if (spans.some(el => el.innerText && el.innerText.trim() === 'Generating')) {
                             result.status = 'generating';
-                        }}
-                    }}
+                        }
+                    }
                     return result;
-                }}""")
+                }""", previous_asset_ids)
                 new_url = eval_res.get('urls', [])
                 current_job_status = eval_res.get('status', '')
                 if new_url and len(new_url) > 0:
                     video_urls = new_url
                     video_url = new_url[0]
                     break
-                if was_generating and current_job_status != 'generating' and not generation_recovery_reload_used:
-                    generation_recovery_reload_used = True
-                    video_tasks[task_id]["message"] = "🔄 Generating biến mất, đang tải lại trang để lấy video..."
-                    print(f"--- Task {task_id}: Generating biến mất khi chưa có video; reload để khôi phục kết quả...")
-                    page.reload(timeout=30000)
-                    page.wait_for_load_state('domcontentloaded')
-                    page.wait_for_timeout(5000)
-                    continue
-                if current_job_status == 'generating':
-                    was_generating = True
-                    video_tasks[task_id]["generation_detected"] = True
             except:
                 current_job_status = ''
-                pass
+
+            task = video_tasks[task_id]
+            if current_job_status == 'generating' and not (task.get("force_stop") or task.get("cancel_and_gen_requested")):
+                task["video_recheck"] = {
+                    "asset_id": eval_res.get("assetId"),
+                    "previous_asset_ids": previous_asset_ids,
+                }
+                schedule_video_recheck(context, profile_id, task, 10)
+                return
                 
-            if current_job_status != 'generating' and not was_generating:
+            if current_job_status != 'generating':
                 processing_wait_time += 1
             else:
                 processing_wait_time = 0

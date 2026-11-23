@@ -135,6 +135,19 @@ async def rotate_hma_endpoint(region: str = "europe"):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@router.get("/api/hma/countries")
+def get_hma_countries(region: str = "europe"):
+    from app.services.hma_vpn import get_hma_country_history
+
+    if region not in ("europe", "asia", "all"):
+        raise HTTPException(400, "Khu vực HMA không hợp lệ")
+    try:
+        return get_hma_country_history(region)
+    except (OSError, ValueError) as error:
+        raise HTTPException(500, "Không đọc được danh sách quốc gia HMA") from error
+
+
 class TelegramConfigReq(BaseModel):
     enabled: bool = False
     bot_token: str = ""

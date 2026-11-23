@@ -1,4 +1,4 @@
-from app.services.video_history import confirm_generation, refresh_video_history, set_status_zoom_80
+from app.services.video_history import confirm_generation, get_recheck_video, refresh_video_history, schedule_video_recheck, set_status_zoom_80
 import asyncio
 import threading
 import time
@@ -36,7 +36,7 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
     }
     profile = manager.get_profile(profile_id)
     if not profile:
-        video_tasks[task_id] = {"status": "error", "message": "Profile not found"}
+        video_tasks[task_id].update(status="error", message="Profile not found")
         return
         
     try:
@@ -324,6 +324,7 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                     engine=engine,
                     cancel_first=cancel_first,
                     generate_ip=generate_ip,
+                    higgs_model=higgs_model,
                 )
                 return
             
@@ -354,6 +355,10 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
             
             import random, time
             next_reload_time = time.time() + random.randint(240, 420)
+            task = video_tasks[task_id]
+            recheck = task.get("video_recheck")
+            recheck_deadline = time.monotonic() + 12 if task["params"].get("recheck_again") else None
+            video_urls = None
             
             if cancel_first:
                 video_tasks[task_id]["cancel_and_gen_requested"] = True
@@ -622,10 +627,11 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                                 else:
                                     print(f"--- Task {task_id} (Cancel+Gen): ❌ Chưa thấy thẻ Processing, thử lại quá trình tải trang và ấn Generate...")
                                 
-                            video_tasks[task_id] = {"status": "running", "message": "✅ Đã Cancel và Generate lại! Đang chờ..."}
+                            video_tasks[task_id].update(status="running", message="✅ Đã Cancel và Generate lại! Đang chờ...")
+                            recheck = None
                         except Exception as ex:
                             print(f"Lỗi khi thực thi Cancel + Gen trong Check: {ex}")
-                            video_tasks[task_id] = {"status": "running", "message": f"⚠️ Lỗi Cancel + Gen: {str(ex)}"}
+                            video_tasks[task_id].update(status="running", message=f"⚠️ Lỗi Cancel + Gen: {ex}")
                     
                         continue
                 
@@ -643,6 +649,20 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                         processing_start_time = time.time()
                         continue
                         
+                    if recheck:
+                        video_url = get_recheck_video(page, recheck)
+                        if video_url:
+                            video_urls = [video_url]
+                            break
+                        if recheck_deadline is not None and time.monotonic() >= recheck_deadline:
+                            schedule_video_recheck(context, profile_id, video_tasks[task_id], 5)
+                            with pw_lock:
+                                p.stop()
+                            return
+                        video_tasks[task_id]["message"] = "⏳ Đang chờ video vừa tạo xuất hiện trong History…"
+                        page.wait_for_timeout(2000)
+                        continue
+
                     status_info = page.evaluate("""() => {
                         // Kiểm tra Processing
                         let spans = document.querySelectorAll('span');
@@ -762,39 +782,42 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                         page.wait_for_timeout(3000)
                         continue
                         
-            page.wait_for_timeout(2000)
-            
-            # Get Video URLs - CHỈ LẤY VIDEO TRONG assets-grid (video kết quả thật)
-            video_urls = page.evaluate("""() => {
-                let urls = [];
-                // Ưu tiên lấy từ #assets-grid với data-job-status="completed"
-                let grid = document.getElementById('assets-grid');
-                if(grid) {
-                    let cells = grid.querySelectorAll('[data-job-status="completed"]');
-                    for(let cell of cells) {
-                        let v = cell.querySelector('video');
-                        if(v && v.src && v.src.includes('http') && !v.src.includes('blob:')) {
-                            urls.push(v.src);
-                        } else if(v && v.src && v.src.includes('blob:')) {
-                            urls.push(v.src);
+            if video_urls is None:
+                page.wait_for_timeout(2000)
+                # Get Video URLs - CHỈ LẤY VIDEO TRONG assets-grid (video kết quả thật)
+                video_urls = page.evaluate("""() => {
+                    let urls = [];
+                    // Ưu tiên lấy từ #assets-grid với data-job-status="completed"
+                    let grid = document.getElementById('assets-grid');
+                    if(grid) {
+                        let cells = grid.querySelectorAll('[data-job-status="completed"]');
+                        for(let cell of cells) {
+                            let v = cell.querySelector('video');
+                            if(v && v.src && v.src.includes('http') && !v.src.includes('blob:')) {
+                                urls.push(v.src);
+                            } else if(v && v.src && v.src.includes('blob:')) {
+                                urls.push(v.src);
+                            }
                         }
                     }
-                }
-                // Nếu không tìm được trong grid, fallback lấy video từ history có URL cloudfront/cdn
-                if(urls.length === 0) {
-                    document.querySelectorAll('video').forEach(v => {
-                        if(v.src && v.src.includes('cloudfront.net')) urls.push(v.src);
-                        if(v.src && v.src.includes('higgsfield') && v.src.includes('.mp4')) urls.push(v.src);
-                    });
-                }
-                return [...new Set(urls)];
-            }""")
+                    // Nếu không tìm được trong grid, fallback lấy video từ history có URL cloudfront/cdn
+                    if(urls.length === 0) {
+                        document.querySelectorAll('video').forEach(v => {
+                            if(v.src && v.src.includes('cloudfront.net')) urls.push(v.src);
+                            if(v.src && v.src.includes('higgsfield') && v.src.includes('.mp4')) urls.push(v.src);
+                        });
+                    }
+                    return [...new Set(urls)];
+                }""")
             
             if video_urls:
                 import urllib.parse
-                out_dir = Path.home() / "Downloads"
+                save_path = task["params"].get("save_path")
+                out_dir = Path(save_path) if save_path else Path.home() / "Downloads"
                 all_result_urls = []
                 try:
+                    out_dir.mkdir(parents=True, exist_ok=True)
+                    video_tasks[task_id]["message"] = "✅ Video đã sẵn sàng, đang tải xuống..."
                     for v_idx, v_url in enumerate(video_urls[:1]): # Get latest 1
                         video_url = v_url
                         out_file = out_dir / (f"{task_id}.mp4")
@@ -820,6 +843,8 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                                 "Referer": "https://higgsfield.ai/",
                                 "Accept": "*/*"
                             })
+                            if not resp.ok:
+                                raise RuntimeError(f"HTTP {resp.status}")
                             with open(out_file, "wb") as f:
                                 f.write(resp.body())
                                 
@@ -853,9 +878,9 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
                         p_obj.notes = "đã ra video"
                         manager._save()
                 except Exception as e:
-                    video_tasks[task_id] = {"status": "error", "message": f"Lỗi khi tải video: {e}"}
+                    video_tasks[task_id].update(status="error", message=f"Lỗi khi tải video: {e}")
             else:
-                video_tasks[task_id] = {"status": "error", "message": "Không tìm thấy video nào!"}
+                video_tasks[task_id].update(status="error", message="Không tìm thấy video nào!")
                 
             page.wait_for_timeout(2000)
             if not connected_via_cdp:
@@ -866,7 +891,7 @@ def run_check_video_automation(task_id: str, profile_id: str, is_headless: bool 
     except Exception as e:
         import traceback
         traceback.print_exc()
-        video_tasks[task_id] = {"status": "error", "message": str(e)}
+        video_tasks[task_id].update(status="error", message=str(e))
         if "context" in locals() and not connected_via_cdp:
             try: context.close()
             except: pass

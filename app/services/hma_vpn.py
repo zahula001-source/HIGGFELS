@@ -6,12 +6,72 @@ import re
 import sys
 import subprocess
 import threading
+import ast
+import json
+import os
+import random
+import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 
-from app.core.config import BASE_DIR
+from app.core.config import BASE_DIR, DATA_DIR
 
 HMA_SCRIPT_PATH = Path(BASE_DIR) / "HMA XOAY" / "hma_tool" / "hma_app_switcher.py"
 _hma_lock = threading.Lock()
+_history_lock = threading.RLock()
+HMA_COUNTRY_HISTORY = Path(DATA_DIR) / "hma_country_history.json"
+
+
+def _country_catalog():
+    # Read the switcher's literal lists without importing its Windows UI code.
+    tree = ast.parse(HMA_SCRIPT_PATH.read_text(encoding="utf-8"))
+    values = {}
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id in ("COUNTRIES", "REGION_COUNTRIES"):
+                    values[target.id] = ast.literal_eval(node.value)
+    countries = values["COUNTRIES"]
+    regions = values["REGION_COUNTRIES"]
+    return {"all": countries, **{key: [c for c in countries if c in region] for key, region in regions.items()}}
+
+
+def _load_history():
+    if not HMA_COUNTRY_HISTORY.exists():
+        return {}
+    data = json.loads(HMA_COUNTRY_HISTORY.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError("Dữ liệu lịch sử quốc gia HMA không hợp lệ")
+    return data
+
+
+def _save_history(data):
+    HMA_COUNTRY_HISTORY.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=HMA_COUNTRY_HISTORY.parent, delete=False) as output:
+            temp_path = output.name
+            json.dump(data, output, ensure_ascii=False, indent=2)
+        os.replace(temp_path, HMA_COUNTRY_HISTORY)
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            os.unlink(temp_path)
+
+
+def get_hma_country_history(region="europe"):
+    region = str(region or "europe").strip().lower()
+    catalog = _country_catalog()
+    if region not in catalog:
+        raise ValueError("Khu vực HMA không hợp lệ")
+    with _history_lock:
+        history = _load_history().get(region, {})
+        used = history.get("used", {})
+        if not isinstance(used, dict):
+            raise ValueError("Dữ liệu lịch sử quốc gia HMA không hợp lệ")
+        countries = catalog[region]
+        return {"region": region, "round": history.get("round", 1),
+                "countries": [{"name": name, "used": name in used, "used_at": used.get(name)} for name in countries],
+                "used_count": sum(name in used for name in countries), "total": len(countries)}
 
 
 def is_hma_available() -> bool:
@@ -19,10 +79,10 @@ def is_hma_available() -> bool:
     return HMA_SCRIPT_PATH.is_file()
 
 
-def _run_hma_process_once(timeout: int = 90, region: str = "europe") -> dict[str, str]:
+def _run_hma_process_once(timeout: int = 90, region: str = "europe", country: str = "") -> dict[str, str]:
     """Thực thi 1 lần đổi IP HMA trong khu vực được chọn."""
     proc = subprocess.run(
-        [sys.executable, str(HMA_SCRIPT_PATH), "randomcountry", region],
+        [sys.executable, str(HMA_SCRIPT_PATH), "country", country],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -42,7 +102,7 @@ def _run_hma_process_once(timeout: int = 90, region: str = "europe") -> dict[str
 
     # Trích xuất quốc gia ngẫu nhiên đã chọn
     country = ""
-    c_match = re.search(r"Quoc gia ngau nhien:\s*([^\r\n]+)", full_log)
+    c_match = re.search(r"^Chon:\s*([^\r\n]+)", full_log, re.MULTILINE)
     if c_match:
         country = c_match.group(1).strip()
 
@@ -53,6 +113,9 @@ def _run_hma_process_once(timeout: int = 90, region: str = "europe") -> dict[str
 
     if "Khong tim thay quoc gia nao khop" in full_log:
         raise RuntimeError(f"HMA khong tim thay quoc gia phu hop: {full_log[:200]}")
+
+    if not country or country.casefold() != str(c_match.group(1).strip() if c_match else "").casefold():
+        raise RuntimeError("HMA chưa xác nhận được quốc gia đã chọn")
 
     if not new_ip:
         current_match = re.search(r"IP hien tai:\s*([\d\.]+)", full_log)
@@ -91,7 +154,21 @@ def rotate_hma_random_country(timeout: int = 90, max_attempts: int = 2, region: 
                 print(f"  [HMA] Thu lai doi quoc gia ngau nhien qua HMA VPN (Lan {attempt}/{attempts})...", flush=True)
 
             try:
-                result = _run_hma_process_once(timeout=timeout, region=region)
+                snapshot = get_hma_country_history(region)
+                available = [item["name"] for item in snapshot["countries"] if not item["used"]]
+                if not available:
+                    raise RuntimeError("Không còn quốc gia khả dụng trong khu vực HMA")
+                chosen = random.choice(available)
+                print(f"  [HMA] Vong {snapshot['round']}: chon {chosen} ({snapshot['used_count']}/{snapshot['total']} da dung)", flush=True)
+                result = _run_hma_process_once(timeout=timeout, region=region, country=chosen)
+                with _history_lock:
+                    history = _load_history()
+                    state = history.setdefault(region, {"round": 1, "used": {}})
+                    state.setdefault("used", {})[chosen] = datetime.now(timezone.utc).isoformat()
+                    if len(set(state["used"]) & {item["name"] for item in snapshot["countries"]}) >= snapshot["total"]:
+                        state["used"] = {}
+                        state["round"] = int(state.get("round", 1)) + 1
+                    _save_history(history)
                 new_ip = result.get("ip", "")
                 country = result.get("country", "")
                 print(f"  [HMA] Doi IP thanh cong qua HMA (Lan {attempt}): IP {new_ip or 'da doi'} ({country or 'ngau nhien'})", flush=True)

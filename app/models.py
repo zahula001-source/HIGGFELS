@@ -62,6 +62,7 @@ class CheckVideoReq(BaseModel):
     generate_hma: bool = False
     hma_region: str = "europe"
     higgs_model: str = "vip"
+    recheck_task_id: Optional[str] = None
 
 class CancelGenReq(BaseModel):
     profile_id: str

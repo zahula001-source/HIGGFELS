@@ -176,6 +176,10 @@ body{background:#0b0e14;color:#e5e7eb;min-height:100vh;}
          <input type="checkbox" id="globalGenerateHma" oncontextmenu="openHmaRegionMenu(event); return false;" onchange="onGenerateHmaChange(this); saveUIState()" style="cursor:pointer;">
          <label for="globalGenerateHma" oncontextmenu="openHmaRegionMenu(event); return false;" style="font-size:12px; color:#f59e0b; font-weight:bold; margin:0; cursor:pointer;" title="Bật Sinh IP HMA; chuột phải để chọn khu vực">🛡️ Sinh IP HMA <span id="hmaRegionLabel" style="font-size:10px;color:#fde68a;">(Châu Âu)</span></label>
       </div>
+
+      <button id="hmaCountryListBtn" type="button" class="btn btn-ghost" onclick="openHmaCountryList()"
+        aria-haspopup="dialog" title="Xem các quốc gia HMA đã dùng trong vòng hiện tại"
+        style="padding:4px 8px;font-size:12px;height:auto;white-space:nowrap;border-color:#0e7490;color:#67e8f9;background:#123044;">🌍 Quốc gia HMA</button>
       
       <div style="display:flex; align-items:center; gap:6px; border:1px solid #334155; padding: 4px 8px; border-radius: 6px; background: #1e293b; cursor:pointer;" title="Bấm để chọn thư mục lưu (Để trống = lưu vào mục Downloads của máy)" onclick="selectFolder()">
          <span style="font-size:14px;">📁</span>
@@ -672,6 +676,28 @@ body{background:#0b0e14;color:#e5e7eb;min-height:100vh;}
   </div>
 </div>
 
+<dialog id="hmaCountryDialog" aria-labelledby="hmaCountryTitle"
+  style="position:fixed;inset:auto;margin:0;max-height:calc(100vh - 24px);overflow-y:auto;width:min(480px, calc(100vw - 32px));max-width:none;box-sizing:border-box;background:#151d2d;color:#e2e8f0;border:1px solid #334155;border-radius:14px;padding:18px;">
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;">
+    <h2 id="hmaCountryTitle" style="margin:0;font-size:16px;">Quốc gia HMA</h2>
+    <form method="dialog">
+      <button class="btn btn-sm btn-ghost" aria-label="Đóng danh sách quốc gia HMA">✕</button>
+    </form>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+    <select id="hmaCountryRegion" aria-label="Khu vực HMA" class="select" onchange="loadHmaCountryList()">
+      <option value="europe">Châu Âu</option>
+      <option value="asia">Châu Á</option>
+      <option value="all">Tất cả khu vực</option>
+    </select>
+    <button type="button" class="btn btn-sm btn-ghost" onclick="loadHmaCountryList()">Làm mới</button>
+  </div>
+  <p id="hmaCountrySummary" role="status" style="margin:0 0 6px;font-size:13px;"></p>
+  <p id="hmaCountryLatest" style="margin:0 0 12px;font-size:12px;color:#94a3b8;"></p>
+  <ul id="hmaCountryItems"
+    style="list-style:none;margin:0;padding:0;max-height:48vh;overflow:auto;display:grid;gap:5px;"></ul>
+</dialog>
+
 <script>
 let allProfiles = [];
 let currentCookieProfileId = null;
@@ -716,6 +742,76 @@ function updateHmaRegionLabel() {
   const labels = { europe: 'Châu Âu', asia: 'Châu Á', all: 'Tất cả' };
   const label = document.getElementById('hmaRegionLabel');
   if (label) label.textContent = `(${labels[getHmaRegion()]})`;
+}
+
+function openHmaCountryList() {
+  const dialog = document.getElementById('hmaCountryDialog');
+  document.getElementById('hmaCountryRegion').value = getHmaRegion();
+  const button = document.getElementById('hmaCountryListBtn');
+  dialog.style.left = '0px';
+  dialog.style.top = '0px';
+  dialog.showModal();
+
+  const buttonRect = button.getBoundingClientRect();
+  const dialogRect = dialog.getBoundingClientRect();
+  const viewportPadding = 12;
+  const left = Math.max(viewportPadding, Math.min(
+    buttonRect.left,
+    window.innerWidth - dialogRect.width - viewportPadding
+  ));
+  let top = buttonRect.bottom + 8;
+  if (top + dialogRect.height > window.innerHeight - viewportPadding) {
+    top = Math.max(viewportPadding, buttonRect.top - dialogRect.height - 8);
+  }
+  dialog.style.left = `${left}px`;
+  dialog.style.top = `${top}px`;
+
+  loadHmaCountryList();
+}
+
+let hmaCountryRequest = 0;
+
+async function loadHmaCountryList() {
+  const request = ++hmaCountryRequest;
+  const region = document.getElementById('hmaCountryRegion').value;
+  const summary = document.getElementById('hmaCountrySummary');
+  const latest = document.getElementById('hmaCountryLatest');
+  const list = document.getElementById('hmaCountryItems');
+  summary.textContent = 'Đang tải danh sách…';
+  latest.textContent = '';
+  list.replaceChildren();
+
+  try {
+    const response = await fetch(`/api/hma/countries?region=${encodeURIComponent(region)}`, { cache: 'no-store' });
+    if (!response.ok) throw new Error('Không tải được danh sách quốc gia HMA. Hãy bấm Làm mới để thử lại.');
+    const data = await response.json();
+    if (request !== hmaCountryRequest) return;
+
+    summary.textContent = `Vòng ${data.round} · Đã dùng ${data.used_count}/${data.total} · Còn ${data.total - data.used_count}`;
+    if (data.last_country) {
+      const at = new Date(data.last_used_at).toLocaleString('vi-VN');
+      latest.textContent = `Gần nhất: ${data.last_country} · ${at}`;
+    }
+    const rows = [...data.countries].sort((a, b) =>
+      Number(b.used) - Number(a.used) ||
+      (b.used_at || '').localeCompare(a.used_at || '') ||
+      a.name.localeCompare(b.name)
+    );
+    for (const country of rows) {
+      const row = document.createElement('li');
+      row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;border-radius:6px;background:#202a3b;font-size:13px;';
+      const name = document.createElement('span');
+      name.textContent = country.name;
+      const state = document.createElement('span');
+      state.textContent = country.used ? '● Đã dùng' : '● Chưa dùng';
+      state.style.color = country.used ? '#f8fafc' : '#4ade80';
+      if (country.used_at) state.title = new Date(country.used_at).toLocaleString('vi-VN');
+      row.append(name, state);
+      list.append(row);
+    }
+  } catch (error) {
+    if (request === hmaCountryRequest) summary.textContent = error.message;
+  }
 }
 
 function openHmaRegionMenu(event) {
@@ -2695,25 +2791,35 @@ async function startBatchCheckFreeGen() {
 // ========================================================
 
 let pasteMailProfileId = null;
-function openPasteMailModal(id) {
-    pasteMailProfileId = id;
+function openPasteMailModal(id, readOnly = false) {
+  pasteMailProfileId = readOnly ? null : id;
     const p = allProfiles.find(x => x.id === id);
-    document.getElementById("pasteMailTitle").textContent = "Dán thông tin tài khoản" + (p ? " - " + p.name : "");
+    const title = readOnly ? "Thông tin tài khoản" : "Dán thông tin tài khoản";
+    document.getElementById("pasteMailTitle").textContent = title + (p ? " - " + p.name : "");
     let currentAcc = (p && p.ms_account) ? p.ms_account : "";
     if (!currentAcc && p) {
         if (p.ms_email) currentAcc = p.ms_email;
         else if (p.name && p.name.includes("@")) currentAcc = p.name;
     }
-    document.getElementById("pasteMailInput").value = currentAcc;
+    const input = document.getElementById("pasteMailInput");
+    input.value = currentAcc;
+    input.readOnly = readOnly;
+    input.placeholder = readOnly ? "Chưa lưu thông tin cho tài khoản này." : "Dán dòng tài khoản vào đây: email|password|token|guid";
+    document.getElementById("pasteMailHelp").hidden = readOnly;
+    document.getElementById("pasteMailSave").style.display = readOnly ? "none" : "";
+    document.getElementById("pasteMailClose").textContent = readOnly ? "Đóng" : "Hủy";
     document.getElementById("pasteMailStatus").textContent = "";
     document.getElementById("pasteMailModal").classList.add("active");
-    setTimeout(() => document.getElementById("pasteMailInput").focus(), 100);
+    input.focus();
 }
 function closePasteMailModal() {
     document.getElementById("pasteMailModal").classList.remove("active");
+  document.getElementById("pasteMailInput").value = "";
     pasteMailProfileId = null;
 }
 async function saveMsAccount() {
+    const profileId = pasteMailProfileId;
+    if (!profileId) return;
     const raw = document.getElementById("pasteMailInput").value.trim();
     if (!raw) { alert("Vui lòng dán thông tin tài khoản vào!"); return; }
     const parts = raw.split("|");
@@ -2722,17 +2828,21 @@ async function saveMsAccount() {
     statusEl.style.color = "#f59e0b";
     statusEl.textContent = "⏳ Đang lưu...";
     try {
-        const res = await fetch(`/api/profiles/${pasteMailProfileId}/set-ms-account`, {
+      const res = await fetch(`/api/profiles/${profileId}/set-ms-account`, {
             method: "POST",
             headers: {"Content-Type": "application/json"},
             body: JSON.stringify({raw})
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || data.message);
+        const profile = allProfiles.find(p => p.id === profileId);
+        if (profile) Object.assign(profile, { ms_account: raw, ms_email: data.email });
+        if (pasteMailProfileId !== profileId) return;
         statusEl.style.color = "#10b981";
         statusEl.textContent = "✅ Đã lưu! Email: " + data.email;
-        setTimeout(closePasteMailModal, 1500);
+        setTimeout(() => { if (pasteMailProfileId === profileId) closePasteMailModal(); }, 1500);
     } catch(e) {
+        if (pasteMailProfileId !== profileId) return;
         statusEl.style.color = "#ef4444";
         statusEl.textContent = "❌ Lỗi: " + e.message;
     }
@@ -2850,8 +2960,9 @@ async function addVideoForm(force_fId = null, forceProfileId = null, autoSelect 
         <div class="video-form-grid" style="display:flex;flex-direction:column;gap:12px;margin-top:24px;">
           <!-- Profile & Buttons (Đưa lên đầu) -->
           <div class="form-group" style="margin:0;">
-            <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px; font-weight:600; color:#9ca3af; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.05em;">
+            <div style="display:flex; flex-wrap:wrap; gap:4px; justify-content:space-between; align-items:center; font-size:11px; font-weight:600; color:#9ca3af; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.05em;">
               <span ondblclick="quickRenameProfile(${fId})" style="cursor:pointer; user-select:none; color:#46c8ff; text-decoration: underline;" title="Click đúp để đổi tên Profile đang chọn">👤 Profile Chrome ✏️</span>
+              <button type="button" class="btn btn-ghost" style="padding:0 5px;color:#d8b4fe;font-size:10px;line-height:1.5;border-color:#a855f7;border-radius:4px;white-space:nowrap;" onclick="viewVideoAccount(${fId})" title="Xem thông tin tài khoản của Profile đang chọn">Xem acc</button>
               <span style="display:flex;gap:4px;align-items:center;">
                 <button id="videoProfileTag_${fId}" class="btn btn-ghost" style="padding:0 5px;color:#fbbf24;font-size:10px;height:auto;line-height:1.5;border:1px solid #b45309;border-radius:4px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" onclick="editVideoProfileTag(${fId}, event)" title="Chỉnh tag cho Profile đang chọn">🏷️ Gắn tag</button>
                 <button class="btn btn-ghost" style="padding:0 5px; color:#22d3ee; font-size:11px; height:auto; line-height:1.5; border:1px solid #22d3ee; border-radius:4px;" onclick="cloneVideoCard(${fId})" title="Clone toàn bộ thẻ sang tài khoản khác">⧉ Clone</button>
@@ -2868,7 +2979,7 @@ async function addVideoForm(force_fId = null, forceProfileId = null, autoSelect 
               <button class="btn btn-ghost" style="height:40px;padding:0 8px;font-size:11px;font-weight:bold;border:1px solid #10b981;color:#10b981;" onclick="let p = document.getElementById('videoProfileId_'+${fId}).value; if(p) { addRecentProfile(p); launchProfile(p, true); } else alert('Chọn Profile trước!');" title="Mở Chrome thủ công">
                 🌐 Mở Chrome
               </button>
-              <button class="btn btn-ghost" style="height:40px;padding:0 8px;font-size:11px;font-weight:bold;border:1px solid #eab308;color:#eab308;" onclick="submitCheckVideoForFid(${fId})" title="Kiểm tra trạng thái Video">
+              <button id="videoCheckBtn_${fId}" class="btn btn-ghost" style="height:40px;padding:0 8px;font-size:11px;font-weight:bold;border:1px solid #eab308;color:#eab308;" onclick="submitCheckVideoForFid(${fId})" title="Kiểm tra trạng thái Video">
                 👀 Check
               </button>
               <div class="timer-dropdown-container" style="position:relative;display:inline-block;">
@@ -3315,6 +3426,8 @@ function handleVideoProfileChange(fId, selectEl) {
             return;
         }
     }
+    const timer = window._videoTimers?.[fId];
+    if (timer?.recheckTaskId && timer.pId !== selected) cancelVideoTimer(fId);
     selectEl.dataset.previousValue = selected;
     updateVideoCardTitle(fId, selectEl);
     populateVideoProfiles();
@@ -3369,6 +3482,12 @@ function editVideoProfileTag(fId, event) {
   const profileId = document.getElementById(`videoProfileId_${fId}`)?.value;
   if (!profileId) return showToast('Chọn Profile trước khi sửa tag.');
   openTagModal(profileId, event);
+}
+
+function viewVideoAccount(fId) {
+  const profileId = document.getElementById(`videoProfileId_${fId}`)?.value;
+  if (!profileId) return showToast('Chọn Profile trước khi xem tài khoản.');
+  openPasteMailModal(profileId, true);
 }
 
 async function reloadChromeTab(fId) {
@@ -3591,10 +3710,10 @@ function dataURLtoBlob(dataurl) {
 // ===== VIDEO: ĐA LUỒNG (nhiều task song song) =====
 const videoTaskPolls = {};  // fId -> intervalId
 const fIdToTaskId = {}; // map fId to actual task_id
-window._videoAutoTimerTasks = window._videoAutoTimerTasks || new Set();
 const fIdToVideoTaskId = {}; // task video riêng, không dùng chung với task check/account
 
 async function startCancelAndGen(fId) {
+  if (window._videoTimers?.[fId]?.recheckTaskId) return showToast('Thẻ đang hẹn giờ kiểm tra video.');
   const currentProf = document.getElementById(`videoProfileId_${fId}`)?.value;
   if (currentProf) addRecentProfile(currentProf);
   // Task tạo video được lưu ở cả hai map. Sau khi khôi phục UI/localStorage,
@@ -3805,6 +3924,7 @@ function submitVideoProfileName(event) {
 }
 
 async function startVideoCreationDynamic(fId) {
+  if (window._videoTimers?.[fId]?.recheckTaskId) return showToast('Thẻ đang hẹn giờ kiểm tra video.');
   if (typeof backendConfigSave !== "undefined" && !await backendConfigSave) return;
   const prompt = document.getElementById(`videoPrompt_${fId}`).value.trim();
   const profileId = document.getElementById(`videoProfileId_${fId}`).value;
@@ -3970,28 +4090,31 @@ async function pollTaskStatusDynamic(fId, taskId) {
     const data = await res.json();
     
     const bar = document.getElementById(`vtask_status_${fId}`);
-    if (!bar) { clearInterval(videoTaskPolls[fId]); return; }
+    if (fIdToTaskId[fId] !== taskId) return;
+    if (!bar) { clearInterval(videoTaskPolls[fId]); return data.status; }
+
+    if (data.status === 'awaiting_recheck') {
+      clearInterval(videoTaskPolls[fId]);
+      delete videoTaskPolls[fId];
+      delete fIdToTaskId[fId];
+      const btn = document.getElementById(`createVideoBtn_${fId}`);
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = '▶️ Tạo Video';
+      }
+      bar.style.display = 'none';
+      const profileId = document.getElementById(`videoProfileId_${fId}`)?.value;
+      if (profileId && profileId === data.params?.profile_id) {
+        await startTimerForFid(fId, data.recheck_after_minutes, taskId);
+      }
+      return data.status;
+    }
     
     const icon = (data.status === "running" || data.status === "pending") ? '<div class="spinner" style="flex-shrink:0;"></div>' : (data.status === "done" || data.status === "success") ? '<span style="flex-shrink:0;">✅</span>' : '<span style="flex-shrink:0;">❌</span>';
     const cssClass = (data.status === "success") ? "done" : (data.status || "");
     bar.className = "status-bar " + cssClass;
     bar.style.display = "flex";
     bar.innerHTML = `${icon} <div style="font-size:11px;flex:1;word-break:break-word;max-height:80px;overflow-y:auto;white-space:pre-wrap;">${data.message || ""}</div>`;
-
-    if (data.generation_detected && !window._videoAutoTimerTasks.has(taskId)) {
-      const profileSelect = document.getElementById(`videoProfileId_${fId}`);
-      if (profileSelect && profileSelect.value) {
-        window._videoAutoTimerTasks.add(taskId);
-        startTimerForFid(fId, 10, false).catch(e => {
-          console.error("Không thể tự hẹn giờ kiểm tra video:", e);
-          window._videoAutoTimerTasks.delete(taskId);
-          if (!videoTaskPolls[fId]) {
-            videoTaskPolls[fId] = setInterval(() => pollTaskStatusDynamic(fId, taskId), 5000);
-          }
-          showToast(`❌ Không thể đóng Chrome để hẹn giờ: ${e.message}`);
-        });
-      }
-    }
 
     const vform = document.getElementById(`vform_${fId}`);
     if (vform) {
@@ -4098,10 +4221,10 @@ async function pollTaskStatusDynamic(fId, taskId) {
           // Nếu là check video task → nút "🔍 Check lại", ngược lại "🔄 Thử lại ngay"
           const retryBtn = document.getElementById(`vtask_retry_${fId}`);
           if (retryBtn) {
-              const isCheckTask = data.message && (data.message.includes('Dừng') || data.message.includes('dừng') || data.message.includes('kiểm tra'));
+            const isCheckTask = data.params?.check_task || (data.message && (data.message.includes('Dừng') || data.message.includes('dừng') || data.message.includes('kiểm tra')));
               if (isCheckTask) {
                   retryBtn.textContent = '🔍 Check lại';
-                  retryBtn.onclick = function() { submitCheckVideoForFid(fId); };
+                retryBtn.onclick = function () { submitCheckVideoForFid(fId, data.params?.recheck_task_id); };
               } else {
                   retryBtn.textContent = '🔄 Thử lại ngay';
                   retryBtn.onclick = function() { retryTaskDynamic(fId); };
@@ -4117,6 +4240,7 @@ async function pollTaskStatusDynamic(fId, taskId) {
           }
       }
     }
+    return data.status;
   } catch(e) {
     console.error(e);
   }
@@ -5188,14 +5312,26 @@ function closeCheckVideoModal() {
 }
 
 // Chạy check video cho 1 fId cụ thể (dùng cho nút Check lại)
-async function submitCheckVideoForFid(fId) {
+async function submitCheckVideoForFid(fId, recheckTaskId = null) {
   const profileSelect = document.getElementById(`videoProfileId_${fId}`);
   if (!profileSelect || !profileSelect.value) { alert('Không tìm thấy profile!'); return; }
+  const checkBtn = document.getElementById(`videoCheckBtn_${fId}`);
+  if (checkBtn?.disabled) return;
+  if (checkBtn) checkBtn.disabled = true;
   const pId = profileSelect.value;
+  const timer = window._videoTimers?.[fId];
+  if (timer?.recheckTaskId && !recheckTaskId) {
+    if (timer.pId === pId) recheckTaskId = timer.recheckTaskId;
+    cancelVideoTimer(fId, false);
+  }
   addRecentProfile(pId);
   
   const retryBtn = document.getElementById(`vtask_retry_${fId}`);
-  if (retryBtn) retryBtn.style.display = 'none';
+  if (retryBtn) {
+    retryBtn.style.display = 'none';
+    retryBtn.textContent = '🔍 Check lại';
+    retryBtn.onclick = () => submitCheckVideoForFid(fId, recheckTaskId);
+  }
   
   const statusBar = document.getElementById(`vtask_status_${fId}`);
   if (statusBar) {
@@ -5206,6 +5342,14 @@ async function submitCheckVideoForFid(fId) {
   
   activeCheckVideoCount += 1;
   updateStopCheckBtn();
+  let finished = false;
+  const finishCheck = () => {
+    if (finished) return;
+    finished = true;
+    if (checkBtn) checkBtn.disabled = false;
+    activeCheckVideoCount = Math.max(0, activeCheckVideoCount - 1);
+    updateStopCheckBtn();
+  };
   
   const globalHeadless = document.getElementById('globalHeadless') ? document.getElementById('globalHeadless').checked : false;
   try {
@@ -5216,36 +5360,28 @@ async function submitCheckVideoForFid(fId) {
         profile_id: pId,
         is_headless: globalHeadless,
         engine: document.getElementById("globalBrowserEngine")?.value || "chrome",
-        higgs_model: document.getElementById(`videoHiggsModel_${fId}`)?.value || "vip"
+        higgs_model: document.getElementById(`videoHiggsModel_${fId}`)?.value || "vip",
+        recheck_task_id: recheckTaskId
       })
     });
     const data = await res.json();
     if (data.ok && data.task_id) {
       fIdToTaskId[fId] = data.task_id;
       if (videoTaskPolls[fId]) clearInterval(videoTaskPolls[fId]);
-      videoTaskPolls[fId] = setInterval(() => {
-        pollTaskStatusDynamic(fId, data.task_id);
-        fetch(`/api/video/status/${data.task_id}`).then(r=>r.json()).then(s => {
-          if (s.status === 'success' || s.status === 'error' || s.status === 'not_found') {
-            if (!window._checkDoneSet) window._checkDoneSet = new Set();
-            if (!window._checkDoneSet.has(data.task_id)) {
-              window._checkDoneSet.add(data.task_id);
-              activeCheckVideoCount = Math.max(0, activeCheckVideoCount - 1);
-              updateStopCheckBtn();
-            }
+      videoTaskPolls[fId] = setInterval(async () => {
+        const status = await pollTaskStatusDynamic(fId, data.task_id);
+        if (fIdToTaskId[fId] !== data.task_id || !statusBar?.isConnected || ['error', 'limit', 'higgsfield_logout', 'dola_logout'].includes(status)) {
+          finishCheck();
           }
-        }).catch(()=>{});
       }, 2000);
     } else {
-      activeCheckVideoCount = Math.max(0, activeCheckVideoCount - 1);
-      updateStopCheckBtn();
-      if (statusBar) { statusBar.className = 'status-bar error'; statusBar.innerHTML = `❌ Lỗi: ${data.message || 'Không thể khởi tạo'}`; }
+      finishCheck();
+      if (statusBar) { statusBar.className = 'status-bar error'; statusBar.textContent = `❌ Lỗi: ${data.detail || data.message || 'Không thể khởi tạo'}`; }
       if (retryBtn) retryBtn.style.display = 'block';
     }
   } catch(e) {
-    activeCheckVideoCount = Math.max(0, activeCheckVideoCount - 1);
-    updateStopCheckBtn();
-    if (statusBar) { statusBar.className = 'status-bar error'; statusBar.innerHTML = `❌ Lỗi: ${e.message}`; }
+    finishCheck();
+    if (statusBar) { statusBar.className = 'status-bar error'; statusBar.textContent = `❌ Lỗi: ${e.message}`; }
     if (retryBtn) retryBtn.style.display = 'block';
   }
 }
@@ -5393,6 +5529,7 @@ function tickAllVideoTimers() {
         const pId = t.pId;
         delete window._videoTimers[fId];
         resetTimerUI(fId);
+        if (document.getElementById(`videoProfileId_${fId}`)?.value !== pId) continue;
         showToast(`⏰ Đã hết ${minutes} phút! Thẻ #${fId} đang tự động mở Chrome check video...`);
         if ("Notification" in window && Notification.permission === "granted") {
           try {
@@ -5401,7 +5538,7 @@ function tickAllVideoTimers() {
             });
           } catch(e){}
         }
-        submitCheckVideoForFid(fId);
+        submitCheckVideoForFid(fId, t.recheckTaskId);
       }
     } else {
       updateTimerUI(fId, remain);
@@ -5457,7 +5594,7 @@ document.addEventListener("click", e => {
   }
 });
 
-async function startTimerForFid(fId, minutes, cancelRunningTask = true) {
+async function startTimerForFid(fId, minutes, recheckTaskId = null) {
   const profileSelect = document.getElementById(`videoProfileId_${fId}`);
   if (!profileSelect || !profileSelect.value) {
     alert("Vui lòng chọn Profile cho thẻ này trước khi hẹn giờ!");
@@ -5473,42 +5610,25 @@ async function startTimerForFid(fId, minutes, cancelRunningTask = true) {
   closeAllTimerDropdowns();
 
   // Yêu cầu quyền Notification nếu chưa có để báo khi người dùng ở tab khác
-  if ("Notification" in window && Notification.permission === "default") {
+  if (!recheckTaskId && "Notification" in window && Notification.permission === "default") {
     Notification.requestPermission().catch(()=>{});
   }
 
-  // 1. Hủy task theo yêu cầu hoặc chỉ đóng Chrome cho lịch kiểm tra tự động
+ // Lịch tự động chỉ tới đây sau khi tác vụ đã đóng Chrome.
+ if (!recheckTaskId) {
   try {
-    const curTaskId = (typeof fIdToTaskId !== 'undefined') ? fIdToTaskId[fId] : null;
-    if (curTaskId) {
-      if (typeof videoTaskPolls !== 'undefined' && videoTaskPolls[fId]) {
-        clearInterval(videoTaskPolls[fId]);
-        delete videoTaskPolls[fId];
-      }
-      if (cancelRunningTask) {
-        fetch(`/api/video/cancel_gen/${curTaskId}`, { method: "POST" }).catch(()=>{});
-      }
-    }
-    if (cancelRunningTask) {
-      // Dừng task theo profile phòng trường hợp UI mất task ID
-      fetch(`/api/video/cancel_gen_by_profile/${pId}`, { method: "POST" }).catch(()=>{});
-    }
-
-    // Buộc đóng Chrome của profile này
-    const closeEndpoint = cancelRunningTask
-      ? `/api/profiles/${pId}/close`
-      : `/api/profiles/${pId}/close-for-video-timer`;
-    const closeResponse = await fetch(closeEndpoint, { method: "POST" });
+    const closeResponse = await fetch(`/api/profiles/${pId}/close`, { method: "POST" });
     if (!closeResponse.ok) throw new Error(`Đóng Chrome thất bại (${closeResponse.status})`);
     const closeResult = await closeResponse.json();
     if (!["closed", "not_running"].includes(closeResult.status)) {
       throw new Error(closeResult.message || "Profile chưa được đóng");
     }
-    if (typeof loadProfiles === 'function') setTimeout(loadProfiles, 400);
   } catch(e) {
-    console.warn("Lỗi đóng profile:", e);
-    if (!cancelRunningTask) throw e;
+    showToast(e.message);
+    return;
   }
+  }
+  setTimeout(loadProfiles, 400);
 
   // 2. Xóa timer cũ nếu đang chạy
   cancelVideoTimer(fId, false);
@@ -5520,6 +5640,7 @@ async function startTimerForFid(fId, minutes, cancelRunningTask = true) {
   window._videoTimers[fId] = {
     fId,
     pId,
+    recheckTaskId,
     minutes,
     totalSeconds,
     startTime,
@@ -5663,8 +5784,10 @@ async function sendVideoUrlToTelegram(url, btn) {
       btn.textContent = "📲 Gửi Tele";
     }
   }
-}
-
+}
+
+
+
 function openVideoModal(url) {
   const overlay = document.createElement('div');
   overlay.style.position = 'fixed';
@@ -5968,19 +6091,24 @@ async function saveProfileTag(profileId, newTag) {
   </div>
 </div>
 
-<!-- ===== MODAL DÁN MAIL ===== -->
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="pasteMailTitle" style="max-width:520px;" onkeydown="if(event.key==='Escape') closePasteMailModal()">
 <div id="pasteMailModal" class="modal-overlay">
-  <div class="modal" style="max-width:520px;">
-    <h2 id="pasteMailTitle" style="margin-bottom:12px;">📧 Dán thông tin tài khoản Microsoft</h2>
-    <p style="font-size:12px;color:#94a3b8;margin-bottom:14px;line-height:1.6;">
+      <p id="pasteMailHelp" style="font-size:12px;color:#94a3b8;margin-bottom:14px;line-height:1.6;">
+        Dán thông tin theo định dạng: <code
+          style="background:#0f1420;padding:2px 6px;border-radius:4px;color:#46c8ff;">email|password|token|guid</code><br>
+        Ví dụ: <code
+          style="background:#0f1420;padding:2px 6px;border-radius:4px;color:#6ee7b7;font-size:11px;">JamesRobinson089728@hotmail.com|tukhas93851|M.C561...|9e5f94bc...</code>
       Dán thông tin theo định dạng: <code style="background:#0f1420;padding:2px 6px;border-radius:4px;color:#46c8ff;">email|password|token|guid</code><br>
       Ví dụ: <code style="background:#0f1420;padding:2px 6px;border-radius:4px;color:#6ee7b7;font-size:11px;">JamesRobinson089728@hotmail.com|tukhas93851|M.C561...|9e5f94bc...</code>
-    </p>
+        <textarea id="pasteMailInput" class="textarea" rows="4" aria-label="Thông tin tài khoản" spellcheck="false"
+          placeholder="Dán dòng tài khoản vào đây: email|password|token|guid"
+          style="font-size:12px;font-family:Consolas,monospace;"></textarea>
     <div class="form-group">
       <textarea id="pasteMailInput" class="textarea" rows="4" placeholder="Dán dòng tài khoản vào đây: email|password|token|guid" style="font-size:12px;font-family:Consolas,monospace;"></textarea>
     </div>
-    <div id="pasteMailStatus" style="font-size:13px;min-height:20px;margin-bottom:12px;font-weight:600;"></div>
-    <div style="display:flex;gap:10px;justify-content:flex-end;">
+          <button id="pasteMailClose" class="btn btn-ghost" onclick="closePasteMailModal()">Hủy</button>
+          <button id="pasteMailSave" class="btn btn-primary" onclick="saveMsAccount()"
+            style="background:linear-gradient(135deg,#0369a1,#0ea5e9);">💾 Lưu tài khoản</button>
       <button class="btn btn-ghost" onclick="closePasteMailModal()">Hủy</button>
       <button class="btn btn-primary" onclick="saveMsAccount()" style="background:linear-gradient(135deg,#0369a1,#0ea5e9);">💾 Lưu tài khoản</button>
     </div>
